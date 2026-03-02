@@ -72,7 +72,7 @@ SqlitePoolOptions::new()
   typed_id!(RelationId);
 
   #[derive(Debug, Clone, sqlx::Type, Serialize, Deserialize, JsonSchema)]
-  pub enum EntityType { Task, Module, Service, Agent, Message, Plan, Doc }
+  pub enum EntityType { Task, Module, Service, Agent, Plan, Doc }
 
   #[derive(Debug, Clone, sqlx::Type, Serialize, Deserialize, JsonSchema)]
   pub enum RelationType { Blocks, DependsOn, Produces, Owns, RelatesTo, AssignedTo }
@@ -168,9 +168,15 @@ SqlitePoolOptions::new()
              FOREIGN KEY (source_id) REFERENCES entities(id) ON DELETE CASCADE,
              FOREIGN KEY (target_id) REFERENCES entities(id) ON DELETE CASCADE)
 
+  -- Messages are NOT graph entities. Separate table with inbox semantics.
+  -- Single table, query-based inbox/outbox views. No distributed outbox needed
+  -- because all writes are in one SQLite DB (atomicity is free).
   messages (id TEXT PRIMARY KEY, from_agent TEXT NOT NULL, to_agent TEXT NOT NULL,
             msg_type TEXT NOT NULL DEFAULT 'text', body TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'unread', created_at TEXT NOT NULL, read_at TEXT,
+            status TEXT NOT NULL DEFAULT 'unread',
+            in_reply_to TEXT REFERENCES messages(id),  -- conversation threading
+            task_id TEXT,                                -- optional task context
+            created_at TEXT NOT NULL, read_at TEXT,
             CHECK (from_agent != '' AND to_agent != ''))
 
   agent_runs (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, agent_role TEXT NOT NULL,
@@ -189,7 +195,7 @@ SqlitePoolOptions::new()
           actor TEXT NOT NULL DEFAULT '', old_value TEXT, new_value TEXT,
           created_at TEXT NOT NULL)
   ```
-- Indexes: relations(source_id), relations(target_id), entities(entity_type, status), messages(to_agent, status), file_reservations(agent_name), file_reservations(expires_at)
+- Indexes: relations(source_id), relations(target_id), entities(entity_type, status), messages(to_agent, status), messages(from_agent), messages(task_id), file_reservations(agent_name), file_reservations(expires_at)
 - Partial index: `idx_entities_ready ON entities(status, priority, created_at) WHERE entity_type = 'task' AND status IN ('open', 'in_progress')`
 - Blocked by: 1.1
 

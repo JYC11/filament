@@ -1,6 +1,6 @@
-# Phase 5: TUI (Minimal)
+# Phase 5: TUI (Minimal, filament-tui library)
 
-**Goal**: basic terminal UI showing tasks, agent status, and reservations.
+**Goal**: basic terminal UI showing tasks, agent status, and reservations. Invoked via `filament tui` subcommand (single binary — [ADR-017](adr/017-single-binary-distribution.md)).
 
 **Master plan**: [filament-v1.md](filament-v1.md)
 **Depends on**: [Phase 1](phase1-core.md) (connection abstraction)
@@ -9,8 +9,9 @@
 
 ## 5.1 — TUI app skeleton
 
-- File: `filament-tui/src/main.rs`, `filament-tui/src/app.rs`
-- `filament tui` launches ratatui app
+- File: `filament-tui/src/lib.rs` (library, not binary), `filament-tui/src/app.rs`
+- Exports `pub async fn run_tui(connection: FilamentConnection) -> Result<()>` entrypoint
+- Called by `filament tui` subcommand in filament-cli
 - Connects via FilamentConnection (direct or socket)
 - Event loop: keyboard input + periodic data refresh
 - Blocked by: 1.7

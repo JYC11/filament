@@ -1,16 +1,17 @@
-# Phase 3: Daemon (filament-daemon)
+# Phase 3: Daemon (filament-daemon library)
 
-**Goal**: daemon process that serves CLI requests over Unix socket + MCP, enables multi-agent access.
+**Goal**: daemon library that serves CLI requests over Unix socket + MCP, enables multi-agent access. Invoked via `filament serve` subcommand (single binary — [ADR-017](adr/017-single-binary-distribution.md)).
 
 **Master plan**: [filament-v1.md](filament-v1.md)
 **Depends on**: [Phase 1](phase1-core.md)
 
 ---
 
-## 3.1 — Daemon binary setup
+## 3.1 — Daemon library setup
 
-- File: `filament-daemon/src/main.rs`
-- `filament serve [--foreground] [--socket-path <path>] [--mcp-port 8765]`
+- File: `filament-daemon/src/lib.rs` (library, not binary)
+- Exports `pub async fn serve(config: ServeConfig) -> Result<()>` entrypoint
+- Called by `filament serve [--foreground] [--socket-path <path>] [--mcp-port 8765]` in filament-cli
 - Creates `.filament/filament.sock`, writes `.filament/filament.pid`
 - Graceful shutdown on SIGTERM/SIGINT
 - Hydrates petgraph from SQLite on startup

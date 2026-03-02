@@ -17,16 +17,16 @@ filament/
 │   ├── benchmarks-local.md     # workout-util + koupang patterns
 │   └── adr/                    # architecture decision records (001–016)
 ├── crates/
-│   ├── filament-core/          # shared library: graph, storage, models, errors
-│   ├── filament-cli/           # CLI binary (clap)
-│   ├── filament-daemon/        # daemon binary (Unix socket + MCP server)
-│   └── filament-tui/           # TUI binary (ratatui)
+│   ├── filament-core/          # library: graph, storage, models, errors
+│   ├── filament-cli/           # the single binary (clap), depends on core + daemon + tui
+│   ├── filament-daemon/        # library: Unix socket server, MCP server
+│   └── filament-tui/           # library: ratatui app
 └── migrations/
 ```
 
 ## Architecture Decisions
 
-Full ADRs with rationale: `.plan/adr/` (001–016). Key choices:
+Full ADRs with rationale: `.plan/adr/` (001–017). Key choices:
 
 - **Hybrid daemon** — direct SQLite single-user, daemon for multi-agent (ADR-001)
 - **Unified graph** — all data as Entity nodes + Relation edges (ADR-003)
@@ -38,7 +38,7 @@ Full ADRs with rationale: `.plan/adr/` (001–016). Key choices:
 
 ## Stack
 
-- Rust (cargo workspace, 4 crates, stable toolchain)
+- Rust (cargo workspace, 4 crates, single binary, stable toolchain) — see ADR-017
 - sqlx (sqlite, runtime-tokio) — persistent storage
 - petgraph — in-memory graph traversal + intelligence
 - tokio — async runtime, process spawning, Unix socket server

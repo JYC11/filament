@@ -33,23 +33,25 @@ Local-only Rust tool for multi-agent orchestration, knowledge graph, task manage
 
 ## Project Structure
 
+Single binary (`filament`) — see [ADR-017](adr/017-single-binary-distribution.md).
+
 ```
 filament/
 ├── Cargo.toml                  # workspace root (lint config, profiles)
 ├── crates/
-│   ├── filament-core/          # shared library: graph, storage, models, errors
+│   ├── filament-core/          # library: graph, storage, models, errors
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── models.rs       # Entity, Relation, Message, AgentResult, Reservation
+│   │       ├── models.rs       # Entity, Relation, AgentResult, Reservation, Message (non-graph)
 │   │       ├── error.rs        # FilamentError (thiserror) + StructuredError
 │   │       ├── schema.rs       # SQLite DDL, migrations, CHECK constraints
 │   │       ├── store.rs        # FilamentStore + MutationContext
 │   │       ├── graph.rs        # petgraph wrapper, traversal, graph intelligence
 │   │       ├── connection.rs   # Connection enum: Direct | Socket
 │   │       └── protocol.rs     # JSON-RPC types + MCP tool definitions
-│   ├── filament-cli/           # CLI binary (clap)
-│   ├── filament-daemon/        # daemon binary (Unix socket + MCP server)
-│   └── filament-tui/           # TUI binary (ratatui)
+│   ├── filament-cli/           # the single binary (clap), depends on core + daemon + tui
+│   ├── filament-daemon/        # library: Unix socket server, MCP server, serve() entrypoint
+│   └── filament-tui/           # library: ratatui app, run_tui() entrypoint
 ├── migrations/
 │   └── 001_init.sql
 └── .filament/                  # per-project runtime data (created by `filament init`)
@@ -58,6 +60,13 @@ filament/
     ├── filament.pid
     └── content/
 ```
+
+### Distribution
+
+- `cargo install filament` — publishes filament-cli crate as `filament` binary
+- GitHub Releases — pre-built binaries per platform (CI cross-compile)
+- `curl -fsSL https://filament.dev/install.sh | sh` — install script
+- Homebrew (future): `brew install filament`
 
 ---
 
@@ -104,25 +113,26 @@ blake3 = "1"
 chrono = { version = "0.4", features = ["serde"] }
 ```
 
-### filament-cli
+### filament-cli (the single binary)
 
 ```toml
 filament-core = { path = "../filament-core" }
+filament-daemon = { path = "../filament-daemon" }
+filament-tui = { path = "../filament-tui" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 tracing-subscriber = "0.3"
 ```
 
-### filament-daemon
+### filament-daemon (library)
 
 ```toml
 filament-core = { path = "../filament-core" }
 tokio = { version = "1", features = ["full"] }
-tracing-subscriber = "0.3"
 # MCP server — evaluate rmcp or implement minimal HTTP+JSON manually
 ```
 
-### filament-tui
+### filament-tui (library)
 
 ```toml
 filament-core = { path = "../filament-core" }
