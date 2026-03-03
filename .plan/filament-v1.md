@@ -72,14 +72,14 @@ filament/
 
 ## Phase Index
 
-| Phase | Sub-plan | Goal | Depends on |
-|-------|----------|------|------------|
-| 1 | [phase1-core.md](phase1-core.md) | filament-core library: models, errors, schema, store, graph, connection, protocol | — |
-| 2 | [phase2-cli.md](phase2-cli.md) | CLI binary: entity, task, relation, query, message, reserve commands | Phase 1 |
-| 3 | [phase3-daemon.md](phase3-daemon.md) | Daemon: Unix socket server, MCP server, auto-start | Phase 1 |
-| 4 | [phase4-dispatch.md](phase4-dispatch.md) | Agent dispatching: subprocess management, roles, safety, batch dispatch | Phase 3 |
-| 5 | [phase5-tui.md](phase5-tui.md) | TUI: task list, agent status, reservation views | Phase 1 |
-| 6 | [phase6-integration.md](phase6-integration.md) | Integration: context bundles, escalation, export/import, docs | All |
+| Phase | Sub-plan | Goal | Depends on | Status |
+|-------|----------|------|------------|--------|
+| 1 | [phase1-core.md](phase1-core.md) | filament-core library: models, errors, schema, store, graph, connection, protocol | — | **Done** (2026-03-03) |
+| 2 | [phase2-cli.md](phase2-cli.md) | CLI binary: entity, task, relation, query, message, reserve commands | Phase 1 | Ready |
+| 3 | [phase3-daemon.md](phase3-daemon.md) | Daemon: Unix socket server, MCP server, auto-start | Phase 1 | Ready |
+| 4 | [phase4-dispatch.md](phase4-dispatch.md) | Agent dispatching: subprocess management, roles, safety, batch dispatch | Phase 3 | Blocked |
+| 5 | [phase5-tui.md](phase5-tui.md) | TUI: task list, agent status, reservation views | Phase 1 | Ready |
+| 6 | [phase6-integration.md](phase6-integration.md) | Integration: context bundles, escalation, export/import, docs | All | Blocked |
 
 ```
 Phase 1 (core)

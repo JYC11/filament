@@ -67,7 +67,7 @@ Full ADRs with rationale: `.plan/adr/` (001–017). Key choices:
 
 ## Current Status
 
-**Phase: Planning complete (v1.1 with benchmark revisions), implementation not started.**
+**Phase 1 complete** (2026-03-03). filament-core library: models, errors, schema, store, graph, connection, protocol. 48 tests, zero warnings. Phase 2 (CLI) next.
 
 ## References
 

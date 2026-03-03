@@ -1,0 +1,20 @@
+[package]
+name = "filament-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI binary for filament"
+
+[[bin]]
+name = "filament"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+filament-core = { path = "../filament-core" }
+filament-daemon = { path = "../filament-daemon" }
+filament-tui = { path = "../filament-tui" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tracing-subscriber = "0.3"

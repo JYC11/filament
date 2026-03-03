@@ -1,0 +1,12 @@
+[package]
+name = "filament-daemon"
+version = "0.1.0"
+edition = "2021"
+description = "Daemon library: Unix socket server, MCP server"
+
+[lints]
+workspace = true
+
+[dependencies]
+filament-core = { path = "../filament-core" }
+tokio = { version = "1", features = ["full"] }

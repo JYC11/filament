@@ -1,4 +1,6 @@
-# Phase 1: Foundation (filament-core + SQLite)
+# Phase 1: Foundation (filament-core + SQLite) — COMPLETE
+
+**Status**: Done (2026-03-03). 48 tests passing, zero clippy warnings.
 
 **Goal**: single-crate library with graph + storage that compiles and passes tests.
 

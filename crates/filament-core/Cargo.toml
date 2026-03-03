@@ -1,0 +1,27 @@
+[package]
+name = "filament-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core library: graph, storage, models, errors"
+
+[lints]
+workspace = true
+
+[features]
+test-utils = []
+
+[dependencies]
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "chrono"] }
+petgraph = "0.7"
+tokio = { version = "1", features = ["sync", "net", "io-util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+schemars = { version = "1", features = ["chrono04"] }
+tracing = "0.1"
+blake3 = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+filament-core = { path = ".", features = ["test-utils"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
