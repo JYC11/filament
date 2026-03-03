@@ -3,6 +3,7 @@ use std::fs;
 use filament_core::connection::FilamentConnection;
 use filament_core::error::Result;
 
+use super::helpers::output_json;
 use crate::Cli;
 
 pub async fn run(cli: &Cli) -> Result<()> {
@@ -11,10 +12,10 @@ pub async fn run(cli: &Cli) -> Result<()> {
 
     if filament_dir.exists() {
         if cli.json {
-            println!(
-                r#"{{"status": "already_initialized", "path": "{}"}}"#,
-                filament_dir.display()
-            );
+            output_json(&serde_json::json!({
+                "status": "already_initialized",
+                "path": filament_dir.display().to_string(),
+            }));
         } else {
             println!("Already initialized: {}", filament_dir.display());
         }
@@ -35,10 +36,10 @@ pub async fn run(cli: &Cli) -> Result<()> {
     FilamentConnection::direct(db_str).await?;
 
     if cli.json {
-        println!(
-            r#"{{"status": "initialized", "path": "{}"}}"#,
-            filament_dir.display()
-        );
+        output_json(&serde_json::json!({
+            "status": "initialized",
+            "path": filament_dir.display().to_string(),
+        }));
     } else {
         println!("Initialized filament project at {}", filament_dir.display());
     }

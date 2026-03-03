@@ -2,7 +2,7 @@ use clap::Args;
 use filament_core::error::Result;
 use filament_core::graph::KnowledgeGraph;
 
-use super::{connect, output_json, resolve_entity};
+use super::helpers::{connect, output_json, resolve_entity};
 use crate::Cli;
 
 #[derive(Args, Debug)]

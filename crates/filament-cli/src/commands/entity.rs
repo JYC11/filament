@@ -5,7 +5,7 @@ use filament_core::error::Result;
 use filament_core::models::{CreateEntityRequest, EntityStatus};
 use filament_core::store;
 
-use super::{connect, output_json, read_content_file, resolve_entity};
+use super::helpers::{connect, output_json, print_entity_list, read_content_file, resolve_entity};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -42,7 +42,8 @@ pub struct UpdateArgs {
     /// New summary.
     #[arg(long)]
     summary: Option<String>,
-    /// New status (open, closed, in-progress, blocked).
+    #[allow(clippy::doc_markdown)]
+    /// New status: open, closed, in_progress, blocked.
     #[arg(long)]
     status: Option<String>,
 }
@@ -99,7 +100,7 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         .await?;
 
     if cli.json {
-        println!(r#"{{"id": "{id}"}}"#);
+        output_json(&serde_json::json!({"id": id.as_str()}));
     } else {
         println!("Created entity: {id}");
     }
@@ -115,7 +116,7 @@ pub async fn remove(cli: &Cli, args: &RemoveArgs) -> Result<()> {
         .await?;
 
     if cli.json {
-        println!(r#"{{"deleted": "{}"}}"#, entity.id);
+        output_json(&serde_json::json!({"deleted": entity.id.as_str()}));
     } else {
         println!("Removed entity: {} ({})", entity.name, entity.id);
     }
@@ -127,36 +128,40 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     let entity = resolve_entity(&s, &args.name).await?;
     let id = entity.id.clone();
 
-    if let Some(summary) = &args.summary {
-        let id = id.clone();
-        let summary = summary.clone();
-        s.with_transaction(|tx| {
-            Box::pin(async move { store::update_entity_summary(tx, id.as_str(), &summary).await })
-        })
-        .await?;
-    }
-
-    if let Some(status_str) = &args.status {
-        let status = match status_str.to_lowercase().as_str() {
-            "open" => EntityStatus::Open,
-            "closed" => EntityStatus::Closed,
-            "in_progress" => EntityStatus::InProgress,
-            "blocked" => EntityStatus::Blocked,
-            other => {
-                return Err(filament_core::error::FilamentError::Validation(format!(
+    // Parse status before starting the transaction so we fail fast on bad input
+    let parsed_status = args
+        .status
+        .as_deref()
+        .map(|status_str| {
+            match status_str.to_lowercase().as_str() {
+                "open" => Ok(EntityStatus::Open),
+                "closed" => Ok(EntityStatus::Closed),
+                "in_progress" => Ok(EntityStatus::InProgress),
+                "blocked" => Ok(EntityStatus::Blocked),
+                other => Err(filament_core::error::FilamentError::Validation(format!(
                     "invalid status: '{other}' (expected: open, closed, in_progress, blocked)"
-                )));
+                ))),
             }
-        };
-        let id = id.clone();
-        s.with_transaction(|tx| {
-            Box::pin(async move { store::update_entity_status(tx, id.as_str(), status).await })
         })
-        .await?;
-    }
+        .transpose()?;
+
+    let summary = args.summary.clone();
+    let tx_id = id.clone();
+    s.with_transaction(|tx| {
+        Box::pin(async move {
+            if let Some(summary) = &summary {
+                store::update_entity_summary(tx, tx_id.as_str(), summary).await?;
+            }
+            if let Some(status) = parsed_status {
+                store::update_entity_status(tx, tx_id.as_str(), status).await?;
+            }
+            Ok(())
+        })
+    })
+    .await?;
 
     if cli.json {
-        println!(r#"{{"updated": "{id}"}}"#);
+        output_json(&serde_json::json!({"updated": id.as_str()}));
     } else {
         println!("Updated entity: {} ({})", entity.name, id);
     }
@@ -199,7 +204,7 @@ pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
 
     let Some(ref content_path) = entity.content_path else {
         if cli.json {
-            println!(r#"{{"name": "{}", "content": null}}"#, entity.name);
+            output_json(&serde_json::json!({"name": entity.name.as_str(), "content": null}));
         } else {
             println!("No content file for entity: {}", entity.name);
         }
@@ -227,22 +232,6 @@ pub async fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
     let entities =
         store::list_entities(s.pool(), args.r#type.as_deref(), args.status.as_deref()).await?;
 
-    if cli.json {
-        output_json(&entities);
-    } else if entities.is_empty() {
-        println!("No entities found.");
-    } else {
-        for e in &entities {
-            let summary_preview = if e.summary.len() > 60 {
-                format!("{}...", &e.summary[..57])
-            } else {
-                e.summary.clone()
-            };
-            println!(
-                "[P{}] {} ({}) [{}] {}",
-                e.priority, e.name, e.entity_type, e.status, summary_preview
-            );
-        }
-    }
+    print_entity_list(cli, &entities, "No entities found.");
     Ok(())
 }

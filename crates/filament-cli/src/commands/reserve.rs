@@ -3,7 +3,7 @@ use filament_core::error::{FilamentError, Result};
 use filament_core::models::TtlSeconds;
 use filament_core::store;
 
-use super::{connect, output_json};
+use super::helpers::{connect, output_json};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -56,7 +56,7 @@ pub async fn reserve(cli: &Cli, args: &ReserveArgs) -> Result<()> {
         .await?;
 
     if cli.json {
-        println!(r#"{{"id": "{id}"}}"#);
+        output_json(&serde_json::json!({"id": id.as_str()}));
     } else {
         println!("Reserved: {} for {} ({})", args.glob, args.agent, id);
     }
@@ -79,7 +79,7 @@ pub async fn release(cli: &Cli, args: &ReleaseArgs) -> Result<()> {
         .await?;
 
     if cli.json {
-        println!(r#"{{"released": true}}"#);
+        output_json(&serde_json::json!({"released": true}));
     } else {
         println!("Released: {} for {}", args.glob, args.agent);
     }

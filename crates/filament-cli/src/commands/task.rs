@@ -2,11 +2,14 @@ use clap::{Args, Subcommand};
 use filament_core::error::Result;
 use filament_core::graph::KnowledgeGraph;
 use filament_core::models::{
-    CreateEntityRequest, CreateRelationRequest, Entity, EntityId, EntityStatus,
+    CreateEntityRequest, CreateRelationRequest, EntityId, EntityStatus,
 };
 use filament_core::store;
 
-use super::{connect, output_json, resolve_entity, resolve_entity_id};
+use super::helpers::{
+    connect, output_json, print_entity_list, resolve_entity, resolve_entity_id,
+    truncate_with_ellipsis,
+};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -67,7 +70,8 @@ struct TaskAddArgs {
 
 #[derive(Args, Debug)]
 struct TaskListArgs {
-    /// Filter by status: open, closed, in-progress, all.
+    #[allow(clippy::doc_markdown)]
+    /// Filter by status (open, closed, in_progress, all).
     #[arg(long, default_value = "open")]
     status: String,
     /// Show only unblocked tasks.
@@ -122,47 +126,58 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
     };
     let valid = req.try_into()?;
 
+    // Resolve relation targets before the transaction
+    let blocks_id = if let Some(blocks_name) = &args.blocks {
+        Some(resolve_entity_id(&s, blocks_name).await?)
+    } else {
+        None
+    };
+    let depends_on_id = if let Some(dep_name) = &args.depends_on {
+        Some(resolve_entity_id(&s, dep_name).await?)
+    } else {
+        None
+    };
+
     let id = s
-        .with_transaction(|tx| Box::pin(async move { store::create_entity(tx, &valid).await }))
-        .await?;
+        .with_transaction(|tx| {
+            Box::pin(async move {
+                let id = store::create_entity(tx, &valid).await?;
 
-    // Create optional relations
-    if let Some(blocks_name) = &args.blocks {
-        let target_id = resolve_entity_id(&s, blocks_name).await?;
-        let rel_req = CreateRelationRequest {
-            source_id: id.to_string(),
-            target_id: target_id.to_string(),
-            relation_type: "blocks".to_string(),
-            weight: None,
-            summary: None,
-            metadata: None,
-        };
-        let valid_rel = rel_req.try_into()?;
-        s.with_transaction(|tx| {
-            Box::pin(async move { store::create_relation(tx, &valid_rel).await })
+                if let Some(target_id) = blocks_id {
+                    let rel_req = CreateRelationRequest {
+                        source_id: id.to_string(),
+                        target_id: target_id.to_string(),
+                        relation_type: "blocks".to_string(),
+                        weight: None,
+                        summary: None,
+                        metadata: None,
+                    };
+                    let valid_rel: filament_core::models::ValidCreateRelationRequest =
+                        rel_req.try_into()?;
+                    store::create_relation(tx, &valid_rel).await?;
+                }
+
+                if let Some(dep_id) = depends_on_id {
+                    let rel_req = CreateRelationRequest {
+                        source_id: id.to_string(),
+                        target_id: dep_id.to_string(),
+                        relation_type: "depends_on".to_string(),
+                        weight: None,
+                        summary: None,
+                        metadata: None,
+                    };
+                    let valid_rel: filament_core::models::ValidCreateRelationRequest =
+                        rel_req.try_into()?;
+                    store::create_relation(tx, &valid_rel).await?;
+                }
+
+                Ok(id)
+            })
         })
         .await?;
-    }
-
-    if let Some(dep_name) = &args.depends_on {
-        let dep_id = resolve_entity_id(&s, dep_name).await?;
-        let rel_req = CreateRelationRequest {
-            source_id: id.to_string(),
-            target_id: dep_id.to_string(),
-            relation_type: "depends_on".to_string(),
-            weight: None,
-            summary: None,
-            metadata: None,
-        };
-        let valid_rel = rel_req.try_into()?;
-        s.with_transaction(|tx| {
-            Box::pin(async move { store::create_relation(tx, &valid_rel).await })
-        })
-        .await?;
-    }
 
     if cli.json {
-        println!(r#"{{"id": "{id}"}}"#);
+        output_json(&serde_json::json!({"id": id.as_str()}));
     } else {
         println!("Created task: {id}");
     }
@@ -181,12 +196,12 @@ async fn list(cli: &Cli, args: &TaskListArgs) -> Result<()> {
         s.with_transaction(|tx| Box::pin(async move { store::rebuild_blocked_cache(tx).await }))
             .await?;
         let tasks = store::ready_tasks(s.pool()).await?;
-        print_entity_list(cli, &tasks);
+        print_entity_list(cli, &tasks, "No tasks found.");
         return Ok(());
     }
 
     let entities = store::list_entities(s.pool(), Some("task"), status_filter).await?;
-    print_entity_list(cli, &entities);
+    print_entity_list(cli, &entities, "No tasks found.");
     Ok(())
 }
 
@@ -217,7 +232,8 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
         println!("No ready tasks.");
     } else {
         for t in &limited {
-            println!("[P{}] {} [{}] {}", t.priority, t.name, t.status, t.summary);
+            let summary_preview = truncate_with_ellipsis(&t.summary, 60);
+            println!("[P{}] {} [{}] {}", t.priority, t.name, t.status, summary_preview);
         }
     }
     Ok(())
@@ -253,10 +269,19 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
         if !relations.is_empty() {
             println!("Relations:");
             for r in &relations {
-                if r.source_id == entity.id {
-                    println!("  {} -> {} ({})", entity.name, r.target_id, r.relation_type);
+                let other_id = if r.source_id == entity.id {
+                    &r.target_id
                 } else {
-                    println!("  {} -> {} ({})", r.source_id, entity.name, r.relation_type);
+                    &r.source_id
+                };
+                // Resolve the other entity's name for display
+                let other_name = store::get_entity(s.pool(), other_id.as_str())
+                    .await
+                    .map_or_else(|_| other_id.to_string(), |e| e.name.to_string());
+                if r.source_id == entity.id {
+                    println!("  {} -> {} ({})", entity.name, other_name, r.relation_type);
+                } else {
+                    println!("  {} -> {} ({})", other_name, entity.name, r.relation_type);
                 }
             }
         }
@@ -277,7 +302,7 @@ async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
     .await?;
 
     if cli.json {
-        println!(r#"{{"closed": "{}"}}"#, entity.id);
+        output_json(&serde_json::json!({"closed": entity.id.as_str()}));
     } else {
         println!("Closed task: {} ({})", entity.name, entity.id);
     }
@@ -304,7 +329,7 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
         .await?;
 
     if cli.json {
-        println!(r#"{{"assigned": "{}", "to": "{}"}}"#, task.name, args.to);
+        output_json(&serde_json::json!({"assigned": task.name.as_str(), "to": args.to}));
     } else {
         println!("Assigned {} to {}", task.name, args.to);
     }
@@ -335,24 +360,4 @@ async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn print_entity_list(cli: &Cli, entities: &[Entity]) {
-    if cli.json {
-        output_json(&entities);
-    } else if entities.is_empty() {
-        println!("No tasks found.");
-    } else {
-        for e in entities {
-            let summary_preview = if e.summary.len() > 60 {
-                format!("{}...", &e.summary[..57])
-            } else {
-                e.summary.clone()
-            };
-            println!(
-                "[P{}] {} [{}] {}",
-                e.priority, e.name, e.status, summary_preview
-            );
-        }
-    }
 }

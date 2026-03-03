@@ -65,22 +65,22 @@ impl FilamentError {
     pub fn hint(&self) -> Option<String> {
         match self {
             Self::EntityNotFound { id } => {
-                Some(format!("Check entity ID '{id}' exists with `filament entity list`"))
+                Some(format!("Check entity '{id}' exists with `filament list`"))
             }
             Self::MessageNotFound { id } => {
-                Some(format!("Check message ID '{id}' exists with `filament msg inbox`"))
+                Some(format!("Check message ID '{id}' with `filament message inbox <agent>`"))
             }
             Self::AgentRunNotFound { id } => {
-                Some(format!("Check agent run ID '{id}' exists with `filament agent list`"))
+                Some(format!("Agent run '{id}' does not exist or has already finished"))
             }
             Self::RelationNotFound { id } => {
-                Some(format!("Check relation ID '{id}' exists with `filament relation list`"))
+                Some(format!("Relation '{id}' does not exist. Check entity names and relation type"))
             }
             Self::CycleDetected { .. } => {
                 Some("Remove one dependency edge to break the cycle".to_string())
             }
             Self::FileReserved { agent, glob } => Some(format!(
-                "Wait for agent '{agent}' to release '{glob}', or force-release with `filament reserve release`"
+                "Wait for agent '{agent}' to release '{glob}', or run `filament release '{glob}' --agent {agent}`"
             )),
             Self::ReservationExpired => {
                 Some("Re-acquire the reservation before proceeding".to_string())

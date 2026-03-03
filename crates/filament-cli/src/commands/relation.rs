@@ -3,14 +3,15 @@ use filament_core::error::Result;
 use filament_core::models::CreateRelationRequest;
 use filament_core::store;
 
-use super::{connect, resolve_entity_id};
+use super::helpers::{connect, output_json, resolve_entity_id};
 use crate::Cli;
 
 #[derive(Args, Debug)]
 pub struct RelateArgs {
     /// Source entity name.
     source: String,
-    /// Relation type: blocks, depends-on, produces, owns, relates-to, assigned-to.
+    #[allow(clippy::doc_markdown)]
+    /// Relation type (blocks, depends_on, produces, owns, relates_to, assigned_to).
     relation_type: String,
     /// Target entity name.
     target: String,
@@ -53,7 +54,7 @@ pub async fn relate(cli: &Cli, args: &RelateArgs) -> Result<()> {
         .await?;
 
     if cli.json {
-        println!(r#"{{"id": "{id}"}}"#);
+        output_json(&serde_json::json!({"id": id.as_str()}));
     } else {
         println!(
             "Created relation: {} {} {} ({})",
@@ -80,7 +81,7 @@ pub async fn unrelate(cli: &Cli, args: &UnrelateArgs) -> Result<()> {
     .await?;
 
     if cli.json {
-        println!(r#"{{"deleted": true}}"#);
+        output_json(&serde_json::json!({"deleted": true}));
     } else {
         println!(
             "Removed relation: {} {} {}",

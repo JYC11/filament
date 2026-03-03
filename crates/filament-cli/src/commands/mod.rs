@@ -1,4 +1,5 @@
 mod entity;
+pub mod helpers;
 mod init;
 mod message;
 mod query;
@@ -6,13 +7,8 @@ mod relation;
 mod reserve;
 mod task;
 
-use std::path::{Path, PathBuf};
-
 use clap::Subcommand;
-use filament_core::connection::FilamentConnection;
-use filament_core::error::{FilamentError, Result};
-use filament_core::models::{Entity, EntityId};
-use filament_core::store::{self, FilamentStore};
+use filament_core::error::Result;
 
 use crate::Cli;
 
@@ -82,67 +78,4 @@ impl Commands {
             Self::Reservations(args) => reserve::reservations(cli, args).await,
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-
-/// Find the project root by walking up from CWD looking for `.filament/`.
-fn find_project_root() -> Result<PathBuf> {
-    let mut dir = std::env::current_dir()?;
-
-    loop {
-        if dir.join(".filament").is_dir() {
-            return Ok(dir);
-        }
-        if !dir.pop() {
-            return Err(FilamentError::Validation(
-                "not a filament project (no .filament/ found). Run `filament init` first."
-                    .to_string(),
-            ));
-        }
-    }
-}
-
-/// Connect to the project database, returning the store handle.
-async fn connect() -> Result<FilamentStore> {
-    let root = find_project_root()?;
-    let conn = FilamentConnection::auto_detect(&root).await?;
-    match conn {
-        FilamentConnection::Direct(store) => Ok(store),
-        FilamentConnection::Socket(_) => Err(FilamentError::Validation(
-            "daemon mode not yet supported".to_string(),
-        )),
-    }
-}
-
-/// Resolve an entity name or ID to an `Entity`.
-async fn resolve_entity(store: &FilamentStore, name_or_id: &str) -> Result<Entity> {
-    // Try by name first (most common CLI usage)
-    match store::get_entity_by_name(store.pool(), name_or_id).await {
-        Ok(entity) => return Ok(entity),
-        Err(FilamentError::EntityNotFound { .. }) => {}
-        Err(e) => return Err(e),
-    }
-    // Fall back to ID lookup
-    store::get_entity(store.pool(), name_or_id).await
-}
-
-/// Resolve an entity name to just the ID.
-async fn resolve_entity_id(store: &FilamentStore, name_or_id: &str) -> Result<EntityId> {
-    Ok(resolve_entity(store, name_or_id).await?.id)
-}
-
-/// Print a value as JSON.
-fn output_json<T: serde::Serialize>(value: &T) {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).expect("JSON serialization")
-    );
-}
-
-/// Read content from a file path.
-fn read_content_file(path: &Path) -> Result<String> {
-    std::fs::read_to_string(path).map_err(FilamentError::Io)
 }

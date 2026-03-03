@@ -3,7 +3,7 @@ use filament_core::error::Result;
 use filament_core::models::SendMessageRequest;
 use filament_core::store;
 
-use super::{connect, output_json};
+use super::helpers::{connect, output_json, truncate_with_ellipsis};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -78,7 +78,7 @@ async fn send(cli: &Cli, args: &MessageSendArgs) -> Result<()> {
         .await?;
 
     if cli.json {
-        println!(r#"{{"id": "{id}"}}"#);
+        output_json(&serde_json::json!({"id": id.as_str()}));
     } else {
         println!("Sent message: {id}");
     }
@@ -96,12 +96,7 @@ async fn inbox(cli: &Cli, args: &MessageInboxArgs) -> Result<()> {
         println!("No unread messages for: {}", args.agent);
     } else {
         for m in &messages {
-            let body = m.body.as_str();
-            let preview = if body.len() > 80 {
-                format!("{}...", &body[..77])
-            } else {
-                body.to_string()
-            };
+            let preview = truncate_with_ellipsis(m.body.as_str(), 80);
             println!(
                 "[{}] from:{} type:{} — {}",
                 m.id, m.from_agent, m.msg_type, preview
@@ -119,7 +114,7 @@ async fn read(cli: &Cli, args: &MessageReadArgs) -> Result<()> {
         .await?;
 
     if cli.json {
-        println!(r#"{{"read": "{}"}}"#, args.id);
+        output_json(&serde_json::json!({"read": args.id}));
     } else {
         println!("Marked as read: {}", args.id);
     }

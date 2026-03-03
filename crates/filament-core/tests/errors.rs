@@ -69,19 +69,19 @@ fn hints_populated_for_key_errors() {
         id: "test".to_string(),
     };
     assert!(err.hint().is_some());
-    assert!(err.hint().unwrap().contains("filament entity list"));
+    assert!(err.hint().unwrap().contains("filament list"));
 
     let err = FilamentError::RelationNotFound {
         id: "rel-1".to_string(),
     };
     assert!(err.hint().is_some());
-    assert!(err.hint().unwrap().contains("filament relation list"));
+    assert!(err.hint().unwrap().contains("does not exist"));
 
     let err = FilamentError::AgentRunNotFound {
         id: "run-1".to_string(),
     };
     assert!(err.hint().is_some());
-    assert!(err.hint().unwrap().contains("filament agent list"));
+    assert!(err.hint().unwrap().contains("does not exist"));
 
     let err = FilamentError::CycleDetected {
         path: "a->b".to_string(),
