@@ -502,6 +502,26 @@ async fn agent_run_create_and_finish() {
 }
 
 // ---------------------------------------------------------------------------
+// Finish nonexistent agent run
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn finish_nonexistent_agent_run_returns_error() {
+    let store = test_db().await;
+
+    let err = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                finish_agent_run(conn, "nonexistent", AgentStatus::Completed, None).await
+            })
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, FilamentError::AgentRunNotFound { .. }));
+}
+
+// ---------------------------------------------------------------------------
 // List relations
 // ---------------------------------------------------------------------------
 

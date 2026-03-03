@@ -825,17 +825,20 @@ impl TryFrom<CreateRelationRequest> for ValidCreateRelationRequest {
     type Error = FilamentError;
 
     fn try_from(req: CreateRelationRequest) -> std::result::Result<Self, Self::Error> {
-        if req.source_id.trim().is_empty() {
+        let source_id = req.source_id.trim().to_string();
+        let target_id = req.target_id.trim().to_string();
+
+        if source_id.is_empty() {
             return Err(FilamentError::Validation(
                 "source_id cannot be empty".to_string(),
             ));
         }
-        if req.target_id.trim().is_empty() {
+        if target_id.is_empty() {
             return Err(FilamentError::Validation(
                 "target_id cannot be empty".to_string(),
             ));
         }
-        if req.source_id == req.target_id {
+        if source_id == target_id {
             return Err(FilamentError::Validation(
                 "source_id and target_id must differ".to_string(),
             ));
@@ -858,8 +861,8 @@ impl TryFrom<CreateRelationRequest> for ValidCreateRelationRequest {
         let weight = Weight::new(req.weight.unwrap_or(1.0))?;
 
         Ok(Self {
-            source_id: EntityId::from(req.source_id),
-            target_id: EntityId::from(req.target_id),
+            source_id: EntityId::from(source_id),
+            target_id: EntityId::from(target_id),
             relation_type,
             weight,
             summary: req.summary.unwrap_or_default(),

@@ -22,6 +22,12 @@ fn error_codes_are_stable() {
             "MESSAGE_NOT_FOUND",
         ),
         (
+            FilamentError::AgentRunNotFound {
+                id: "run-1".to_string(),
+            },
+            "AGENT_RUN_NOT_FOUND",
+        ),
+        (
             FilamentError::CycleDetected {
                 path: "a->b".to_string(),
             },
@@ -64,6 +70,18 @@ fn hints_populated_for_key_errors() {
     };
     assert!(err.hint().is_some());
     assert!(err.hint().unwrap().contains("filament entity list"));
+
+    let err = FilamentError::RelationNotFound {
+        id: "rel-1".to_string(),
+    };
+    assert!(err.hint().is_some());
+    assert!(err.hint().unwrap().contains("filament relation list"));
+
+    let err = FilamentError::AgentRunNotFound {
+        id: "run-1".to_string(),
+    };
+    assert!(err.hint().is_some());
+    assert!(err.hint().unwrap().contains("filament agent list"));
 
     let err = FilamentError::CycleDetected {
         path: "a->b".to_string(),

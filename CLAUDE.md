@@ -78,7 +78,7 @@ See `.plan/gotchas.md` for the full list. Top hits:
 
 ## Current Status
 
-**Phase 1 complete + polished** (2026-03-03). filament-core library: models, errors, schema, store, graph, connection, protocol. Value types enforce invariants at compile time. 67 tests, zero warnings. Phase 2 (CLI) next.
+**Phase 1 complete + reviewed** (2026-03-03). filament-core library: models, errors, schema, store, graph, connection, protocol. Value types enforce invariants at compile time and at DB decode. `impl_enum_str!` and `impl_sqlx_newtype!` macros reduce boilerplate. 76 tests, zero warnings. Phase 2 (CLI) next.
 
 ## References
 

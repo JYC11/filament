@@ -69,13 +69,14 @@ impl FilamentStore {
 /// # Errors
 ///
 /// Returns `FilamentError::Database` on SQL failure.
+#[allow(clippy::missing_panics_doc)] // serde_json::Value serialization is infallible
 pub async fn create_entity(
     conn: &mut SqliteConnection,
     req: &ValidCreateEntityRequest,
 ) -> Result<EntityId> {
     let id = EntityId::new();
     let now = Utc::now();
-    let key_facts = serde_json::to_string(&req.key_facts).unwrap_or_default();
+    let key_facts = serde_json::to_string(&req.key_facts).expect("Value serialization is infallible");
 
     sqlx::query(
         "INSERT INTO entities (id, name, entity_type, summary, key_facts, content_path, status, priority, created_at, updated_at)
@@ -192,13 +193,14 @@ pub async fn delete_entity(conn: &mut SqliteConnection, id: &str) -> Result<()> 
 /// # Errors
 ///
 /// Returns `FilamentError::Database` on SQL failure (including FK violations).
+#[allow(clippy::missing_panics_doc)] // serde_json::Value serialization is infallible
 pub async fn create_relation(
     conn: &mut SqliteConnection,
     req: &ValidCreateRelationRequest,
 ) -> Result<RelationId> {
     let id = RelationId::new();
     let now = Utc::now();
-    let metadata = serde_json::to_string(&req.metadata).unwrap_or_default();
+    let metadata = serde_json::to_string(&req.metadata).expect("Value serialization is infallible");
 
     sqlx::query(
         "INSERT INTO relations (id, source_id, target_id, relation_type, weight, summary, metadata, created_at)
@@ -437,7 +439,7 @@ pub async fn create_agent_run(
 ///
 /// # Errors
 ///
-/// Returns `FilamentError::Database` on SQL failure.
+/// Returns `FilamentError::AgentRunNotFound` if the agent run doesn't exist.
 pub async fn finish_agent_run(
     conn: &mut SqliteConnection,
     id: &str,
@@ -446,14 +448,19 @@ pub async fn finish_agent_run(
 ) -> Result<()> {
     let now = Utc::now();
 
-    sqlx::query("UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?")
-        .bind(status.as_str())
-        .bind(result_json)
-        .bind(now)
-        .bind(id)
-        .execute(conn)
-        .await?;
+    let rows =
+        sqlx::query("UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?")
+            .bind(status.as_str())
+            .bind(result_json)
+            .bind(now)
+            .bind(id)
+            .execute(conn)
+            .await?
+            .rows_affected();
 
+    if rows == 0 {
+        return Err(FilamentError::AgentRunNotFound { id: id.to_string() });
+    }
     Ok(())
 }
 

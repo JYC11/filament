@@ -321,6 +321,49 @@ fn create_relation_self_loop_rejected() {
 }
 
 #[test]
+fn create_relation_trims_whitespace_ids() {
+    let req = CreateRelationRequest {
+        source_id: "  abc  ".to_string(),
+        target_id: "  def  ".to_string(),
+        relation_type: "blocks".to_string(),
+        weight: None,
+        summary: None,
+        metadata: None,
+    };
+    let valid = ValidCreateRelationRequest::try_from(req).unwrap();
+    assert_eq!(valid.source_id.as_str(), "abc");
+    assert_eq!(valid.target_id.as_str(), "def");
+}
+
+#[test]
+fn create_relation_whitespace_only_ids_rejected() {
+    let req = CreateRelationRequest {
+        source_id: "   ".to_string(),
+        target_id: "b".to_string(),
+        relation_type: "blocks".to_string(),
+        weight: None,
+        summary: None,
+        metadata: None,
+    };
+    let err = ValidCreateRelationRequest::try_from(req).unwrap_err();
+    assert!(matches!(err, FilamentError::Validation(_)));
+}
+
+#[test]
+fn create_relation_self_loop_after_trim_rejected() {
+    let req = CreateRelationRequest {
+        source_id: " abc ".to_string(),
+        target_id: "abc".to_string(),
+        relation_type: "blocks".to_string(),
+        weight: None,
+        summary: None,
+        metadata: None,
+    };
+    let err = ValidCreateRelationRequest::try_from(req).unwrap_err();
+    assert!(matches!(err, FilamentError::Validation(_)));
+}
+
+#[test]
 fn create_relation_bad_weight_rejected() {
     let req = CreateRelationRequest {
         source_id: "a".to_string(),
