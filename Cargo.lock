@@ -607,9 +607,11 @@ dependencies = [
 name = "filament-tui"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crossterm",
  "filament-core",
  "ratatui",
+ "serde_json",
  "tokio",
 ]
 

@@ -59,8 +59,11 @@ fn init_tracing(verbose: u8, quiet: bool, stderr_only: bool) {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let mcp_mode = matches!(cli.command, Commands::Mcp);
-    init_tracing(cli.verbose, cli.quiet, mcp_mode);
+    let tui_mode = matches!(cli.command, Commands::Tui);
+    let stderr_only = matches!(cli.command, Commands::Mcp) || tui_mode;
+    if !tui_mode {
+        init_tracing(cli.verbose, cli.quiet, stderr_only);
+    }
 
     match cli.command.run(&cli).await {
         Ok(()) => ExitCode::SUCCESS,

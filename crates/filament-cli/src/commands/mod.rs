@@ -9,6 +9,7 @@ mod relation;
 mod reserve;
 mod serve;
 mod task;
+mod tui;
 
 use clap::Subcommand;
 use filament_core::error::Result;
@@ -73,6 +74,10 @@ pub enum Commands {
     // -- MCP server --
     /// Start the MCP stdio server (for AI agent integration).
     Mcp,
+
+    // -- TUI --
+    /// Launch the interactive TUI.
+    Tui,
 }
 
 impl Commands {
@@ -97,6 +102,7 @@ impl Commands {
             Self::Serve(args) => serve::serve(cli, args).await,
             Self::Stop => serve::stop(cli).await,
             Self::Mcp => mcp::run().await,
+            Self::Tui => tui::run().await,
         }
     }
 }

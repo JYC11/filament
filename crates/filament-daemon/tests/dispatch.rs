@@ -43,10 +43,7 @@ ENDJSON
 exit {exit_code}
 "#,
         delay = if config.delay_ms > 0 {
-            format!(
-                "sleep $(echo 'scale=3; {}/1000' | bc)",
-                config.delay_ms
-            )
+            format!("sleep $(echo 'scale=3; {}/1000' | bc)", config.delay_ms)
         } else {
             String::new()
         },
