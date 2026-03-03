@@ -472,6 +472,19 @@ impl FilamentConnection {
         }
     }
 
+    pub async fn batch_get_entities(
+        &mut self,
+        ids: &[String],
+    ) -> Result<std::collections::HashMap<String, Entity>> {
+        match self {
+            Self::Direct(s) => {
+                let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+                store::batch_get_entities(s.pool(), &refs).await
+            }
+            Self::Socket(c) => c.batch_get_entities(ids).await,
+        }
+    }
+
     pub async fn batch_impact_scores(
         &mut self,
         entity_ids: &[String],
@@ -486,9 +499,7 @@ impl FilamentConnection {
         }
     }
 
-    pub async fn blocked_by_counts(
-        &mut self,
-    ) -> Result<std::collections::HashMap<String, usize>> {
+    pub async fn blocked_by_counts(&mut self) -> Result<std::collections::HashMap<String, usize>> {
         match self {
             Self::Direct(s) => store::blocked_by_counts(s.pool()).await,
             Self::Socket(c) => c.blocked_by_counts().await,

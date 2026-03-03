@@ -921,6 +921,44 @@ pub async fn blocked_by_counts(
         .collect())
 }
 
+/// Batch-fetch entities by their IDs in a single query.
+///
+/// Returns a map of `id → Entity` for all found entities. Missing IDs are silently
+/// omitted from the result.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn batch_get_entities(
+    pool: &Pool<Sqlite>,
+    ids: &[&str],
+) -> Result<std::collections::HashMap<String, Entity>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    // Build `WHERE id IN (?, ?, ...)` with one placeholder per ID
+    let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+    let query = format!(
+        "SELECT * FROM entities WHERE id IN ({})",
+        placeholders.join(", ")
+    );
+
+    let mut q = sqlx::query_as::<_, EntityRow>(&query);
+    for id in ids {
+        q = q.bind(*id);
+    }
+
+    let rows = q.fetch_all(pool).await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let id = r.id.to_string();
+            (id, Entity::from(r))
+        })
+        .collect())
+}
+
 /// Get running agent runs.
 ///
 /// # Errors

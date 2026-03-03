@@ -395,6 +395,16 @@ impl DaemonClient {
         Ok(score)
     }
 
+    pub async fn batch_get_entities(
+        &mut self,
+        ids: &[String],
+    ) -> Result<std::collections::HashMap<String, Entity>> {
+        let result = self
+            .call(Method::BatchGetEntities, serde_json::json!({ "ids": ids }))
+            .await?;
+        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+    }
+
     pub async fn batch_impact_scores(
         &mut self,
         entity_ids: &[String],
@@ -408,9 +418,7 @@ impl DaemonClient {
         serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
     }
 
-    pub async fn blocked_by_counts(
-        &mut self,
-    ) -> Result<std::collections::HashMap<String, usize>> {
+    pub async fn blocked_by_counts(&mut self) -> Result<std::collections::HashMap<String, usize>> {
         let result = self
             .call(Method::BlockedByCounts, serde_json::json!({}))
             .await?;

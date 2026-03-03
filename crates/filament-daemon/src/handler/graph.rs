@@ -44,10 +44,7 @@ pub async fn batch_impact_scores(
     state: &Arc<SharedState>,
 ) -> Result<serde_json::Value> {
     let p: BatchImpactScoresParam = parse_params(params)?;
-    let scores = state
-        .graph_read()
-        .await
-        .batch_impact_scores(&p.entity_ids);
+    let scores = state.graph_read().await.batch_impact_scores(&p.entity_ids);
     Ok(serde_json::to_value(&scores).expect("infallible"))
 }
 

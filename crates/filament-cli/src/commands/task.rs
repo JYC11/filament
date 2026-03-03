@@ -254,6 +254,19 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
             );
         }
         if !relations.is_empty() {
+            // Batch-fetch all related entity names in one query (avoids N+1)
+            let other_ids: Vec<String> = relations
+                .iter()
+                .map(|r| {
+                    if r.source_id == c.id {
+                        r.target_id.to_string()
+                    } else {
+                        r.source_id.to_string()
+                    }
+                })
+                .collect();
+            let name_map = conn.batch_get_entities(&other_ids).await?;
+
             println!("Relations:");
             for r in &relations {
                 let other_id = if r.source_id == c.id {
@@ -261,10 +274,9 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
                 } else {
                     &r.source_id
                 };
-                let other_name = conn
-                    .get_entity(other_id.as_str())
-                    .await
-                    .map_or_else(|_| other_id.to_string(), |e| e.name().to_string());
+                let other_name = name_map
+                    .get(other_id.as_str())
+                    .map_or_else(|| other_id.to_string(), |e| e.name().to_string());
                 if r.source_id == c.id {
                     println!("  {} -> {} ({})", c.name, other_name, r.relation_type);
                 } else {
@@ -331,11 +343,13 @@ async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
     } else {
         let label = if path.len() == 1 { "step" } else { "steps" };
         println!("Critical path ({} {label}):", path.len());
+        // Batch-fetch all path entity names in one query (avoids N+1)
+        let path_ids: Vec<String> = path.iter().map(ToString::to_string).collect();
+        let name_map = conn.batch_get_entities(&path_ids).await?;
         for (i, id) in path.iter().enumerate() {
-            let name = conn
-                .get_entity(id.as_str())
-                .await
-                .map_or_else(|_| id.to_string(), |e| e.name().to_string());
+            let name = name_map
+                .get(id.as_str())
+                .map_or_else(|| id.to_string(), |e| e.name().to_string());
             println!("  {}. {}", i + 1, name);
         }
     }

@@ -103,6 +103,16 @@ pub async fn update_status(
     Ok(serde_json::json!({ "ok": true }))
 }
 
+pub async fn batch_get(
+    params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let p: BatchGetParam = parse_params(params)?;
+    let refs: Vec<&str> = p.ids.iter().map(String::as_str).collect();
+    let entities = store::batch_get_entities(state.store.pool(), &refs).await?;
+    Ok(serde_json::to_value(&entities).expect("infallible"))
+}
+
 pub async fn delete(
     params: serde_json::Value,
     state: &Arc<SharedState>,
@@ -135,6 +145,11 @@ struct SlugParam {
 struct ListEntitiesParam {
     entity_type: Option<String>,
     status: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BatchGetParam {
+    ids: Vec<String>,
 }
 
 #[derive(Deserialize)]

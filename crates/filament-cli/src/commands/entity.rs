@@ -183,6 +183,19 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
             println!("Content:  {path}");
         }
         if !relations.is_empty() {
+            // Batch-fetch all related entity names in one query (avoids N+1)
+            let other_ids: Vec<String> = relations
+                .iter()
+                .map(|r| {
+                    if r.source_id == c.id {
+                        r.target_id.to_string()
+                    } else {
+                        r.source_id.to_string()
+                    }
+                })
+                .collect();
+            let name_map = conn.batch_get_entities(&other_ids).await?;
+
             println!("Relations:");
             for r in &relations {
                 let other_id = if r.source_id == c.id {
@@ -190,10 +203,9 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
                 } else {
                     &r.source_id
                 };
-                let other_name = conn
-                    .get_entity(other_id.as_str())
-                    .await
-                    .map_or_else(|_| other_id.to_string(), |e| e.name().to_string());
+                let other_name = name_map
+                    .get(other_id.as_str())
+                    .map_or_else(|| other_id.to_string(), |e| e.name().to_string());
                 if r.source_id == c.id {
                     println!("  {} -> {} ({})", c.name, other_name, r.relation_type);
                 } else {

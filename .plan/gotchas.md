@@ -87,6 +87,13 @@ Pitfalls discovered during implementation. Check here before debugging mysteriou
 - **`FILAMENT_AGENT_COMMAND` env var is read once at daemon startup** — changing it after `DispatchConfig::from_project_root()` has no effect. Tests use `serve_with_dispatch()` instead.
 - **`AgentRole::FromStr` returns `Result<Self, String>`** (not `FilamentError`) — map at caller boundary to `FilamentError::Validation`.
 
+## SQL Efficiency
+
+- **Never loop `get_entity()` per relation/path step** — this is an N+1 query pattern. Use `batch_get_entities(&ids)` to fetch all entities in a single `WHERE id IN (...)` query, then look up names from the returned `HashMap<String, Entity>`.
+- **Batch APIs exist and must be used**: `batch_get_entities`, `blocked_by_counts`, `batch_impact_scores` — always prefer these over individual queries in loops.
+- **New batch APIs require full-stack wiring**: store function → `Method` enum variant → daemon handler → `DaemonClient` method → `FilamentConnection` dispatch method. Follow the existing `BatchImpactScores` pattern.
+- **`batch_get_entities` silently omits missing IDs** — callers must fall back to displaying the raw ID string when a key is missing from the result map.
+
 ## Tests
 
 - **`#![allow(dead_code)]` in `tests/common/mod.rs`** — each test binary only uses a subset of helpers.

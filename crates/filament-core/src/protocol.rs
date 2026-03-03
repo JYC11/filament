@@ -94,6 +94,9 @@ pub enum Method {
     ContextQuery,
     CheckCycle,
 
+    // Batch entity operations
+    BatchGetEntities,
+
     // Batch relation operations
     BlockedByCounts,
 

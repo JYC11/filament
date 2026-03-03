@@ -994,3 +994,72 @@ async fn blocked_by_counts_returns_correct_counts() {
     // C is target only → blocked_by_count = 0
     assert_eq!(counts.get(id_c.as_str()).copied().unwrap_or(0), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Batch get entities
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn batch_get_entities_returns_requested() {
+    let store = test_db().await;
+
+    let (id_a, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Alpha", 1);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let (id_b, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Beta", 2);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let (id_c, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Gamma", 3);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // Fetch two of three
+    let ids = [id_a.as_str(), id_c.as_str()];
+    let map = batch_get_entities(store.pool(), &ids).await.unwrap();
+
+    assert_eq!(map.len(), 2);
+    assert_eq!(map[id_a.as_str()].name().as_str(), "Alpha");
+    assert_eq!(map[id_c.as_str()].name().as_str(), "Gamma");
+    assert!(!map.contains_key(id_b.as_str()));
+}
+
+#[tokio::test]
+async fn batch_get_entities_empty_ids_returns_empty() {
+    let store = test_db().await;
+    let ids: [&str; 0] = [];
+    let map = batch_get_entities(store.pool(), &ids).await.unwrap();
+    assert!(map.is_empty());
+}
+
+#[tokio::test]
+async fn batch_get_entities_missing_ids_are_omitted() {
+    let store = test_db().await;
+
+    let (id_a, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Exists", 1);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let ids = [id_a.as_str(), "nonexistent-id"];
+    let map = batch_get_entities(store.pool(), &ids).await.unwrap();
+
+    assert_eq!(map.len(), 1);
+    assert_eq!(map[id_a.as_str()].name().as_str(), "Exists");
+}
