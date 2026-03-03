@@ -1,9 +1,7 @@
 use clap::{Args, Subcommand};
 use filament_core::error::Result;
 use filament_core::graph::KnowledgeGraph;
-use filament_core::models::{
-    CreateEntityRequest, CreateRelationRequest, EntityId, EntityStatus,
-};
+use filament_core::models::{CreateEntityRequest, CreateRelationRequest, EntityId, EntityStatus};
 use filament_core::store;
 
 use super::helpers::{
@@ -233,7 +231,10 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
     } else {
         for t in &limited {
             let summary_preview = truncate_with_ellipsis(&t.summary, 60);
-            println!("[P{}] {} [{}] {}", t.priority, t.name, t.status, summary_preview);
+            println!(
+                "[P{}] {} [{}] {}",
+                t.priority, t.name, t.status, summary_preview
+            );
         }
     }
     Ok(())
@@ -351,7 +352,8 @@ async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
     } else if path.is_empty() {
         println!("No dependency chain found for: {}", entity.name);
     } else {
-        println!("Critical path ({} steps):", path.len());
+        let label = if path.len() == 1 { "step" } else { "steps" };
+        println!("Critical path ({} {label}):", path.len());
         for (i, id) in path.iter().enumerate() {
             let name = graph
                 .get_node(id.as_str())

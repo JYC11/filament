@@ -379,6 +379,22 @@ fn entity_duplicate_name_allowed() {
 }
 
 #[test]
+fn entity_update_no_args_error() {
+    let dir = init_project();
+
+    filament(&dir)
+        .args(["add", "no-change", "--type", "module", "--summary", "test"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["update", "no-change"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--summary or --status"));
+}
+
+#[test]
 fn invalid_entity_type_error() {
     let dir = init_project();
 

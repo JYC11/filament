@@ -43,6 +43,47 @@ fn context_around_entity() {
 }
 
 #[test]
+fn context_finds_incoming_edge_neighbors() {
+    let dir = init_project();
+
+    filament(&dir)
+        .args([
+            "add",
+            "upstream",
+            "--type",
+            "module",
+            "--summary",
+            "Upstream module",
+        ])
+        .assert()
+        .success();
+    filament(&dir)
+        .args([
+            "add",
+            "downstream",
+            "--type",
+            "module",
+            "--summary",
+            "Downstream module",
+        ])
+        .assert()
+        .success();
+
+    // upstream depends_on downstream (edge from upstream to downstream)
+    filament(&dir)
+        .args(["relate", "upstream", "depends_on", "downstream"])
+        .assert()
+        .success();
+
+    // Query context around downstream — should find upstream via incoming edge
+    filament(&dir)
+        .args(["context", "--around", "downstream", "--depth", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("upstream"));
+}
+
+#[test]
 fn context_no_relations() {
     let dir = init_project();
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::visit::{Bfs, EdgeRef};
+use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use sqlx::{Pool, Sqlite};
 
@@ -157,6 +157,7 @@ impl KnowledgeGraph {
     }
 
     /// BFS traversal from a node, returning entities within `max_depth` hops.
+    /// Traverses both incoming and outgoing edges (undirected neighborhood).
     #[must_use]
     pub fn traverse_bfs(&self, entity_id: &str, max_depth: usize) -> Vec<&GraphNode> {
         let Some(&start) = self.index.get(entity_id) else {
@@ -164,21 +165,27 @@ impl KnowledgeGraph {
         };
 
         let mut result = Vec::new();
-        let mut bfs = Bfs::new(&self.graph, start);
-        let mut depth_map: HashMap<NodeIndex, usize> = HashMap::new();
-        depth_map.insert(start, 0);
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        visited.insert(start);
+        queue.push_back((start, 0usize));
 
-        while let Some(nx) = bfs.next(&self.graph) {
-            let depth = depth_map[&nx];
-            if depth > max_depth {
-                continue;
-            }
+        while let Some((nx, depth)) = queue.pop_front() {
             if nx != start {
                 result.push(&self.graph[nx]);
             }
-            // Record depth for neighbors
-            for neighbor in self.graph.neighbors(nx) {
-                depth_map.entry(neighbor).or_insert(depth + 1);
+            if depth >= max_depth {
+                continue;
+            }
+            // Traverse both directions for context discovery
+            for neighbor in self
+                .graph
+                .neighbors_directed(nx, Direction::Outgoing)
+                .chain(self.graph.neighbors_directed(nx, Direction::Incoming))
+            {
+                if visited.insert(neighbor) {
+                    queue.push_back((neighbor, depth + 1));
+                }
             }
         }
 

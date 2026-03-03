@@ -218,6 +218,41 @@ async fn context_summaries_within_hops() {
 }
 
 // ---------------------------------------------------------------------------
+// Context query follows both directions
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn context_traverses_incoming_edges() {
+    let store = test_db().await;
+
+    let (a_id, b_id) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let a = create_entity(conn, &task_req("Upstream", 1)).await?;
+                let b = create_entity(conn, &task_req("Downstream", 1)).await?;
+                // Upstream blocks Downstream (edge from A to B)
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                Ok((a, b))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    // Query context around Downstream — should find Upstream via incoming edge
+    let summaries = graph.context_summaries(b_id.as_str(), 1);
+    assert_eq!(summaries.len(), 1);
+    assert!(summaries[0].contains("Upstream"));
+
+    // Also verify the outgoing direction still works
+    let summaries = graph.context_summaries(a_id.as_str(), 1);
+    assert_eq!(summaries.len(), 1);
+    assert!(summaries[0].contains("Downstream"));
+}
+
+// ---------------------------------------------------------------------------
 // critical_path safety with cycles
 // ---------------------------------------------------------------------------
 

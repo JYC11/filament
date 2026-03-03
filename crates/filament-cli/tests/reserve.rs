@@ -75,8 +75,7 @@ fn reservations_filter_by_agent() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("src/*.rs")
-                .and(predicate::str::contains("tests/*.rs").not()),
+            predicate::str::contains("src/*.rs").and(predicate::str::contains("tests/*.rs").not()),
         );
 }
 
@@ -86,14 +85,7 @@ fn reservations_clean() {
 
     // Create a reservation with minimum TTL (1 second)
     filament(&dir)
-        .args([
-            "reserve",
-            "tmp/*.rs",
-            "--agent",
-            "agent-1",
-            "--ttl",
-            "1",
-        ])
+        .args(["reserve", "tmp/*.rs", "--agent", "agent-1", "--ttl", "1"])
         .assert()
         .success();
 

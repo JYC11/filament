@@ -191,7 +191,7 @@ fn task_critical_path_no_deps() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("Critical path (1 steps)")
+            predicate::str::contains("Critical path (1 step)")
                 .and(predicate::str::contains("standalone")),
         );
 }
@@ -206,7 +206,14 @@ fn task_assign() {
         .success();
 
     filament(&dir)
-        .args(["add", "worker-agent", "--type", "agent", "--summary", "An agent"])
+        .args([
+            "add",
+            "worker-agent",
+            "--type",
+            "agent",
+            "--summary",
+            "An agent",
+        ])
         .assert()
         .success();
 
@@ -214,7 +221,9 @@ fn task_assign() {
         .args(["task", "assign", "assignable", "--to", "worker-agent"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Assigned assignable to worker-agent"));
+        .stdout(predicate::str::contains(
+            "Assigned assignable to worker-agent",
+        ));
 }
 
 #[test]
@@ -292,4 +301,60 @@ fn task_show_displays_relation_names() {
                 .and(predicate::str::contains("child-task"))
                 .and(predicate::str::contains("blocks")),
         );
+}
+
+#[test]
+fn task_ready_json() {
+    let dir = init_project();
+
+    filament(&dir)
+        .args([
+            "task",
+            "add",
+            "json-ready",
+            "--summary",
+            "Ready task",
+            "--priority",
+            "0",
+        ])
+        .assert()
+        .success();
+
+    let output = filament(&dir)
+        .args(["--json", "task", "ready"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let tasks: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0]["name"], "json-ready");
+    assert_eq!(tasks[0]["priority"], 0);
+    assert_eq!(tasks[0]["status"], "open");
+}
+
+#[test]
+fn task_critical_path_plural_steps() {
+    let dir = init_project();
+
+    filament(&dir)
+        .args(["task", "add", "cp-a", "--summary", "Step A"])
+        .assert()
+        .success();
+    filament(&dir)
+        .args(["task", "add", "cp-b", "--summary", "Step B"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["relate", "cp-a", "blocks", "cp-b"])
+        .assert()
+        .success();
+
+    // 2 steps should use plural "steps"
+    filament(&dir)
+        .args(["task", "critical-path", "cp-a"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Critical path (2 steps)"));
 }

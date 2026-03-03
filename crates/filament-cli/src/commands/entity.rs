@@ -10,7 +10,7 @@ use crate::Cli;
 
 #[derive(Args, Debug)]
 pub struct AddArgs {
-    /// Entity name (unique).
+    /// Entity name.
     name: String,
     /// Entity type (task, module, service, agent, plan, doc).
     #[arg(long, rename_all = "snake_case")]
@@ -124,6 +124,12 @@ pub async fn remove(cli: &Cli, args: &RemoveArgs) -> Result<()> {
 }
 
 pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
+    if args.summary.is_none() && args.status.is_none() {
+        return Err(filament_core::error::FilamentError::Validation(
+            "specify at least one of --summary or --status to update".to_string(),
+        ));
+    }
+
     let s = connect().await?;
     let entity = resolve_entity(&s, &args.name).await?;
     let id = entity.id.clone();
@@ -132,16 +138,14 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     let parsed_status = args
         .status
         .as_deref()
-        .map(|status_str| {
-            match status_str.to_lowercase().as_str() {
-                "open" => Ok(EntityStatus::Open),
-                "closed" => Ok(EntityStatus::Closed),
-                "in_progress" => Ok(EntityStatus::InProgress),
-                "blocked" => Ok(EntityStatus::Blocked),
-                other => Err(filament_core::error::FilamentError::Validation(format!(
-                    "invalid status: '{other}' (expected: open, closed, in_progress, blocked)"
-                ))),
-            }
+        .map(|status_str| match status_str.to_lowercase().as_str() {
+            "open" => Ok(EntityStatus::Open),
+            "closed" => Ok(EntityStatus::Closed),
+            "in_progress" => Ok(EntityStatus::InProgress),
+            "blocked" => Ok(EntityStatus::Blocked),
+            other => Err(filament_core::error::FilamentError::Validation(format!(
+                "invalid status: '{other}' (expected: open, closed, in_progress, blocked)"
+            ))),
         })
         .transpose()?;
 
