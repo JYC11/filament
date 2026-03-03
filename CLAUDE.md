@@ -20,7 +20,7 @@ filament/
 ├── crates/
 │   ├── filament-core/          # library: graph, storage, models, errors
 │   ├── filament-cli/           # the single binary (clap), depends on core + daemon + tui
-│   ├── filament-daemon/        # library: Unix socket server, MCP server
+│   ├── filament-daemon/        # library: Unix socket server, handler/{entity,relation,message,reservation,agent_run,graph,event}
 │   └── filament-tui/           # library: ratatui app
 └── migrations/
 ```
@@ -108,6 +108,8 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 - `remove_edge()` added to `KnowledgeGraph`
 - CLI routes through daemon when running (falls back to direct DB access)
 - All 12 mutating store functions record events
+- Handler refactored: `handler/` module directory (entity, relation, message, reservation, agent_run, graph, event)
+- `store::get_relation()` added — direct lookup by ID
 - 159 tests (84 core + 54 CLI + 21 daemon integration), zero clippy warnings
 - Multi-agent integration tests: task scheduling, reservation conflicts, messaging, full workflow
 - MCP server (3.3) deferred — tracked as `implement-mcp-server` task

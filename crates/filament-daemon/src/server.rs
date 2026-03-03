@@ -93,12 +93,9 @@ pub async fn handle_connection(stream: UnixStream, state: Arc<SharedState>) {
 
         if writer.write_all(json.as_bytes()).await.is_err()
             || writer.write_all(b"\n").await.is_err()
+            || writer.flush().await.is_err()
         {
             error!("failed to write response");
-            return;
-        }
-        if writer.flush().await.is_err() {
-            error!("failed to flush response");
             return;
         }
     }

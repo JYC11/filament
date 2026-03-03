@@ -319,6 +319,19 @@ pub async fn create_relation(
     Ok(id)
 }
 
+/// Get a relation by ID.
+///
+/// # Errors
+///
+/// Returns `FilamentError::RelationNotFound` if no relation with that ID exists.
+pub async fn get_relation(pool: &Pool<Sqlite>, id: &str) -> Result<Relation> {
+    sqlx::query_as::<_, Relation>("SELECT * FROM relations WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| FilamentError::RelationNotFound { id: id.to_string() })
+}
+
 /// List relations for an entity (as source or target).
 ///
 /// # Errors
