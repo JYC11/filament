@@ -1,6 +1,6 @@
 mod common;
 
-use common::{blocks_req, sample_entity_req, sample_message_req, test_db};
+use common::{blocks_req, sample_entity_req, sample_message_req, task_req, test_db};
 use filament_core::error::FilamentError;
 use filament_core::models::*;
 use filament_core::store::*;
@@ -419,4 +419,173 @@ async fn event_recording() {
     let events = get_entity_events(store.pool(), "e1").await.unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type, EventType::StatusChange);
+}
+
+// ---------------------------------------------------------------------------
+// Expire stale reservations
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn expire_stale_reservations_cleans_expired() {
+    let store = test_db().await;
+
+    // Insert a reservation that already expired (expires_at in the past)
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO file_reservations (id, agent_name, file_glob, exclusive, created_at, expires_at)
+                     VALUES ('r1', 'old-agent', 'src/*.rs', 1, '2020-01-01T00:00:00Z', '2020-01-02T00:00:00Z')",
+                )
+                .execute(&mut *conn)
+                .await?;
+                let expired = expire_stale_reservations(conn).await?;
+                assert_eq!(expired, 1);
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// Agent run lifecycle
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn agent_run_create_and_finish() {
+    let store = test_db().await;
+
+    // Create an entity for the task_id reference
+    let task_id = store
+        .with_transaction(|conn| {
+            let req = sample_entity_req();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let run_id = store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move { create_agent_run(conn, tid.as_str(), "coder", Some(1234)).await })
+        })
+        .await
+        .unwrap();
+
+    // Should appear in running list
+    let running = list_running_agents(store.pool()).await.unwrap();
+    assert_eq!(running.len(), 1);
+    assert_eq!(running[0].agent_role, "coder");
+    assert_eq!(running[0].pid, Some(1234));
+
+    // Finish the run
+    store
+        .with_transaction(|conn| {
+            let rid = run_id.clone();
+            Box::pin(async move {
+                finish_agent_run(
+                    conn,
+                    rid.as_str(),
+                    AgentStatus::Completed,
+                    Some(r#"{"ok":true}"#),
+                )
+                .await
+            })
+        })
+        .await
+        .unwrap();
+
+    // Should no longer appear in running list
+    let running = list_running_agents(store.pool()).await.unwrap();
+    assert!(running.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// List relations
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_relations_returns_both_directions() {
+    let store = test_db().await;
+
+    let (id1, id2, id3) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let id1 = create_entity(conn, &task_req("A", 1)).await?;
+                let id2 = create_entity(conn, &task_req("B", 1)).await?;
+                let id3 = create_entity(conn, &task_req("C", 1)).await?;
+                // A blocks B, C blocks A
+                create_relation(conn, &blocks_req(id1.as_str(), id2.as_str())).await?;
+                create_relation(conn, &blocks_req(id3.as_str(), id1.as_str())).await?;
+                Ok((id1, id2, id3))
+            })
+        })
+        .await
+        .unwrap();
+
+    // A has 2 relations (as source of one, target of other)
+    let rels = list_relations(store.pool(), id1.as_str()).await.unwrap();
+    assert_eq!(rels.len(), 2);
+
+    // B has 1 relation (as target)
+    let rels = list_relations(store.pool(), id2.as_str()).await.unwrap();
+    assert_eq!(rels.len(), 1);
+
+    // C has 1 relation (as source)
+    let rels = list_relations(store.pool(), id3.as_str()).await.unwrap();
+    assert_eq!(rels.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Delete relation not found
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn delete_relation_not_found() {
+    let store = test_db().await;
+
+    let err = store
+        .with_transaction(|conn| {
+            Box::pin(async move { delete_relation(conn, "nonexistent").await })
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, FilamentError::RelationNotFound { .. }));
+}
+
+// ---------------------------------------------------------------------------
+// Mark nonexistent message read
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn mark_nonexistent_message_read_returns_error() {
+    let store = test_db().await;
+
+    let err = store
+        .with_transaction(|conn| {
+            Box::pin(async move { mark_message_read(conn, "nonexistent").await })
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, FilamentError::MessageNotFound { .. }));
+}
+
+// ---------------------------------------------------------------------------
+// Release nonexistent reservation (idempotent — no error)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn release_nonexistent_reservation_is_idempotent() {
+    let store = test_db().await;
+
+    // Should succeed silently (advisory lock semantics — release is idempotent)
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move { release_reservation(conn, "nonexistent").await })
+        })
+        .await
+        .unwrap();
 }

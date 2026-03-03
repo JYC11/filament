@@ -246,10 +246,7 @@ pub async fn delete_relation(conn: &mut SqliteConnection, id: &str) -> Result<()
         .rows_affected();
 
     if rows == 0 {
-        return Err(FilamentError::RelationNotFound {
-            source_id: id.to_string(),
-            target_id: String::new(),
-        });
+        return Err(FilamentError::RelationNotFound { id: id.to_string() });
     }
     Ok(())
 }
@@ -309,11 +306,16 @@ pub async fn get_inbox(pool: &Pool<Sqlite>, agent: &str) -> Result<Vec<Message>>
 /// Returns `FilamentError::Database` on SQL failure.
 pub async fn mark_message_read(conn: &mut SqliteConnection, id: &str) -> Result<()> {
     let now = Utc::now();
-    sqlx::query("UPDATE messages SET status = 'read', read_at = ? WHERE id = ?")
+    let rows = sqlx::query("UPDATE messages SET status = 'read', read_at = ? WHERE id = ?")
         .bind(now)
         .bind(id)
         .execute(conn)
-        .await?;
+        .await?
+        .rows_affected();
+
+    if rows == 0 {
+        return Err(FilamentError::MessageNotFound { id: id.to_string() });
+    }
     Ok(())
 }
 

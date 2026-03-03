@@ -347,3 +347,21 @@ fn send_message_empty_body_rejected() {
     let err = ValidSendMessageRequest::try_from(req).unwrap_err();
     assert!(matches!(err, FilamentError::Validation(_)));
 }
+
+// ---------------------------------------------------------------------------
+// AgentMessage validation via NonEmptyString
+// ---------------------------------------------------------------------------
+
+#[test]
+fn agent_message_rejects_empty_to_agent() {
+    let json = r#"{"to_agent": "", "body": "hello", "msg_type": "text"}"#;
+    let result: Result<AgentMessage, _> = serde_json::from_str(json);
+    assert!(result.is_err());
+}
+
+#[test]
+fn agent_message_rejects_empty_body() {
+    let json = r#"{"to_agent": "orchestrator", "body": "   ", "msg_type": "text"}"#;
+    let result: Result<AgentMessage, _> = serde_json::from_str(json);
+    assert!(result.is_err());
+}

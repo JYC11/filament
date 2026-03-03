@@ -228,7 +228,7 @@ impl KnowledgeGraph {
     }
 
     /// Critical path: longest dependency chain from a task to completion.
-    /// Returns the chain of entity IDs.
+    /// Returns the chain of entity IDs. Safe against cycles.
     #[must_use]
     pub fn critical_path(&self, entity_id: &str) -> Vec<EntityId> {
         let Some(&start) = self.index.get(entity_id) else {
@@ -238,7 +238,9 @@ impl KnowledgeGraph {
         // DFS to find the longest path through "blocks"/"depends_on" edges
         let mut longest: Vec<EntityId> = Vec::new();
         let mut current: Vec<EntityId> = vec![EntityId::from(entity_id)];
-        self.dfs_longest_path(start, &mut current, &mut longest);
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(start);
+        self.dfs_longest_path(start, &mut current, &mut longest, &mut visited);
         longest
     }
 
@@ -247,17 +249,19 @@ impl KnowledgeGraph {
         node: NodeIndex,
         current: &mut Vec<EntityId>,
         longest: &mut Vec<EntityId>,
+        visited: &mut std::collections::HashSet<NodeIndex>,
     ) {
         let mut found_dep = false;
         for edge in self.graph.edges_directed(node, Direction::Outgoing) {
             let etype = &edge.weight().relation_type;
             if *etype == RelationType::Blocks || *etype == RelationType::DependsOn {
                 let target = edge.target();
-                if self.graph[target].status != EntityStatus::Closed {
+                if self.graph[target].status != EntityStatus::Closed && visited.insert(target) {
                     found_dep = true;
                     current.push(self.graph[target].entity_id.clone());
-                    self.dfs_longest_path(target, current, longest);
+                    self.dfs_longest_path(target, current, longest, visited);
                     current.pop();
+                    visited.remove(&target);
                 }
             }
         }

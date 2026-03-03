@@ -7,11 +7,11 @@ pub enum FilamentError {
     #[error("Entity not found: {id}")]
     EntityNotFound { id: String },
 
-    #[error("Relation not found: {source_id} -> {target_id}")]
-    RelationNotFound {
-        source_id: String,
-        target_id: String,
-    },
+    #[error("Relation not found: {id}")]
+    RelationNotFound { id: String },
+
+    #[error("Message not found: {id}")]
+    MessageNotFound { id: String },
 
     #[error("Cycle detected: {path}")]
     CycleDetected { path: String },
@@ -41,6 +41,7 @@ impl FilamentError {
         match self {
             Self::EntityNotFound { .. } => "ENTITY_NOT_FOUND",
             Self::RelationNotFound { .. } => "RELATION_NOT_FOUND",
+            Self::MessageNotFound { .. } => "MESSAGE_NOT_FOUND",
             Self::CycleDetected { .. } => "CYCLE_DETECTED",
             Self::FileReserved { .. } => "FILE_RESERVED",
             Self::ReservationExpired => "RESERVATION_EXPIRED",
@@ -62,6 +63,9 @@ impl FilamentError {
             Self::EntityNotFound { id } => {
                 Some(format!("Check entity ID '{id}' exists with `filament entity list`"))
             }
+            Self::MessageNotFound { id } => {
+                Some(format!("Check message ID '{id}' exists with `filament msg inbox`"))
+            }
             Self::CycleDetected { .. } => {
                 Some("Remove one dependency edge to break the cycle".to_string())
             }
@@ -80,7 +84,9 @@ impl FilamentError {
     pub const fn exit_code(&self) -> i32 {
         match self {
             Self::Database(_) => 2,
-            Self::EntityNotFound { .. } | Self::RelationNotFound { .. } => 3,
+            Self::EntityNotFound { .. }
+            | Self::RelationNotFound { .. }
+            | Self::MessageNotFound { .. } => 3,
             Self::Validation(_) | Self::Protocol(_) => 4,
             Self::CycleDetected { .. } => 5,
             Self::FileReserved { .. } | Self::ReservationExpired => 6,

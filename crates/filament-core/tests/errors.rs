@@ -11,10 +11,15 @@ fn error_codes_are_stable() {
         ),
         (
             FilamentError::RelationNotFound {
-                source_id: "a".to_string(),
-                target_id: "b".to_string(),
+                id: "rel-1".to_string(),
             },
             "RELATION_NOT_FOUND",
+        ),
+        (
+            FilamentError::MessageNotFound {
+                id: "msg-1".to_string(),
+            },
+            "MESSAGE_NOT_FOUND",
         ),
         (
             FilamentError::CycleDetected {

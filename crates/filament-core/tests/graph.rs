@@ -218,6 +218,46 @@ async fn context_summaries_within_hops() {
 }
 
 // ---------------------------------------------------------------------------
+// critical_path safety with cycles
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn critical_path_safe_with_cycle() {
+    let store = test_db().await;
+
+    let a_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let a = create_entity(conn, &task_req("A", 1)).await?;
+                let b = create_entity(conn, &task_req("B", 1)).await?;
+                // A blocks B
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                // B blocks A (cycle via raw SQL)
+                sqlx::query(
+                    "INSERT INTO relations (id, source_id, target_id, relation_type, created_at)
+                     VALUES ('cycle-rel', ?, ?, 'blocks', '2024-01-01T00:00:00Z')",
+                )
+                .bind(b.as_str())
+                .bind(a.as_str())
+                .execute(conn)
+                .await?;
+                Ok(a)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    // Should return a path without stack overflow, even with a cycle
+    let path = graph.critical_path(a_id.as_str());
+    assert!(!path.is_empty());
+    // Path length is bounded (can't loop forever)
+    assert!(path.len() <= graph.node_count());
+}
+
+// ---------------------------------------------------------------------------
 // Node removal
 // ---------------------------------------------------------------------------
 

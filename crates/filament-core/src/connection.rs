@@ -41,7 +41,13 @@ impl FilamentConnection {
 
         // Fall back to direct mode
         let db_path = runtime_dir.join(DB_NAME);
-        let pool = init_pool(db_path.to_str().unwrap_or("")).await?;
+        let db_str = db_path.to_str().ok_or_else(|| {
+            crate::error::FilamentError::Validation(format!(
+                "database path is not valid UTF-8: {}",
+                db_path.display()
+            ))
+        })?;
+        let pool = init_pool(db_str).await?;
         Ok(Self::Direct(FilamentStore::new(pool)))
     }
 

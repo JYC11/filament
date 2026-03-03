@@ -8,6 +8,60 @@ use crate::error::FilamentError;
 // Typed ID macro
 // ---------------------------------------------------------------------------
 
+/// Generate `as_str()` and `Display` for enums with `snake_case` string mapping.
+macro_rules! impl_enum_str {
+    ($name:ident { $($variant:ident => $str:literal),+ $(,)? }) => {
+        impl $name {
+            #[must_use]
+            pub const fn as_str(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $str,)+
+                }
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+    };
+}
+
+/// Generate sqlx `Decode` (with validation), `Encode`, and `Type` (with `compatible`)
+/// for newtypes whose inner type matches the SQL type.
+macro_rules! impl_sqlx_newtype {
+    ($name:ident, $inner:ty) => {
+        impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for $name {
+            fn decode(
+                value: <sqlx::Sqlite as sqlx::Database>::ValueRef<'r>,
+            ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
+                let v = <$inner as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
+                Self::new(v).map_err(|e| e.to_string().into())
+            }
+        }
+
+        impl sqlx::Encode<'_, sqlx::Sqlite> for $name {
+            fn encode_by_ref(
+                &self,
+                args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>,
+            ) -> std::result::Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+                <$inner as sqlx::Encode<'_, sqlx::Sqlite>>::encode_by_ref(&self.0, args)
+            }
+        }
+
+        impl sqlx::Type<sqlx::Sqlite> for $name {
+            fn type_info() -> <sqlx::Sqlite as sqlx::Database>::TypeInfo {
+                <$inner as sqlx::Type<sqlx::Sqlite>>::type_info()
+            }
+
+            fn compatible(ty: &<sqlx::Sqlite as sqlx::Database>::TypeInfo) -> bool {
+                <$inner as sqlx::Type<sqlx::Sqlite>>::compatible(ty)
+            }
+        }
+    };
+}
+
 /// Generate a newtype wrapper around `String` for type-safe IDs.
 macro_rules! typed_id {
     ($name:ident) => {
@@ -218,7 +272,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for Priority {
     ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
         let n = <i32 as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
         let n = u8::try_from(n).map_err(|_| format!("priority out of u8 range: {n}"))?;
-        Ok(Self(n))
+        Self::new(n).map_err(|e| e.to_string().into())
     }
 }
 
@@ -287,33 +341,7 @@ impl From<Weight> for f64 {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for Weight {
-    fn decode(
-        value: <sqlx::Sqlite as sqlx::Database>::ValueRef<'r>,
-    ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
-        let f = <f64 as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
-        Ok(Self(f))
-    }
-}
-
-impl sqlx::Encode<'_, sqlx::Sqlite> for Weight {
-    fn encode_by_ref(
-        &self,
-        args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>,
-    ) -> std::result::Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        <f64 as sqlx::Encode<'_, sqlx::Sqlite>>::encode_by_ref(&self.0, args)
-    }
-}
-
-impl sqlx::Type<sqlx::Sqlite> for Weight {
-    fn type_info() -> <sqlx::Sqlite as sqlx::Database>::TypeInfo {
-        <f64 as sqlx::Type<sqlx::Sqlite>>::type_info()
-    }
-
-    fn compatible(ty: &<sqlx::Sqlite as sqlx::Database>::TypeInfo) -> bool {
-        <f64 as sqlx::Type<sqlx::Sqlite>>::compatible(ty)
-    }
-}
+impl_sqlx_newtype!(Weight, f64);
 
 /// Context budget as a fraction (0.0–1.0). Must be finite and within range.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -358,33 +386,7 @@ impl From<BudgetPct> for f64 {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for BudgetPct {
-    fn decode(
-        value: <sqlx::Sqlite as sqlx::Database>::ValueRef<'r>,
-    ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
-        let f = <f64 as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
-        Ok(Self(f))
-    }
-}
-
-impl sqlx::Encode<'_, sqlx::Sqlite> for BudgetPct {
-    fn encode_by_ref(
-        &self,
-        args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>,
-    ) -> std::result::Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        <f64 as sqlx::Encode<'_, sqlx::Sqlite>>::encode_by_ref(&self.0, args)
-    }
-}
-
-impl sqlx::Type<sqlx::Sqlite> for BudgetPct {
-    fn type_info() -> <sqlx::Sqlite as sqlx::Database>::TypeInfo {
-        <f64 as sqlx::Type<sqlx::Sqlite>>::type_info()
-    }
-
-    fn compatible(ty: &<sqlx::Sqlite as sqlx::Database>::TypeInfo) -> bool {
-        <f64 as sqlx::Type<sqlx::Sqlite>>::compatible(ty)
-    }
-}
+impl_sqlx_newtype!(BudgetPct, f64);
 
 /// A string guaranteed to be non-empty (trimmed).
 #[derive(
@@ -457,33 +459,7 @@ impl std::borrow::Borrow<str> for NonEmptyString {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for NonEmptyString {
-    fn decode(
-        value: <sqlx::Sqlite as sqlx::Database>::ValueRef<'r>,
-    ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
-        let s = <String as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
-        Ok(Self(s))
-    }
-}
-
-impl sqlx::Encode<'_, sqlx::Sqlite> for NonEmptyString {
-    fn encode_by_ref(
-        &self,
-        args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>,
-    ) -> std::result::Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        <String as sqlx::Encode<'_, sqlx::Sqlite>>::encode_by_ref(&self.0, args)
-    }
-}
-
-impl sqlx::Type<sqlx::Sqlite> for NonEmptyString {
-    fn type_info() -> <sqlx::Sqlite as sqlx::Database>::TypeInfo {
-        <String as sqlx::Type<sqlx::Sqlite>>::type_info()
-    }
-
-    fn compatible(ty: &<sqlx::Sqlite as sqlx::Database>::TypeInfo) -> bool {
-        <String as sqlx::Type<sqlx::Sqlite>>::compatible(ty)
-    }
-}
+impl_sqlx_newtype!(NonEmptyString, String);
 
 /// Reservation TTL in seconds. Must be > 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -535,25 +511,14 @@ pub enum EntityType {
     Doc,
 }
 
-impl EntityType {
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Task => "task",
-            Self::Module => "module",
-            Self::Service => "service",
-            Self::Agent => "agent",
-            Self::Plan => "plan",
-            Self::Doc => "doc",
-        }
-    }
-}
-
-impl std::fmt::Display for EntityType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+impl_enum_str!(EntityType {
+    Task => "task",
+    Module => "module",
+    Service => "service",
+    Agent => "agent",
+    Plan => "plan",
+    Doc => "doc",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
@@ -567,25 +532,14 @@ pub enum RelationType {
     AssignedTo,
 }
 
-impl RelationType {
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Blocks => "blocks",
-            Self::DependsOn => "depends_on",
-            Self::Produces => "produces",
-            Self::Owns => "owns",
-            Self::RelatesTo => "relates_to",
-            Self::AssignedTo => "assigned_to",
-        }
-    }
-}
-
-impl std::fmt::Display for RelationType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+impl_enum_str!(RelationType {
+    Blocks => "blocks",
+    DependsOn => "depends_on",
+    Produces => "produces",
+    Owns => "owns",
+    RelatesTo => "relates_to",
+    AssignedTo => "assigned_to",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
@@ -597,23 +551,12 @@ pub enum EntityStatus {
     Blocked,
 }
 
-impl EntityStatus {
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Open => "open",
-            Self::InProgress => "in_progress",
-            Self::Closed => "closed",
-            Self::Blocked => "blocked",
-        }
-    }
-}
-
-impl std::fmt::Display for EntityStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+impl_enum_str!(EntityStatus {
+    Open => "open",
+    InProgress => "in_progress",
+    Closed => "closed",
+    Blocked => "blocked",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
@@ -625,23 +568,12 @@ pub enum MessageType {
     Artifact,
 }
 
-impl MessageType {
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Text => "text",
-            Self::Question => "question",
-            Self::Blocker => "blocker",
-            Self::Artifact => "artifact",
-        }
-    }
-}
-
-impl std::fmt::Display for MessageType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+impl_enum_str!(MessageType {
+    Text => "text",
+    Question => "question",
+    Blocker => "blocker",
+    Artifact => "artifact",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
@@ -652,22 +584,11 @@ pub enum MessageStatus {
     Archived,
 }
 
-impl MessageStatus {
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Unread => "unread",
-            Self::Read => "read",
-            Self::Archived => "archived",
-        }
-    }
-}
-
-impl std::fmt::Display for MessageStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+impl_enum_str!(MessageStatus {
+    Unread => "unread",
+    Read => "read",
+    Archived => "archived",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
@@ -680,24 +601,13 @@ pub enum AgentStatus {
     NeedsInput,
 }
 
-impl AgentStatus {
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Running => "running",
-            Self::Completed => "completed",
-            Self::Blocked => "blocked",
-            Self::Failed => "failed",
-            Self::NeedsInput => "needs_input",
-        }
-    }
-}
-
-impl std::fmt::Display for AgentStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+impl_enum_str!(AgentStatus {
+    Running => "running",
+    Completed => "completed",
+    Blocked => "blocked",
+    Failed => "failed",
+    NeedsInput => "needs_input",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
@@ -717,31 +627,20 @@ pub enum EventType {
     AgentFinished,
 }
 
-impl EventType {
-    #[must_use]
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::EntityCreated => "entity_created",
-            Self::EntityUpdated => "entity_updated",
-            Self::EntityDeleted => "entity_deleted",
-            Self::StatusChange => "status_change",
-            Self::RelationCreated => "relation_created",
-            Self::RelationDeleted => "relation_deleted",
-            Self::MessageSent => "message_sent",
-            Self::MessageRead => "message_read",
-            Self::ReservationAcquired => "reservation_acquired",
-            Self::ReservationReleased => "reservation_released",
-            Self::AgentStarted => "agent_started",
-            Self::AgentFinished => "agent_finished",
-        }
-    }
-}
-
-impl std::fmt::Display for EventType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+impl_enum_str!(EventType {
+    EntityCreated => "entity_created",
+    EntityUpdated => "entity_updated",
+    EntityDeleted => "entity_deleted",
+    StatusChange => "status_change",
+    RelationCreated => "relation_created",
+    RelationDeleted => "relation_deleted",
+    MessageSent => "message_sent",
+    MessageRead => "message_read",
+    ReservationAcquired => "reservation_acquired",
+    ReservationReleased => "reservation_released",
+    AgentStarted => "agent_started",
+    AgentFinished => "agent_finished",
+});
 
 // ---------------------------------------------------------------------------
 // DB row structs
