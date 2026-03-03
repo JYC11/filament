@@ -39,6 +39,18 @@ pub async fn impact_score(
     Ok(serde_json::json!({ "score": score }))
 }
 
+pub async fn batch_impact_scores(
+    params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let p: BatchImpactScoresParam = parse_params(params)?;
+    let scores = state
+        .graph_read()
+        .await
+        .batch_impact_scores(&p.entity_ids);
+    Ok(serde_json::to_value(&scores).expect("infallible"))
+}
+
 pub async fn context_query(
     params: serde_json::Value,
     state: &Arc<SharedState>,
@@ -62,6 +74,11 @@ pub async fn check_cycle(
 // ---------------------------------------------------------------------------
 // Param structs
 // ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct BatchImpactScoresParam {
+    entity_ids: Vec<String>,
+}
 
 #[derive(Deserialize)]
 struct ContextQueryParam {

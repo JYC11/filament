@@ -62,8 +62,11 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::ReadyTasks => graph::ready_tasks(params, state).await,
         Method::CriticalPath => graph::critical_path(params, state).await,
         Method::ImpactScore => graph::impact_score(params, state).await,
+        Method::BatchImpactScores => graph::batch_impact_scores(params, state).await,
         Method::ContextQuery => graph::context_query(params, state).await,
         Method::CheckCycle => graph::check_cycle(params, state).await,
+        // Batch relation
+        Method::BlockedByCounts => relation::blocked_by_counts(params, state).await,
         // Event
         Method::GetEntityEvents => event::get_events(params, state).await,
     }

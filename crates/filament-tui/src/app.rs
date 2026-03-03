@@ -5,9 +5,7 @@ use ratatui::widgets::TableState;
 
 use filament_core::connection::FilamentConnection;
 use filament_core::error::Result;
-use filament_core::models::{
-    AgentRun, Entity, EntityStatus, EntityType, RelationType, Reservation,
-};
+use filament_core::models::{AgentRun, Entity, EntityStatus, EntityType, Reservation};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -159,36 +157,40 @@ impl App {
             Ok(entities) => {
                 let task_count = entities.len();
                 let use_impact = task_count <= 50;
-                let mut rows = Vec::with_capacity(task_count);
 
-                for entity in entities {
-                    let entity_id = entity.id().as_str().to_string();
+                // Batch: one query for all blocked-by counts
+                let blocked_counts = self.conn.blocked_by_counts().await.unwrap_or_default();
 
-                    let blocked_by_count = self
-                        .conn
-                        .list_relations(&entity_id)
+                // Batch: one graph hydration for all impact scores
+                let entity_ids: Vec<String> = if use_impact {
+                    entities
+                        .iter()
+                        .map(|e| e.id().as_str().to_string())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let impact_scores = if use_impact {
+                    self.conn
+                        .batch_impact_scores(&entity_ids)
                         .await
-                        .map(|rels| {
-                            rels.iter()
-                                .filter(|r| r.relation_type == RelationType::DependsOn)
-                                .count()
-                        })
-                        .unwrap_or(0);
+                        .unwrap_or_default()
+                } else {
+                    std::collections::HashMap::new()
+                };
 
-                    let impact = if use_impact {
-                        self.conn.impact_score(&entity_id).await.unwrap_or(0)
-                    } else {
-                        0
-                    };
-
+                let mut rows = Vec::with_capacity(task_count);
+                for entity in entities {
+                    let entity_id = entity.id().as_str();
                     rows.push(TaskRow {
+                        blocked_by_count: blocked_counts.get(entity_id).copied().unwrap_or(0),
+                        impact: impact_scores.get(entity_id).copied().unwrap_or(0),
                         entity,
-                        blocked_by_count,
-                        impact,
                     });
                 }
 
                 self.tasks = rows;
+                self.clamp_task_selection();
                 self.status_message = None;
             }
             Err(e) => {
@@ -256,6 +258,17 @@ impl App {
             Tab::Tasks => &mut self.task_table_state,
             Tab::Agents => &mut self.agent_table_state,
             Tab::Reservations => &mut self.reservation_table_state,
+        }
+    }
+
+    fn clamp_task_selection(&mut self) {
+        let len = self.tasks.len();
+        if let Some(idx) = self.task_table_state.selected() {
+            if len == 0 {
+                self.task_table_state.select(None);
+            } else if idx >= len {
+                self.task_table_state.select(Some(len - 1));
+            }
         }
     }
 

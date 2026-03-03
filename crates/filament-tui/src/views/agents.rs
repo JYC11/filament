@@ -92,8 +92,9 @@ fn agent_status_color(status: &AgentStatus) -> Style {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() > max {
-        format!("{}...", &s[..max.saturating_sub(3)])
+    if s.chars().count() > max {
+        let truncated: String = s.chars().take(max.saturating_sub(3)).collect();
+        format!("{truncated}...")
     } else {
         s.to_string()
     }

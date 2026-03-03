@@ -319,3 +319,43 @@ async fn remove_node_updates_counts() {
     assert_eq!(graph.node_count(), 1);
     assert!(graph.get_node(a_id.as_str()).is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Batch impact scores
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn batch_impact_scores_returns_all_requested() {
+    let store = test_db().await;
+
+    // A blocks B, B blocks C → impact follows incoming edges:
+    // impact(C)=2 (A→B→C transitively), impact(B)=1 (A→B), impact(A)=0
+    let (a_id, b_id, c_id) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                create_relation(conn, &blocks_req(b.as_str(), c.as_str())).await?;
+                Ok((a, b, c))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let ids = vec![
+        a_id.as_str().to_string(),
+        b_id.as_str().to_string(),
+        c_id.as_str().to_string(),
+    ];
+    let scores = graph.batch_impact_scores(&ids);
+
+    assert_eq!(scores.len(), 3);
+    assert_eq!(scores[a_id.as_str()], 0);
+    assert_eq!(scores[b_id.as_str()], 1);
+    assert_eq!(scores[c_id.as_str()], 2);
+}

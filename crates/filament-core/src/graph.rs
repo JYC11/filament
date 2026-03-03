@@ -338,6 +338,15 @@ impl KnowledgeGraph {
         visited.len()
     }
 
+    /// Batch impact scores: compute impact for multiple entities at once.
+    #[must_use]
+    pub fn batch_impact_scores(&self, entity_ids: &[String]) -> HashMap<String, usize> {
+        entity_ids
+            .iter()
+            .map(|id| (id.clone(), self.impact_score(id)))
+            .collect()
+    }
+
     /// Check for cycles in the graph.
     #[must_use]
     pub fn has_cycle(&self) -> bool {

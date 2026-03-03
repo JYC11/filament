@@ -472,6 +472,29 @@ impl FilamentConnection {
         }
     }
 
+    pub async fn batch_impact_scores(
+        &mut self,
+        entity_ids: &[String],
+    ) -> Result<std::collections::HashMap<String, usize>> {
+        match self {
+            Self::Direct(s) => {
+                let mut graph = KnowledgeGraph::new();
+                graph.hydrate(s.pool()).await?;
+                Ok(graph.batch_impact_scores(entity_ids))
+            }
+            Self::Socket(c) => c.batch_impact_scores(entity_ids).await,
+        }
+    }
+
+    pub async fn blocked_by_counts(
+        &mut self,
+    ) -> Result<std::collections::HashMap<String, usize>> {
+        match self {
+            Self::Direct(s) => store::blocked_by_counts(s.pool()).await,
+            Self::Socket(c) => c.blocked_by_counts().await,
+        }
+    }
+
     pub async fn context_summaries(
         &mut self,
         entity_id: &str,

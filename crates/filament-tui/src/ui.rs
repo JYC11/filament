@@ -87,7 +87,10 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ),
         Span::raw(format!(" refreshed {refresh_time} ")),
         Span::styled(status_text, Style::default().fg(Color::Yellow)),
-        Span::raw(" | q:quit Tab:switch r:refresh j/k:nav"),
+        Span::raw(match app.active_tab {
+            Tab::Tasks => " | q:quit Tab:switch r:refresh j/k:nav f:filter c:close",
+            _ => " | q:quit Tab:switch r:refresh j/k:nav",
+        }),
     ]);
 
     let bar = Paragraph::new(line);

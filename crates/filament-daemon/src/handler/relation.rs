@@ -72,6 +72,14 @@ pub async fn delete(
     Ok(serde_json::json!({ "ok": true }))
 }
 
+pub async fn blocked_by_counts(
+    _params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let counts = store::blocked_by_counts(state.store.pool()).await?;
+    Ok(serde_json::to_value(&counts).expect("infallible"))
+}
+
 // ---------------------------------------------------------------------------
 // Param structs
 // ---------------------------------------------------------------------------

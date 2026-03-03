@@ -896,6 +896,31 @@ pub async fn release_reservations_by_agent(
     Ok(rows)
 }
 
+/// Count `DependsOn` relations where each entity is the source (i.e., "blocked by" count).
+///
+/// Returns a map of `source_id → count` for all entities that have at least one `DependsOn`
+/// relation as source.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn blocked_by_counts(
+    pool: &Pool<Sqlite>,
+) -> Result<std::collections::HashMap<String, usize>> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT source_id, COUNT(*) FROM relations \
+         WHERE relation_type = 'depends_on' \
+         GROUP BY source_id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, count)| (id, usize::try_from(count).unwrap_or(0)))
+        .collect())
+}
+
 /// Get running agent runs.
 ///
 /// # Errors

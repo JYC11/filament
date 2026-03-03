@@ -90,8 +90,12 @@ pub enum Method {
     ReadyTasks,
     CriticalPath,
     ImpactScore,
+    BatchImpactScores,
     ContextQuery,
     CheckCycle,
+
+    // Batch relation operations
+    BlockedByCounts,
 
     // Event operations
     GetEntityEvents,

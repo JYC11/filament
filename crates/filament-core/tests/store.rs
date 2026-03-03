@@ -933,3 +933,64 @@ async fn release_reservations_by_agent_releases_all() {
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].agent_name, "other-agent");
 }
+
+// ---------------------------------------------------------------------------
+// Batch queries
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn blocked_by_counts_returns_correct_counts() {
+    let store = test_db().await;
+
+    // Create three tasks: A depends_on B, A depends_on C
+    let (id_a, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Task A", 3);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let (id_b, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Task B", 2);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let (id_c, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Task C", 1);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // A depends_on B
+    store
+        .with_transaction(|conn| {
+            let req = depends_on_req(id_a.as_str(), id_b.as_str());
+            Box::pin(async move { create_relation(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // A depends_on C
+    store
+        .with_transaction(|conn| {
+            let req = depends_on_req(id_a.as_str(), id_c.as_str());
+            Box::pin(async move { create_relation(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let counts = blocked_by_counts(store.pool()).await.unwrap();
+
+    // A is source of 2 DependsOn relations → blocked_by_count = 2
+    assert_eq!(counts.get(id_a.as_str()).copied().unwrap_or(0), 2);
+    // B is target only → blocked_by_count = 0
+    assert_eq!(counts.get(id_b.as_str()).copied().unwrap_or(0), 0);
+    // C is target only → blocked_by_count = 0
+    assert_eq!(counts.get(id_c.as_str()).copied().unwrap_or(0), 0);
+}
