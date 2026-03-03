@@ -215,6 +215,12 @@ impl FilamentMcp {
         let entity = resolve_entity(&mut conn, &p.name)
             .await
             .map_err(|e| map_err(&e))?;
+        if entity.entity_type.as_str() != "task" {
+            return Err(map_err(&FilamentError::Validation(format!(
+                "'{}' is a {}, not a task",
+                entity.name, entity.entity_type
+            ))));
+        }
         conn.update_entity_status(entity.id.as_str(), "closed")
             .await
             .map_err(|e| map_err(&e))?;
@@ -243,6 +249,21 @@ impl FilamentMcp {
         Parameters(p): Parameters<MessageSendParams>,
     ) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
+        // Validate recipient exists
+        let recipient = resolve_entity(&mut conn, &p.to_agent)
+            .await
+            .map_err(|_| {
+                map_err(&FilamentError::Validation(format!(
+                    "recipient agent '{}' not found",
+                    p.to_agent
+                )))
+            })?;
+        if recipient.entity_type.as_str() != "agent" {
+            return Err(map_err(&FilamentError::Validation(format!(
+                "'{}' is a {}, not an agent",
+                recipient.name, recipient.entity_type
+            ))));
+        }
         let req = SendMessageRequest {
             from_agent: p.from_agent,
             to_agent: p.to_agent,

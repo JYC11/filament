@@ -268,6 +268,25 @@ async fn tool_messaging() {
     let client = start_mcp_client(conn).await;
     let peer = client.peer();
 
+    // Create agent entities first (message_send validates recipient exists)
+    let result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({"name": "agent-a", "entity_type": "agent", "summary": "Agent A"}),
+        ))
+        .await
+        .expect("add agent-a");
+    assert!(!result.is_error.unwrap_or(false));
+
+    let result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({"name": "agent-b", "entity_type": "agent", "summary": "Agent B"}),
+        ))
+        .await
+        .expect("add agent-b");
+    assert!(!result.is_error.unwrap_or(false));
+
     let result = peer
         .call_tool(call(
             "filament_message_send",

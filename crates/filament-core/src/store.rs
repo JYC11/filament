@@ -548,10 +548,16 @@ pub async fn acquire_reservation(
 ///
 /// Returns `FilamentError::Database` on SQL failure.
 pub async fn release_reservation(conn: &mut SqliteConnection, id: &str) -> Result<()> {
-    sqlx::query("DELETE FROM file_reservations WHERE id = ?")
+    let result = sqlx::query("DELETE FROM file_reservations WHERE id = ?")
         .bind(id)
         .execute(&mut *conn)
         .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(FilamentError::ReservationNotFound {
+            id: id.to_string(),
+        });
+    }
 
     record_event(
         conn,

@@ -685,14 +685,18 @@ async fn mark_nonexistent_message_read_returns_error() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn release_nonexistent_reservation_is_idempotent() {
+async fn release_nonexistent_reservation_returns_error() {
     let store = test_db().await;
 
-    // Should succeed silently (advisory lock semantics — release is idempotent)
-    store
+    let err = store
         .with_transaction(|conn| {
             Box::pin(async move { release_reservation(conn, "nonexistent").await })
         })
         .await
-        .unwrap();
+        .unwrap_err();
+
+    assert!(
+        matches!(err, filament_core::error::FilamentError::ReservationNotFound { .. }),
+        "expected ReservationNotFound, got: {err:?}"
+    );
 }
