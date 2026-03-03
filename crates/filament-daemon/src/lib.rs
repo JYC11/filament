@@ -4,6 +4,7 @@ pub mod handler;
 pub mod mcp;
 pub mod roles;
 pub mod server;
+pub mod state;
 
 use std::sync::Arc;
 
@@ -16,8 +17,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use config::ServeConfig;
-use dispatch::DispatchConfig;
-use server::SharedState;
+use state::{DispatchConfig, SharedState};
 
 /// Start the daemon server.
 ///

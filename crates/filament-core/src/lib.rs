@@ -6,3 +6,4 @@ pub mod models;
 pub mod protocol;
 pub mod schema;
 pub mod store;
+pub mod util;

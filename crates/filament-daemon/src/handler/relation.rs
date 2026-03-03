@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use filament_core::error::{FilamentError, Result};
-use filament_core::models::{CreateRelationRequest, ValidCreateRelationRequest};
+use filament_core::error::Result;
+use filament_core::models::{CreateRelationRequest, RelationType, ValidCreateRelationRequest};
 use filament_core::store;
 use serde::Deserialize;
 
 use super::{parse_params, EntityIdParam};
-use crate::server::SharedState;
+use crate::state::SharedState;
 
 pub async fn create(
     params: serde_json::Value,
@@ -52,18 +52,12 @@ pub async fn delete(
 ) -> Result<serde_json::Value> {
     let p: DeleteRelationParam = parse_params(params)?;
 
-    // Validate relation_type BEFORE the DB operation
-    let rt: filament_core::models::RelationType =
-        serde_json::from_value(serde_json::Value::String(p.relation_type.clone())).map_err(
-            |_| FilamentError::Validation(format!("invalid relation type: '{}'", p.relation_type)),
-        )?;
-
     state
         .store
         .with_transaction(|conn| {
             let source_id = p.source_id.clone();
             let target_id = p.target_id.clone();
-            let relation_type = p.relation_type.clone();
+            let relation_type = p.relation_type.as_str().to_string();
             Box::pin(async move {
                 store::delete_relation_by_endpoints(conn, &source_id, &target_id, &relation_type)
                     .await
@@ -75,7 +69,7 @@ pub async fn delete(
     state
         .graph_write()
         .await
-        .remove_edge(&p.source_id, &p.target_id, &rt);
+        .remove_edge(&p.source_id, &p.target_id, &p.relation_type);
 
     Ok(serde_json::json!({ "ok": true }))
 }
@@ -96,5 +90,5 @@ pub async fn blocked_by_counts(
 struct DeleteRelationParam {
     source_id: String,
     target_id: String,
-    relation_type: String,
+    relation_type: RelationType,
 }

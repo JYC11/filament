@@ -732,6 +732,28 @@ impl_enum_str!(AgentStatus {
     NeedsInput => "needs_input",
 });
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRole {
+    Coder,
+    Reviewer,
+    Planner,
+    Dockeeper,
+}
+
+impl_enum_str!(AgentRole {
+    Coder => "coder",
+    Reviewer => "reviewer",
+    Planner => "planner",
+    Dockeeper => "dockeeper",
+});
+
+impl AgentRole {
+    /// All available roles.
+    pub const ALL: &'static [Self] = &[Self::Coder, Self::Reviewer, Self::Planner, Self::Dockeeper];
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
@@ -988,11 +1010,11 @@ pub struct AgentMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateEntityRequest {
     pub name: String,
-    pub entity_type: String,
+    pub entity_type: EntityType,
     pub summary: Option<String>,
     pub key_facts: Option<serde_json::Value>,
     pub content_path: Option<String>,
-    pub priority: Option<u8>,
+    pub priority: Option<Priority>,
 }
 
 #[derive(Debug, Clone)]
@@ -1012,29 +1034,13 @@ impl TryFrom<CreateEntityRequest> for ValidCreateEntityRequest {
         let name = NonEmptyString::new(&req.name)
             .map_err(|_| FilamentError::Validation("name cannot be empty".to_string()))?;
 
-        let entity_type = match req.entity_type.to_lowercase().as_str() {
-            "task" => EntityType::Task,
-            "module" => EntityType::Module,
-            "service" => EntityType::Service,
-            "agent" => EntityType::Agent,
-            "plan" => EntityType::Plan,
-            "doc" => EntityType::Doc,
-            other => {
-                return Err(FilamentError::Validation(format!(
-                    "invalid entity type: '{other}' (expected: task, module, service, agent, plan, doc)"
-                )));
-            }
-        };
-
-        let priority = Priority::new(req.priority.unwrap_or(2))?;
-
         Ok(Self {
             name,
-            entity_type,
+            entity_type: req.entity_type,
             summary: req.summary.unwrap_or_default(),
             key_facts: req.key_facts.unwrap_or_else(|| serde_json::json!({})),
             content_path: req.content_path,
-            priority,
+            priority: req.priority.unwrap_or(Priority::DEFAULT),
         })
     }
 }
@@ -1043,7 +1049,7 @@ impl TryFrom<CreateEntityRequest> for ValidCreateEntityRequest {
 pub struct CreateRelationRequest {
     pub source_id: String,
     pub target_id: String,
-    pub relation_type: String,
+    pub relation_type: RelationType,
     pub weight: Option<f64>,
     pub summary: Option<String>,
     pub metadata: Option<serde_json::Value>,
@@ -1082,26 +1088,12 @@ impl TryFrom<CreateRelationRequest> for ValidCreateRelationRequest {
             ));
         }
 
-        let relation_type = match req.relation_type.to_lowercase().as_str() {
-            "blocks" => RelationType::Blocks,
-            "depends_on" => RelationType::DependsOn,
-            "produces" => RelationType::Produces,
-            "owns" => RelationType::Owns,
-            "relates_to" => RelationType::RelatesTo,
-            "assigned_to" => RelationType::AssignedTo,
-            other => {
-                return Err(FilamentError::Validation(format!(
-                    "invalid relation type: '{other}' (expected: blocks, depends_on, produces, owns, relates_to, assigned_to)"
-                )));
-            }
-        };
-
         let weight = Weight::new(req.weight.unwrap_or(1.0))?;
 
         Ok(Self {
             source_id: EntityId::from(source_id),
             target_id: EntityId::from(target_id),
-            relation_type,
+            relation_type: req.relation_type,
             weight,
             summary: req.summary.unwrap_or_default(),
             metadata: req.metadata.unwrap_or_else(|| serde_json::json!({})),
@@ -1114,7 +1106,7 @@ pub struct SendMessageRequest {
     pub from_agent: String,
     pub to_agent: String,
     pub body: String,
-    pub msg_type: Option<String>,
+    pub msg_type: Option<MessageType>,
     pub in_reply_to: Option<String>,
     pub task_id: Option<String>,
 }
@@ -1140,23 +1132,11 @@ impl TryFrom<SendMessageRequest> for ValidSendMessageRequest {
         let body = NonEmptyString::new(&req.body)
             .map_err(|_| FilamentError::Validation("message body cannot be empty".to_string()))?;
 
-        let msg_type = match req.msg_type.as_deref().unwrap_or("text") {
-            "text" => MessageType::Text,
-            "question" => MessageType::Question,
-            "blocker" => MessageType::Blocker,
-            "artifact" => MessageType::Artifact,
-            other => {
-                return Err(FilamentError::Validation(format!(
-                    "invalid message type: '{other}' (expected: text, question, blocker, artifact)"
-                )));
-            }
-        };
-
         Ok(Self {
             from_agent,
             to_agent,
             body,
-            msg_type,
+            msg_type: req.msg_type.unwrap_or(MessageType::Text),
             in_reply_to: req.in_reply_to.map(MessageId::from),
             task_id: req.task_id.map(EntityId::from),
         })

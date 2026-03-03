@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use filament_core::error::{FilamentError, Result};
+use filament_core::error::Result;
 use filament_core::models::AgentStatus;
 use filament_core::store;
 use serde::Deserialize;
 
 use super::parse_params;
-use crate::server::SharedState;
+use crate::state::SharedState;
 
 pub async fn create(
     params: serde_json::Value,
@@ -30,15 +30,11 @@ pub async fn finish(
     state: &Arc<SharedState>,
 ) -> Result<serde_json::Value> {
     let p: FinishAgentRunParam = parse_params(params)?;
-    let status: AgentStatus = serde_json::from_value(serde_json::Value::String(p.status.clone()))
-        .map_err(|_| {
-        FilamentError::Validation(format!("invalid agent status: '{}'", p.status))
-    })?;
     state
         .store
         .with_transaction(|conn| {
             let id = p.id.clone();
-            let status = status.clone();
+            let status = p.status.clone();
             let result_json = p.result_json.clone();
             Box::pin(async move {
                 store::finish_agent_run(conn, &id, status, result_json.as_deref()).await
@@ -70,6 +66,6 @@ struct CreateAgentRunParam {
 #[derive(Deserialize)]
 struct FinishAgentRunParam {
     id: String,
-    status: String,
+    status: AgentStatus,
     result_json: Option<String>,
 }

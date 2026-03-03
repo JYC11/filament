@@ -34,7 +34,7 @@ fn relate_invalid_type_fails() {
         .args(["relate", &slug_src, "invalid_relation", &slug_tgt])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid relation type"));
+        .stderr(predicate::str::contains("invalid RelationType"));
 }
 
 #[test]

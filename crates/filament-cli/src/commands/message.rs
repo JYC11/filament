@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use filament_core::error::Result;
-use filament_core::models::SendMessageRequest;
+use filament_core::models::{MessageType, SendMessageRequest};
 
 use super::helpers::{connect, output_json, truncate_with_ellipsis};
 use crate::Cli;
@@ -44,7 +44,7 @@ struct MessageSendArgs {
     body: String,
     /// Message type (text, question, blocker, artifact).
     #[arg(long, rename_all = "snake_case", default_value = "text")]
-    r#type: String,
+    r#type: MessageType,
 }
 
 #[derive(Args, Debug)]

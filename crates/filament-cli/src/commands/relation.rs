@@ -1,6 +1,6 @@
 use clap::Args;
 use filament_core::error::Result;
-use filament_core::models::CreateRelationRequest;
+use filament_core::models::{CreateRelationRequest, RelationType};
 
 use super::helpers::{connect, output_json, resolve_entity_id};
 use crate::Cli;
@@ -10,7 +10,7 @@ pub struct RelateArgs {
     /// Source entity slug or ID.
     source: String,
     /// Relation type (blocks, `depends_on`, produces, owns, `relates_to`, `assigned_to`).
-    relation_type: String,
+    relation_type: RelationType,
     /// Target entity slug or ID.
     target: String,
     /// Optional summary.
@@ -26,7 +26,7 @@ pub struct UnrelateArgs {
     /// Source entity slug or ID.
     source: String,
     /// Relation type.
-    relation_type: String,
+    relation_type: RelationType,
     /// Target entity slug or ID.
     target: String,
 }
@@ -65,8 +65,12 @@ pub async fn unrelate(cli: &Cli, args: &UnrelateArgs) -> Result<()> {
     let source_id = resolve_entity_id(&mut conn, &args.source).await?;
     let target_id = resolve_entity_id(&mut conn, &args.target).await?;
 
-    conn.delete_relation(source_id.as_str(), target_id.as_str(), &args.relation_type)
-        .await?;
+    conn.delete_relation(
+        source_id.as_str(),
+        target_id.as_str(),
+        args.relation_type.as_str(),
+    )
+    .await?;
 
     if cli.json {
         output_json(&serde_json::json!({"deleted": true}));

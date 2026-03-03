@@ -107,7 +107,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**Phases 1–4 complete** (2026-03-03):
+**Phases 1–5 complete** (2026-03-04):
 - Phase 1: Core library — models, errors, schema, store, graph, connection, protocol
 - Phase 2: CLI — entity, task, relation, query, message, reserve commands (54 integration tests)
 - Phase 3: Daemon — NDJSON Unix socket server + MCP server (16 tools via `rmcp`)
@@ -120,8 +120,9 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 - **No server-side batch dispatch** — CLI `dispatch-all` loops individual `dispatch_agent` RPCs to avoid child process reaping races
 - **Slug-based identity** (ADR-019): 8-char `[a-z0-9]` slugs replace name-based lookup
 - **Entity ADT** (ADR-020): `Entity` enum with typed variants, `TypeMismatch` error, compile-time type safety
-- 230 tests (115 core + 58 CLI + 39 daemon + 10 MCP + 8 TUI), zero clippy warnings
-- **Next**: Remaining code smell fixes (Tasks 7-9, 14-15), then Phase 6 — Integration
+- 235 tests (120 core + 58 CLI + 39 daemon + 10 MCP + 8 TUI), zero clippy warnings
+- **Code review complete** — all 15 tasks from `.plan/code-review-session34.md` done (5 low-priority optional items remain)
+- **Next**: Phase 5 manual QA, then Phase 6 — Integration
 
 ## References
 

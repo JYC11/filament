@@ -5,7 +5,7 @@ use filament_core::store;
 use serde::Deserialize;
 
 use super::{parse_params, EntityIdParam};
-use crate::server::SharedState;
+use crate::state::SharedState;
 
 pub async fn ready_tasks(
     _params: serde_json::Value,
@@ -56,7 +56,7 @@ pub async fn context_query(
     let summaries = state
         .graph_read()
         .await
-        .context_summaries(&p.entity_id, p.depth.unwrap_or(2));
+        .context_summaries(&p.entity_id, p.depth.unwrap_or(2).min(10));
     Ok(serde_json::to_value(&summaries).expect("infallible"))
 }
 

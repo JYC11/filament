@@ -4,7 +4,7 @@ use filament_core::error::Result;
 use filament_core::store;
 
 use super::{parse_params, EntityIdParam};
-use crate::server::SharedState;
+use crate::state::SharedState;
 
 pub async fn get_events(
     params: serde_json::Value,

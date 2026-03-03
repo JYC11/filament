@@ -13,7 +13,7 @@ use filament_core::error::{FilamentError, Result, StructuredError};
 use filament_core::protocol::{Method, Request, Response};
 use serde::Deserialize;
 
-use crate::server::SharedState;
+use crate::state::SharedState;
 
 /// Dispatch a request to the appropriate handler.
 pub async fn dispatch(request: Request, state: &Arc<SharedState>) -> Response {

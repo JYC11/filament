@@ -373,5 +373,5 @@ fn invalid_entity_type_error() {
         ])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid entity type"));
+        .stderr(predicate::str::contains("invalid EntityType"));
 }

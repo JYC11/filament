@@ -2,7 +2,7 @@ use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
 use filament_core::connection::FilamentConnection;
-use filament_core::models::CreateEntityRequest;
+use filament_core::models::{CreateEntityRequest, EntityType};
 use filament_core::schema::init_test_pool;
 use filament_core::store::FilamentStore;
 
@@ -68,7 +68,7 @@ async fn task_view_with_data() {
     // Insert a task via the public CreateEntityRequest API
     conn.create_entity(CreateEntityRequest {
         name: "Build widget".to_string(),
-        entity_type: "task".to_string(),
+        entity_type: EntityType::Task,
         summary: Some("Build the widget".to_string()),
         key_facts: None,
         content_path: None,

@@ -1,6 +1,8 @@
 use clap::{Args, Subcommand};
 use filament_core::error::Result;
-use filament_core::models::{CreateEntityRequest, CreateRelationRequest, EntityId};
+use filament_core::models::{
+    CreateEntityRequest, CreateRelationRequest, EntityId, EntityType, Priority, RelationType,
+};
 
 use super::helpers::{
     connect, output_json, print_entity_list, print_relations, resolve_agent, resolve_entity,
@@ -113,11 +115,11 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
 
     let req = CreateEntityRequest {
         name: args.title.clone(),
-        entity_type: "task".to_string(),
+        entity_type: EntityType::Task,
         summary: Some(args.summary.clone()),
         key_facts: None,
         content_path: None,
-        priority: args.priority,
+        priority: args.priority.map(Priority::new).transpose()?,
     };
 
     // Resolve relation targets before creating the entity
@@ -138,7 +140,7 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
         let rel_req = CreateRelationRequest {
             source_id: id.to_string(),
             target_id: target_id.to_string(),
-            relation_type: "blocks".to_string(),
+            relation_type: RelationType::Blocks,
             weight: None,
             summary: None,
             metadata: None,
@@ -150,7 +152,7 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
         let rel_req = CreateRelationRequest {
             source_id: id.to_string(),
             target_id: dep_id.to_string(),
-            relation_type: "depends_on".to_string(),
+            relation_type: RelationType::DependsOn,
             weight: None,
             summary: None,
             metadata: None,
@@ -283,7 +285,7 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
     let rel_req = CreateRelationRequest {
         source_id: agent.id.to_string(),
         target_id: task.id.to_string(),
-        relation_type: "assigned_to".to_string(),
+        relation_type: RelationType::AssignedTo,
         weight: None,
         summary: None,
         metadata: None,

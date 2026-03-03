@@ -67,18 +67,7 @@ pub fn render_agent_table_stateful(
 fn format_duration(run: &AgentRun) -> String {
     let end = run.finished_at.unwrap_or_else(Utc::now);
     let secs = (end - run.started_at).num_seconds().max(0);
-
-    if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3600 {
-        let m = secs / 60;
-        let s = secs % 60;
-        format!("{m}m{s:02}s")
-    } else {
-        let h = secs / 3600;
-        let m = (secs % 3600) / 60;
-        format!("{h}h{m:02}m")
-    }
+    super::format_seconds(secs)
 }
 
 fn agent_status_color(status: &AgentStatus) -> Style {
@@ -92,10 +81,5 @@ fn agent_status_color(status: &AgentStatus) -> Style {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() > max {
-        let truncated: String = s.chars().take(max.saturating_sub(3)).collect();
-        format!("{truncated}...")
-    } else {
-        s.to_string()
-    }
+    filament_core::util::truncate_with_ellipsis(s, max)
 }

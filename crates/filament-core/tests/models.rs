@@ -315,7 +315,7 @@ fn agent_result_deserialize() {
 fn create_entity_valid() {
     let req = CreateEntityRequest {
         name: "My Task".to_string(),
-        entity_type: "task".to_string(),
+        entity_type: EntityType::Task,
         summary: None,
         key_facts: None,
         content_path: None,
@@ -331,7 +331,7 @@ fn create_entity_valid() {
 fn create_entity_empty_name_rejected() {
     let req = CreateEntityRequest {
         name: "  ".to_string(),
-        entity_type: "task".to_string(),
+        entity_type: EntityType::Task,
         summary: None,
         key_facts: None,
         content_path: None,
@@ -342,31 +342,19 @@ fn create_entity_empty_name_rejected() {
 }
 
 #[test]
-fn create_entity_invalid_type_rejected() {
-    let req = CreateEntityRequest {
-        name: "test".to_string(),
-        entity_type: "unknown".to_string(),
-        summary: None,
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    };
-    let err = ValidCreateEntityRequest::try_from(req).unwrap_err();
-    assert!(matches!(err, FilamentError::Validation(_)));
+fn create_entity_invalid_type_rejected_by_serde() {
+    // Invalid entity types are now rejected at deserialization, not TryFrom
+    let json = r#"{"name":"test","entity_type":"unknown","summary":null,"key_facts":null,"content_path":null,"priority":null}"#;
+    let result: Result<CreateEntityRequest, _> = serde_json::from_str(json);
+    assert!(result.is_err());
 }
 
 #[test]
-fn create_entity_bad_priority_rejected() {
-    let req = CreateEntityRequest {
-        name: "test".to_string(),
-        entity_type: "task".to_string(),
-        summary: None,
-        key_facts: None,
-        content_path: None,
-        priority: Some(5),
-    };
-    let err = ValidCreateEntityRequest::try_from(req).unwrap_err();
-    assert!(matches!(err, FilamentError::Validation(_)));
+fn create_entity_bad_priority_rejected_by_serde() {
+    // Invalid priorities are now rejected at deserialization, not TryFrom
+    let json = r#"{"name":"test","entity_type":"task","summary":null,"key_facts":null,"content_path":null,"priority":5}"#;
+    let result: Result<CreateEntityRequest, _> = serde_json::from_str(json);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -374,7 +362,7 @@ fn create_relation_self_loop_rejected() {
     let req = CreateRelationRequest {
         source_id: "abc".to_string(),
         target_id: "abc".to_string(),
-        relation_type: "blocks".to_string(),
+        relation_type: RelationType::Blocks,
         weight: None,
         summary: None,
         metadata: None,
@@ -388,7 +376,7 @@ fn create_relation_trims_whitespace_ids() {
     let req = CreateRelationRequest {
         source_id: "  abc  ".to_string(),
         target_id: "  def  ".to_string(),
-        relation_type: "blocks".to_string(),
+        relation_type: RelationType::Blocks,
         weight: None,
         summary: None,
         metadata: None,
@@ -403,7 +391,7 @@ fn create_relation_whitespace_only_ids_rejected() {
     let req = CreateRelationRequest {
         source_id: "   ".to_string(),
         target_id: "b".to_string(),
-        relation_type: "blocks".to_string(),
+        relation_type: RelationType::Blocks,
         weight: None,
         summary: None,
         metadata: None,
@@ -417,7 +405,7 @@ fn create_relation_self_loop_after_trim_rejected() {
     let req = CreateRelationRequest {
         source_id: " abc ".to_string(),
         target_id: "abc".to_string(),
-        relation_type: "blocks".to_string(),
+        relation_type: RelationType::Blocks,
         weight: None,
         summary: None,
         metadata: None,
@@ -431,7 +419,7 @@ fn create_relation_bad_weight_rejected() {
     let req = CreateRelationRequest {
         source_id: "a".to_string(),
         target_id: "b".to_string(),
-        relation_type: "blocks".to_string(),
+        relation_type: RelationType::Blocks,
         weight: Some(-1.0),
         summary: None,
         metadata: None,

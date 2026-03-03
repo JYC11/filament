@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 use filament_core::error::Result;
+use filament_core::models::AgentRole;
 
 use super::helpers::{connect, output_json, resolve_task};
 use crate::Cli;
@@ -42,7 +43,7 @@ struct DispatchArgs {
     task: String,
     /// Agent role (coder, reviewer, planner, dockeeper).
     #[arg(long, default_value = "coder")]
-    role: String,
+    role: AgentRole,
 }
 
 #[derive(Args, Debug)]
@@ -52,7 +53,7 @@ struct DispatchAllArgs {
     max_parallel: usize,
     /// Agent role (coder, reviewer, planner, dockeeper).
     #[arg(long, default_value = "coder")]
-    role: String,
+    role: AgentRole,
 }
 
 #[derive(Args, Debug)]
@@ -69,7 +70,7 @@ struct HistoryArgs {
 
 async fn dispatch(cli: &Cli, args: &DispatchArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let run_id = conn.dispatch_agent(&args.task, &args.role).await?;
+    let run_id = conn.dispatch_agent(&args.task, args.role.as_str()).await?;
 
     if cli.json {
         output_json(&serde_json::json!({ "run_id": run_id.as_str() }));
@@ -99,7 +100,7 @@ async fn dispatch_all(cli: &Cli, args: &DispatchAllArgs) -> Result<()> {
 
     for task in &to_dispatch {
         let slug = task.slug().as_str();
-        match conn.dispatch_agent(slug, &args.role).await {
+        match conn.dispatch_agent(slug, args.role.as_str()).await {
             Ok(run_id) => dispatched.push((slug.to_string(), run_id)),
             Err(e) => errors.push((slug.to_string(), e.to_string())),
         }

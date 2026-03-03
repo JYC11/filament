@@ -6,7 +6,7 @@ use filament_core::store;
 use serde::Deserialize;
 
 use super::{parse_params, IdParam};
-use crate::server::SharedState;
+use crate::state::SharedState;
 
 pub async fn acquire(
     params: serde_json::Value,

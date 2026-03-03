@@ -68,19 +68,7 @@ pub fn read_content_file(path: &Path) -> Result<String> {
     std::fs::read_to_string(path).map_err(FilamentError::Io)
 }
 
-/// Truncate a string to `max_chars` characters, appending "..." if truncated.
-/// Safe for multi-byte UTF-8 strings (operates on char boundaries).
-pub fn truncate_with_ellipsis(s: &str, max_chars: usize) -> String {
-    let char_count = s.chars().count();
-    if char_count <= max_chars {
-        return s.to_string();
-    }
-    if max_chars < 4 {
-        return s.chars().take(max_chars).collect();
-    }
-    let truncated: String = s.chars().take(max_chars - 3).collect();
-    format!("{truncated}...")
-}
+pub use filament_core::util::truncate_with_ellipsis;
 
 /// Print relations for an entity, batch-fetching related entity names.
 pub async fn print_relations(

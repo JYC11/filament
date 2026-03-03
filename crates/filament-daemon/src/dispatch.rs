@@ -9,8 +9,10 @@ use filament_core::store;
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
-use crate::roles::AgentRole;
-use crate::server::SharedState;
+use crate::roles::{self, AgentRole};
+use crate::state::SharedState;
+
+pub use crate::state::DispatchConfig;
 
 /// Guard that kills a child process and cleans up MCP config on drop,
 /// unless explicitly disarmed after a successful transaction.
@@ -45,27 +47,6 @@ impl Drop for ChildGuard {
         }
         if let Some(path) = self.mcp_config_path.take() {
             cleanup_mcp_config(&path);
-        }
-    }
-}
-
-/// Configuration for agent dispatch.
-#[derive(Debug, Clone)]
-pub struct DispatchConfig {
-    /// Command to run (default: "claude"). Overridden by `FILAMENT_AGENT_COMMAND` env var.
-    pub agent_command: String,
-    /// Project root directory (for MCP config and working directory).
-    pub project_root: PathBuf,
-}
-
-impl DispatchConfig {
-    /// Create from project root, reading `FILAMENT_AGENT_COMMAND` env var.
-    #[must_use]
-    pub fn from_project_root(root: &Path) -> Self {
-        Self {
-            agent_command: std::env::var("FILAMENT_AGENT_COMMAND")
-                .unwrap_or_else(|_| "claude".to_string()),
-            project_root: root.to_path_buf(),
         }
     }
 }
@@ -110,7 +91,7 @@ pub fn build_system_prompt(
 ) -> String {
     use std::fmt::Write;
 
-    let mut prompt = role.system_prompt().to_string();
+    let mut prompt = roles::system_prompt(role).to_string();
     prompt.push_str("\n\n--- TASK ---\n");
     let _ = writeln!(prompt, "Task: {task_name}");
     if !summary.is_empty() {
@@ -203,12 +184,12 @@ pub async fn dispatch_agent(
     let pid = guard.child.as_ref().map(|c| c.id() as i32);
 
     // Atomically check for running agent + create run in a single transaction
-    let agent_name = format!("{}-{task_slug_resolved}", role.name());
+    let agent_name = format!("{}-{task_slug_resolved}", role.as_str());
     let run_id = state
         .store
         .with_transaction(|conn| {
             let task_id = task_id.clone();
-            let role_name = role.name().to_string();
+            let role_name = role.as_str().to_string();
             Box::pin(async move {
                 // Check for running agent inside the transaction to prevent TOCTOU races
                 if store::has_running_agent_conn(conn, &task_id).await? {
@@ -405,7 +386,7 @@ async fn route_result(
             from_agent: agent_name.to_string(),
             to_agent: msg.to_agent.to_string(),
             body: msg.body.to_string(),
-            msg_type: Some(msg.msg_type.as_str().to_string()),
+            msg_type: Some(msg.msg_type.clone()),
             in_reply_to: None,
             task_id: Some(task_id.to_string()),
         };

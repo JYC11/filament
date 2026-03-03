@@ -7,17 +7,14 @@ use serde::Deserialize;
 use super::parse_params;
 use crate::dispatch;
 use crate::roles::AgentRole;
-use crate::server::SharedState;
+use crate::state::SharedState;
 
 pub async fn dispatch_agent(
     params: serde_json::Value,
     state: &Arc<SharedState>,
 ) -> Result<serde_json::Value> {
     let p: DispatchAgentParam = parse_params(params)?;
-    let role: AgentRole = p
-        .role
-        .parse()
-        .map_err(|e: String| FilamentError::Validation(e))?;
+    let role: AgentRole = p.role.parse()?;
 
     let config = state
         .dispatch_config()

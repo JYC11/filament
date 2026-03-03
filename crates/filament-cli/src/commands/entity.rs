@@ -2,7 +2,7 @@ use std::path::Path;
 
 use clap::Args;
 use filament_core::error::Result;
-use filament_core::models::CreateEntityRequest;
+use filament_core::models::{CreateEntityRequest, EntityType, Priority};
 
 use super::helpers::{
     connect, output_json, print_entity_list, print_relations, read_content_file, resolve_entity,
@@ -15,7 +15,7 @@ pub struct AddArgs {
     name: String,
     /// Entity type (task, module, service, agent, plan, doc).
     #[arg(long, rename_all = "snake_case")]
-    r#type: String,
+    r#type: EntityType,
     /// Short summary.
     #[arg(long, default_value = "")]
     summary: String,
@@ -45,7 +45,7 @@ pub struct UpdateArgs {
     summary: Option<String>,
     /// New status: open, closed, `in_progress`, blocked.
     #[arg(long)]
-    status: Option<String>,
+    status: Option<filament_core::models::EntityStatus>,
 }
 
 #[derive(Args, Debug)]
@@ -64,10 +64,10 @@ pub struct ReadArgs {
 pub struct ListArgs {
     /// Filter by entity type.
     #[arg(long, rename_all = "snake_case")]
-    r#type: Option<String>,
+    r#type: Option<EntityType>,
     /// Filter by status.
     #[arg(long)]
-    status: Option<String>,
+    status: Option<filament_core::models::EntityStatus>,
 }
 
 pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
@@ -98,7 +98,7 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         summary: Some(args.summary.clone()),
         key_facts,
         content_path: args.content.clone(),
-        priority: args.priority,
+        priority: args.priority.map(Priority::new).transpose()?,
     };
 
     let (id, slug) = conn.create_entity(req).await?;
@@ -139,9 +139,9 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     if let Some(summary) = &args.summary {
         conn.update_entity_summary(id.as_str(), summary).await?;
     }
-    if let Some(ref status_str) = args.status {
-        let status: filament_core::models::EntityStatus = status_str.parse()?;
-        conn.update_entity_status(id.as_str(), status).await?;
+    if let Some(status) = &args.status {
+        conn.update_entity_status(id.as_str(), status.clone())
+            .await?;
     }
 
     if cli.json {
@@ -223,10 +223,9 @@ pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
 pub async fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
     let mut conn = connect().await?;
 
-    let entity_type = args.r#type.as_deref().map(str::parse).transpose()?;
-    let status = args.status.as_deref().map(str::parse).transpose()?;
-
-    let entities = conn.list_entities(entity_type, status).await?;
+    let entities = conn
+        .list_entities(args.r#type.clone(), args.status.clone())
+        .await?;
 
     print_entity_list(cli, &entities, "No entities found.");
     Ok(())

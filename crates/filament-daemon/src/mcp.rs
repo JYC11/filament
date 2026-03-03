@@ -1,7 +1,8 @@
 use filament_core::connection::FilamentConnection;
 use filament_core::error::{FilamentError, StructuredError};
 use filament_core::models::{
-    CreateEntityRequest, CreateRelationRequest, SendMessageRequest, TtlSeconds,
+    CreateEntityRequest, CreateRelationRequest, EntityType, MessageType, Priority, RelationType,
+    SendMessageRequest, TtlSeconds,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -44,7 +45,7 @@ pub struct MessageSendParams {
     /// Message body.
     pub body: String,
     /// Message type: text, question, blocker, artifact (default: text).
-    pub msg_type: Option<String>,
+    pub msg_type: Option<MessageType>,
     /// Message ID this is replying to (optional).
     pub in_reply_to: Option<String>,
     /// Related task entity ID (optional).
@@ -96,9 +97,9 @@ pub struct InspectParams {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ListParams {
     /// Filter by entity type: task, module, service, agent, plan, doc.
-    pub entity_type: Option<String>,
+    pub entity_type: Option<EntityType>,
     /// Filter by status: open, `in_progress`, closed, blocked.
-    pub status: Option<String>,
+    pub status: Option<filament_core::models::EntityStatus>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -106,11 +107,11 @@ pub struct AddParams {
     /// Entity name.
     pub name: String,
     /// Entity type: task, module, service, agent, plan, doc.
-    pub entity_type: String,
+    pub entity_type: EntityType,
     /// Short summary.
     pub summary: String,
     /// Priority 0-4 (0=highest, default: 2).
-    pub priority: Option<u8>,
+    pub priority: Option<Priority>,
     /// Structured key facts (JSON object).
     pub key_facts: Option<serde_json::Value>,
     /// Path to full content file.
@@ -124,7 +125,7 @@ pub struct UpdateParams {
     /// New summary (optional).
     pub summary: Option<String>,
     /// New status: open, `in_progress`, closed, blocked (optional).
-    pub status: Option<String>,
+    pub status: Option<filament_core::models::EntityStatus>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -132,7 +133,7 @@ pub struct RelateParams {
     /// Source entity slug (or ID).
     pub source: String,
     /// Relation type: blocks, `depends_on`, produces, owns, `relates_to`, `assigned_to`.
-    pub relation_type: String,
+    pub relation_type: RelationType,
     /// Target entity slug (or ID).
     pub target: String,
     /// Optional relation summary.
@@ -146,7 +147,7 @@ pub struct UnrelateParams {
     /// Source entity slug (or ID).
     pub source: String,
     /// Relation type to remove.
-    pub relation_type: String,
+    pub relation_type: RelationType,
     /// Target entity slug (or ID).
     pub target: String,
 }
@@ -230,7 +231,7 @@ impl FilamentMcp {
             .resolve_entity(&p.slug)
             .await
             .map_err(|e| map_err(&e))?;
-        let depth = p.depth.unwrap_or(2);
+        let depth = p.depth.unwrap_or(2).min(10);
         let summaries = conn
             .context_summaries(entity.id().as_str(), depth)
             .await
@@ -335,20 +336,8 @@ impl FilamentMcp {
     #[tool(name = "filament_list")]
     async fn list(&self, Parameters(p): Parameters<ListParams>) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
-        let entity_type: Option<filament_core::models::EntityType> = p
-            .entity_type
-            .as_deref()
-            .map(str::parse)
-            .transpose()
-            .map_err(|e: FilamentError| map_err(&e))?;
-        let status: Option<filament_core::models::EntityStatus> = p
-            .status
-            .as_deref()
-            .map(str::parse)
-            .transpose()
-            .map_err(|e: FilamentError| map_err(&e))?;
         let entities = conn
-            .list_entities(entity_type, status)
+            .list_entities(p.entity_type, p.status)
             .await
             .map_err(|e| map_err(&e))?;
         Ok(serde_json::to_string_pretty(&entities).expect("JSON"))
@@ -386,25 +375,23 @@ impl FilamentMcp {
             )));
         }
 
-        if let Some(ref summary) = p.summary {
-            conn.update_entity_summary(id, summary)
-                .await
-                .map_err(|e| map_err(&e))?;
-        }
-        if let Some(ref status_str) = p.status {
-            let status: filament_core::models::EntityStatus =
-                status_str.parse().map_err(|e: FilamentError| map_err(&e))?;
-            conn.update_entity_status(id, status)
-                .await
-                .map_err(|e| map_err(&e))?;
-        }
-
         let mut parts = Vec::new();
         if p.summary.is_some() {
             parts.push("summary");
         }
         if p.status.is_some() {
             parts.push("status");
+        }
+
+        if let Some(ref summary) = p.summary {
+            conn.update_entity_summary(id, summary)
+                .await
+                .map_err(|e| map_err(&e))?;
+        }
+        if let Some(status) = p.status {
+            conn.update_entity_status(id, status)
+                .await
+                .map_err(|e| map_err(&e))?;
         }
         Ok(format!(
             "Updated {} for: {} ({})",
@@ -469,9 +456,13 @@ impl FilamentMcp {
             .resolve_entity(&p.target)
             .await
             .map_err(|e| map_err(&e))?;
-        conn.delete_relation(source.id().as_str(), target.id().as_str(), &p.relation_type)
-            .await
-            .map_err(|e| map_err(&e))?;
+        conn.delete_relation(
+            source.id().as_str(),
+            target.id().as_str(),
+            p.relation_type.as_str(),
+        )
+        .await
+        .map_err(|e| map_err(&e))?;
         Ok(format!(
             "Unrelated: {} -/-> {} ({})",
             source.name(),

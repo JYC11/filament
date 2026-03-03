@@ -1,73 +1,14 @@
 use std::sync::Arc;
 
-use filament_core::error::{FilamentError, Result};
-use filament_core::graph::KnowledgeGraph;
+use filament_core::error::FilamentError;
 use filament_core::protocol::Request;
-use filament_core::store::{self, FilamentStore};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
-use tokio::sync::RwLock;
 use tracing::{debug, error};
 
-use crate::dispatch::DispatchConfig;
+pub use crate::state::SharedState;
+
 use crate::handler;
-
-/// Shared state accessible by all connection handlers.
-pub struct SharedState {
-    pub store: FilamentStore,
-    graph: RwLock<KnowledgeGraph>,
-    dispatch_config: Option<DispatchConfig>,
-}
-
-impl SharedState {
-    pub fn new(store: FilamentStore, graph: KnowledgeGraph) -> Self {
-        Self {
-            store,
-            graph: RwLock::new(graph),
-            dispatch_config: None,
-        }
-    }
-
-    /// Create with dispatch configuration enabled.
-    pub fn with_dispatch(
-        store: FilamentStore,
-        graph: KnowledgeGraph,
-        config: DispatchConfig,
-    ) -> Self {
-        Self {
-            store,
-            graph: RwLock::new(graph),
-            dispatch_config: Some(config),
-        }
-    }
-
-    /// Get the dispatch config, if configured.
-    #[must_use]
-    pub fn dispatch_config(&self) -> Option<DispatchConfig> {
-        self.dispatch_config.clone()
-    }
-
-    pub async fn graph_read(&self) -> tokio::sync::RwLockReadGuard<'_, KnowledgeGraph> {
-        self.graph.read().await
-    }
-
-    pub async fn graph_write(&self) -> tokio::sync::RwLockWriteGuard<'_, KnowledgeGraph> {
-        self.graph.write().await
-    }
-
-    /// Run stale reservation cleanup. Called periodically by the daemon.
-    ///
-    /// # Errors
-    ///
-    /// Returns `FilamentError::Database` on SQL failure.
-    pub async fn expire_stale_reservations(&self) -> Result<u64> {
-        self.store
-            .with_transaction(|conn| {
-                Box::pin(async move { store::expire_stale_reservations(conn).await })
-            })
-            .await
-    }
-}
 
 /// Handle a single client connection: read NDJSON lines, dispatch, write responses.
 ///

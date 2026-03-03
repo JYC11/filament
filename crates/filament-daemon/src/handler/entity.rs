@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
-use filament_core::error::{FilamentError, Result};
-use filament_core::models::{CreateEntityRequest, EntityStatus, ValidCreateEntityRequest};
+use filament_core::error::Result;
+use filament_core::models::{
+    CreateEntityRequest, EntityStatus, EntityType, ValidCreateEntityRequest,
+};
 use filament_core::store;
 use serde::Deserialize;
 
 use super::{parse_params, IdParam};
-use crate::server::SharedState;
+use crate::state::SharedState;
 
 pub async fn create(
     params: serde_json::Value,
@@ -51,8 +53,8 @@ pub async fn list(
     let p: ListEntitiesParam = parse_params(params)?;
     let entities = store::list_entities(
         state.store.pool(),
-        p.entity_type.as_deref(),
-        p.status.as_deref(),
+        p.entity_type.as_ref().map(EntityType::as_str),
+        p.status.as_ref().map(EntityStatus::as_str),
     )
     .await?;
     Ok(serde_json::to_value(&entities).expect("infallible"))
@@ -84,14 +86,12 @@ pub async fn update_status(
     state: &Arc<SharedState>,
 ) -> Result<serde_json::Value> {
     let p: UpdateStatusParam = parse_params(params)?;
-    let status: EntityStatus = serde_json::from_value(serde_json::Value::String(p.status.clone()))
-        .map_err(|_| FilamentError::Validation(format!("invalid status: '{}'", p.status)))?;
 
     state
         .store
         .with_transaction(|conn| {
             let id = p.id.clone();
-            let status = status.clone();
+            let status = p.status.clone();
             Box::pin(async move { store::update_entity_status(conn, &id, status).await })
         })
         .await?;
@@ -143,8 +143,8 @@ struct SlugParam {
 
 #[derive(Deserialize)]
 struct ListEntitiesParam {
-    entity_type: Option<String>,
-    status: Option<String>,
+    entity_type: Option<EntityType>,
+    status: Option<EntityStatus>,
 }
 
 #[derive(Deserialize)]
@@ -155,7 +155,7 @@ struct BatchGetParam {
 #[derive(Deserialize)]
 struct UpdateStatusParam {
     id: String,
-    status: String,
+    status: EntityStatus,
 }
 
 #[derive(Deserialize)]
