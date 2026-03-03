@@ -176,8 +176,14 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
     let s = connect().await?;
     let entity = resolve_entity(&s, &args.name).await?;
 
+    let relations = store::list_relations(s.pool(), entity.id.as_str()).await?;
+
     if cli.json {
-        output_json(&entity);
+        let out = serde_json::json!({
+            "entity": entity,
+            "relations": relations,
+        });
+        output_json(&out);
     } else {
         println!("Name:     {}", entity.name);
         println!("ID:       {}", entity.id);
@@ -195,6 +201,24 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
         }
         if let Some(ref path) = entity.content_path {
             println!("Content:  {path}");
+        }
+        if !relations.is_empty() {
+            println!("Relations:");
+            for r in &relations {
+                let other_id = if r.source_id == entity.id {
+                    &r.target_id
+                } else {
+                    &r.source_id
+                };
+                let other_name = store::get_entity(s.pool(), other_id.as_str())
+                    .await
+                    .map_or_else(|_| other_id.to_string(), |e| e.name.to_string());
+                if r.source_id == entity.id {
+                    println!("  {} -> {} ({})", entity.name, other_name, r.relation_type);
+                } else {
+                    println!("  {} -> {} ({})", other_name, entity.name, r.relation_type);
+                }
+            }
         }
         println!("Created:  {}", entity.created_at);
         println!("Updated:  {}", entity.updated_at);

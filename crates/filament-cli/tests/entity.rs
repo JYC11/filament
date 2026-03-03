@@ -395,6 +395,42 @@ fn entity_update_no_args_error() {
 }
 
 #[test]
+fn entity_inspect_shows_relations() {
+    let dir = init_project();
+
+    filament(&dir)
+        .args([
+            "add",
+            "svc-a",
+            "--type",
+            "service",
+            "--summary",
+            "Service A",
+        ])
+        .assert()
+        .success();
+    filament(&dir)
+        .args(["add", "mod-b", "--type", "module", "--summary", "Module B"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["relate", "svc-a", "depends_on", "mod-b"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["inspect", "svc-a"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Relations:")
+                .and(predicate::str::contains("mod-b"))
+                .and(predicate::str::contains("depends_on")),
+        );
+}
+
+#[test]
 fn invalid_entity_type_error() {
     let dir = init_project();
 
