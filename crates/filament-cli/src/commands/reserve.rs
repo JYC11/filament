@@ -1,6 +1,6 @@
 use clap::Args;
 use filament_core::error::{FilamentError, Result};
-use filament_core::models::TtlSeconds;
+use filament_core::models::{ReservationMode, TtlSeconds};
 
 use super::helpers::{connect, output_json};
 use crate::Cli;
@@ -44,7 +44,12 @@ pub async fn reserve(cli: &Cli, args: &ReserveArgs) -> Result<()> {
     let ttl = TtlSeconds::new(args.ttl)?;
 
     let id = conn
-        .acquire_reservation(&args.agent, &args.glob, args.exclusive, ttl)
+        .acquire_reservation(
+            &args.agent,
+            &args.glob,
+            ReservationMode::from(args.exclusive),
+            ttl,
+        )
         .await?;
 
     if cli.json {
@@ -103,7 +108,11 @@ pub async fn reservations(cli: &Cli, args: &ReservationsArgs) -> Result<()> {
         println!("No active reservations.");
     } else {
         for r in &reservations {
-            let excl = if r.exclusive { " [exclusive]" } else { "" };
+            let excl = if r.mode.is_exclusive() {
+                " [exclusive]"
+            } else {
+                ""
+            };
             println!(
                 "{} — {} by {}{} (expires {})",
                 r.id, r.file_glob, r.agent_name, excl, r.expires_at

@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 use filament_core::error::Result;
 use filament_core::models::AgentRole;
 
-use super::helpers::{connect, output_json, resolve_task};
+use super::helpers::{connect, output_json};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -185,7 +185,7 @@ async fn list(cli: &Cli) -> Result<()> {
 
 async fn history(cli: &Cli, args: &HistoryArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let task = resolve_task(&mut conn, &args.task).await?;
+    let task = conn.resolve_task(&args.task).await?;
     let runs = conn.list_agent_runs_by_task(task.id.as_str()).await?;
 
     if cli.json {

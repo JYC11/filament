@@ -4,9 +4,7 @@ use clap::Args;
 use filament_core::error::Result;
 use filament_core::models::{CreateEntityRequest, EntityType, Priority};
 
-use super::helpers::{
-    connect, output_json, print_entity_list, print_relations, read_content_file, resolve_entity,
-};
+use super::helpers::{connect, output_json, print_entity_list, print_relations, read_content_file};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -113,7 +111,7 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
 
 pub async fn remove(cli: &Cli, args: &RemoveArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let entity = conn.resolve_entity(&args.slug).await?;
 
     conn.delete_entity(entity.id().as_str()).await?;
 
@@ -133,7 +131,7 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     }
 
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let entity = conn.resolve_entity(&args.slug).await?;
     let id = entity.id().clone();
 
     if let Some(summary) = &args.summary {
@@ -154,7 +152,7 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
 
 pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let entity = conn.resolve_entity(&args.slug).await?;
     let c = entity.common();
 
     let relations = conn.list_relations(c.id.as_str()).await?;
@@ -181,8 +179,8 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
                 serde_json::to_string_pretty(&c.key_facts).expect("JSON")
             );
         }
-        if let Some(ref path) = c.content_path {
-            println!("Content:  {path}");
+        if let Some(ref content) = c.content {
+            println!("Content:  {}", content.path);
         }
         print_relations(&mut conn, &c.id, c.name.as_str(), &relations).await?;
         println!("Created:  {}", c.created_at);
@@ -193,10 +191,10 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
 
 pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let entity = conn.resolve_entity(&args.slug).await?;
     let c = entity.common();
 
-    let Some(ref content_path) = c.content_path else {
+    let Some(ref content_ref) = c.content else {
         if cli.json {
             output_json(&serde_json::json!({"name": c.name.as_str(), "content": null}));
         } else {
@@ -205,12 +203,12 @@ pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
         return Ok(());
     };
 
-    let content = read_content_file(Path::new(content_path))?;
+    let content = read_content_file(Path::new(&content_ref.path))?;
 
     if cli.json {
         let out = serde_json::json!({
             "name": c.name.as_str(),
-            "content_path": content_path,
+            "content_path": content_ref.path,
             "content": content,
         });
         output_json(&out);

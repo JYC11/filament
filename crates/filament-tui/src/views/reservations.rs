@@ -46,12 +46,12 @@ pub fn render_reservation_table(reservations: &[Reservation]) -> Table<'_> {
                 Style::default()
             };
 
-            let exclusive_str = if res.exclusive { "yes" } else { "no" };
+            let exclusive_str = if res.mode.is_exclusive() { "yes" } else { "no" };
             let created = res.created_at.format("%H:%M:%S").to_string();
 
             Row::new(vec![
-                Cell::from(res.agent_name.clone()),
-                Cell::from(res.file_glob.clone()),
+                Cell::from(res.agent_name.to_string()),
+                Cell::from(res.file_glob.to_string()),
                 Cell::from(exclusive_str),
                 Cell::from(Span::styled(time_left_str, time_style)),
                 Cell::from(created),

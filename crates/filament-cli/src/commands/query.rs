@@ -1,7 +1,7 @@
 use clap::Args;
 use filament_core::error::Result;
 
-use super::helpers::{connect, output_json, resolve_entity};
+use super::helpers::{connect, output_json};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -19,7 +19,7 @@ pub struct ContextArgs {
 
 pub async fn context(cli: &Cli, args: &ContextArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.around).await?;
+    let entity = conn.resolve_entity(&args.around).await?;
 
     let summaries = conn
         .context_summaries(entity.id().as_str(), args.depth)

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use filament_core::error::Result;
-use filament_core::models::TtlSeconds;
+use filament_core::models::{ReservationMode, TtlSeconds};
 use filament_core::store;
 use serde::Deserialize;
 
@@ -13,16 +13,16 @@ pub async fn acquire(
     state: &Arc<SharedState>,
 ) -> Result<serde_json::Value> {
     let p: AcquireReservationParam = parse_params(params)?;
-    let exclusive = p.exclusive.unwrap_or(false);
+    let mode = ReservationMode::from(p.exclusive.unwrap_or(false));
     let ttl = TtlSeconds::new(p.ttl_secs.unwrap_or(300))?;
     let res_id = state
         .store
         .with_transaction(|conn| {
             let agent = p.agent_name.clone();
             let glob = p.file_glob.clone();
-            Box::pin(async move {
-                store::acquire_reservation(conn, &agent, &glob, exclusive, ttl).await
-            })
+            Box::pin(
+                async move { store::acquire_reservation(conn, &agent, &glob, mode, ttl).await },
+            )
         })
         .await?;
     Ok(serde_json::json!({ "id": res_id }))

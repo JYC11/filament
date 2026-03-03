@@ -243,7 +243,8 @@ async fn reservation_acquire_and_conflict() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                acquire_reservation(conn, "agent-1", "src/*.rs", true, ttl).await?;
+                acquire_reservation(conn, "agent-1", "src/*.rs", ReservationMode::Exclusive, ttl)
+                    .await?;
                 Ok(())
             })
         })
@@ -253,7 +254,8 @@ async fn reservation_acquire_and_conflict() {
     let result = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                acquire_reservation(conn, "agent-2", "src/*.rs", true, ttl).await?;
+                acquire_reservation(conn, "agent-2", "src/*.rs", ReservationMode::Exclusive, ttl)
+                    .await?;
                 Ok(())
             })
         })
@@ -269,9 +271,10 @@ async fn reservation_release_allows_reacquire() {
 
     let id = store
         .with_transaction(|conn| {
-            Box::pin(
-                async move { acquire_reservation(conn, "agent-1", "src/*.rs", true, ttl).await },
-            )
+            Box::pin(async move {
+                acquire_reservation(conn, "agent-1", "src/*.rs", ReservationMode::Exclusive, ttl)
+                    .await
+            })
         })
         .await
         .unwrap();
@@ -287,7 +290,8 @@ async fn reservation_release_allows_reacquire() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                acquire_reservation(conn, "agent-2", "src/*.rs", true, ttl).await?;
+                acquire_reservation(conn, "agent-2", "src/*.rs", ReservationMode::Exclusive, ttl)
+                    .await?;
                 Ok(())
             })
         })
@@ -304,7 +308,8 @@ async fn exclusive_reservation_conflicts_with_nonexclusive() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                acquire_reservation(conn, "agent-1", "src/*.rs", false, ttl).await?;
+                acquire_reservation(conn, "agent-1", "src/*.rs", ReservationMode::Shared, ttl)
+                    .await?;
                 Ok(())
             })
         })
@@ -315,7 +320,8 @@ async fn exclusive_reservation_conflicts_with_nonexclusive() {
     let result = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                acquire_reservation(conn, "agent-2", "src/*.rs", true, ttl).await?;
+                acquire_reservation(conn, "agent-2", "src/*.rs", ReservationMode::Exclusive, ttl)
+                    .await?;
                 Ok(())
             })
         })
@@ -346,7 +352,7 @@ async fn mark_already_read_message_returns_not_found() {
         .await
         .unwrap();
 
-    // Mark as read again — should return not found (already read)
+    // Mark as read again — should return MessageAlreadyRead (not MessageNotFound)
     let result = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -354,7 +360,10 @@ async fn mark_already_read_message_returns_not_found() {
         })
         .await;
 
-    assert!(matches!(result, Err(FilamentError::MessageNotFound { .. })));
+    assert!(matches!(
+        result,
+        Err(FilamentError::MessageAlreadyRead { .. })
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -909,10 +918,25 @@ async fn release_reservations_by_agent_releases_all() {
         .with_transaction(|conn| {
             Box::pin(async move {
                 let ttl = filament_core::models::TtlSeconds::new(3600).unwrap();
-                acquire_reservation(conn, "my-agent", "src/*.rs", true, ttl).await?;
-                acquire_reservation(conn, "my-agent", "tests/*.rs", false, ttl).await?;
+                acquire_reservation(
+                    conn,
+                    "my-agent",
+                    "src/*.rs",
+                    ReservationMode::Exclusive,
+                    ttl,
+                )
+                .await?;
+                acquire_reservation(conn, "my-agent", "tests/*.rs", ReservationMode::Shared, ttl)
+                    .await?;
                 // Also one for a different agent (should not be released)
-                acquire_reservation(conn, "other-agent", "docs/*.md", true, ttl).await?;
+                acquire_reservation(
+                    conn,
+                    "other-agent",
+                    "docs/*.md",
+                    ReservationMode::Exclusive,
+                    ttl,
+                )
+                .await?;
                 Ok(())
             })
         })

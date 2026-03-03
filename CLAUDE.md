@@ -121,7 +121,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 - **Slug-based identity** (ADR-019): 8-char `[a-z0-9]` slugs replace name-based lookup
 - **Entity ADT** (ADR-020): `Entity` enum with typed variants, `TypeMismatch` error, compile-time type safety
 - 235 tests (120 core + 58 CLI + 39 daemon + 10 MCP + 8 TUI), zero clippy warnings
-- **Code review complete** — all 15 tasks from `.plan/code-review-session34.md` done (5 low-priority optional items remain)
+- **Code review complete** — all 15 tasks from `.plan/code-review-session34.md` done
 - **Next**: Phase 5 manual QA, then Phase 6 — Integration
 
 ## References

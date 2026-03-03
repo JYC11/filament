@@ -8,8 +8,8 @@ use crate::graph::KnowledgeGraph;
 use crate::models::{
     CreateEntityRequest, CreateRelationRequest, Entity, EntityCommon, EntityId, EntityStatus,
     EntityType, Event, Message, MessageId, Relation, RelationId, Reservation, ReservationId,
-    SendMessageRequest, Slug, TtlSeconds, ValidCreateEntityRequest, ValidCreateRelationRequest,
-    ValidSendMessageRequest,
+    ReservationMode, SendMessageRequest, Slug, TtlSeconds, ValidCreateEntityRequest,
+    ValidCreateRelationRequest, ValidSendMessageRequest,
 };
 use crate::schema::init_pool;
 use crate::store::{self, FilamentStore};
@@ -313,7 +313,7 @@ impl FilamentConnection {
         &mut self,
         agent: &str,
         glob: &str,
-        exclusive: bool,
+        mode: ReservationMode,
         ttl: TtlSeconds,
     ) -> Result<ReservationId> {
         match self {
@@ -324,13 +324,13 @@ impl FilamentConnection {
                     let agent = agent.clone();
                     let glob = glob.clone();
                     Box::pin(async move {
-                        store::acquire_reservation(conn, &agent, &glob, exclusive, ttl).await
+                        store::acquire_reservation(conn, &agent, &glob, mode, ttl).await
                     })
                 })
                 .await
             }
             Self::Socket(c) => {
-                c.acquire_reservation(agent, glob, exclusive, ttl.value())
+                c.acquire_reservation(agent, glob, mode.is_exclusive(), ttl.value())
                     .await
             }
         }

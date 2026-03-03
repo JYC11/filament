@@ -717,7 +717,7 @@ async fn list_reservations_via_socket() {
         .expect("list agent-b");
     assert_eq!(agent_b.len(), 1);
     assert_eq!(agent_b[0].agent_name, "agent-b");
-    assert!(agent_b[0].exclusive);
+    assert!(agent_b[0].mode.is_exclusive());
 
     cancel.cancel();
 }

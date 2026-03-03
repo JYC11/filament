@@ -22,6 +22,9 @@ pub enum FilamentError {
     #[error("Message not found: {id}")]
     MessageNotFound { id: String },
 
+    #[error("Message already read: {id}")]
+    MessageAlreadyRead { id: String },
+
     #[error("Agent run not found: {id}")]
     AgentRunNotFound { id: String },
 
@@ -64,6 +67,7 @@ impl FilamentError {
             Self::TypeMismatch { .. } => "TYPE_MISMATCH",
             Self::RelationNotFound { .. } => "RELATION_NOT_FOUND",
             Self::MessageNotFound { .. } => "MESSAGE_NOT_FOUND",
+            Self::MessageAlreadyRead { .. } => "MESSAGE_ALREADY_READ",
             Self::AgentRunNotFound { .. } => "AGENT_RUN_NOT_FOUND",
             Self::ReservationNotFound { .. } => "RESERVATION_NOT_FOUND",
             Self::CycleDetected { .. } => "CYCLE_DETECTED",
@@ -99,6 +103,9 @@ impl FilamentError {
             )),
             Self::MessageNotFound { id } => {
                 Some(format!("Check message ID '{id}' with `filament message inbox <agent>`"))
+            }
+            Self::MessageAlreadyRead { id } => {
+                Some(format!("Message '{id}' has already been marked as read"))
             }
             Self::AgentRunNotFound { id } => {
                 Some(format!("Agent run '{id}' does not exist or has already finished"))
@@ -136,6 +143,7 @@ impl FilamentError {
             Self::EntityNotFound { .. }
             | Self::RelationNotFound { .. }
             | Self::MessageNotFound { .. }
+            | Self::MessageAlreadyRead { .. }
             | Self::AgentRunNotFound { .. }
             | Self::ReservationNotFound { .. } => 3,
             Self::Validation(_) | Self::Protocol(_) | Self::TypeMismatch { .. } => 4,

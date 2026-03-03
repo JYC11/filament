@@ -2,7 +2,7 @@ use filament_core::connection::FilamentConnection;
 use filament_core::error::{FilamentError, StructuredError};
 use filament_core::models::{
     CreateEntityRequest, CreateRelationRequest, EntityType, MessageType, Priority, RelationType,
-    SendMessageRequest, TtlSeconds,
+    ReservationMode, SendMessageRequest, TtlSeconds,
 };
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -277,11 +277,11 @@ impl FilamentMcp {
     #[tool(name = "filament_reserve")]
     async fn reserve(&self, Parameters(p): Parameters<ReserveParams>) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
-        let exclusive = p.exclusive.unwrap_or(false);
+        let mode = ReservationMode::from(p.exclusive.unwrap_or(false));
         let ttl_val = p.ttl_secs.unwrap_or(300);
         let ttl = TtlSeconds::new(ttl_val).map_err(|e| map_err(&e))?;
         let id = conn
-            .acquire_reservation(&p.agent, &p.file_glob, exclusive, ttl)
+            .acquire_reservation(&p.agent, &p.file_glob, mode, ttl)
             .await
             .map_err(|e| map_err(&e))?;
         Ok(format!("Reservation acquired: {id}"))

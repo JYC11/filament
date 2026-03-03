@@ -2,7 +2,7 @@ use clap::Args;
 use filament_core::error::Result;
 use filament_core::models::{CreateRelationRequest, RelationType};
 
-use super::helpers::{connect, output_json, resolve_entity_id};
+use super::helpers::{connect, output_json};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -34,8 +34,8 @@ pub struct UnrelateArgs {
 pub async fn relate(cli: &Cli, args: &RelateArgs) -> Result<()> {
     let mut conn = connect().await?;
 
-    let source_id = resolve_entity_id(&mut conn, &args.source).await?;
-    let target_id = resolve_entity_id(&mut conn, &args.target).await?;
+    let source_id = conn.resolve_entity(&args.source).await?.id().clone();
+    let target_id = conn.resolve_entity(&args.target).await?.id().clone();
 
     let req = CreateRelationRequest {
         source_id: source_id.to_string(),
@@ -62,8 +62,8 @@ pub async fn relate(cli: &Cli, args: &RelateArgs) -> Result<()> {
 pub async fn unrelate(cli: &Cli, args: &UnrelateArgs) -> Result<()> {
     let mut conn = connect().await?;
 
-    let source_id = resolve_entity_id(&mut conn, &args.source).await?;
-    let target_id = resolve_entity_id(&mut conn, &args.target).await?;
+    let source_id = conn.resolve_entity(&args.source).await?.id().clone();
+    let target_id = conn.resolve_entity(&args.target).await?.id().clone();
 
     conn.delete_relation(
         source_id.as_str(),

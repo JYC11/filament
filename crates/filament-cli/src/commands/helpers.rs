@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use filament_core::connection::FilamentConnection;
 use filament_core::error::{FilamentError, Result};
-use filament_core::models::{Entity, EntityCommon, EntityId, Relation};
+use filament_core::models::{Entity, EntityId, Relation};
 
 use crate::Cli;
 
@@ -27,32 +27,6 @@ pub fn find_project_root() -> Result<PathBuf> {
 pub async fn connect() -> Result<FilamentConnection> {
     let root = find_project_root()?;
     FilamentConnection::auto_detect(&root).await
-}
-
-/// Resolve an entity by slug (first) or UUID fallback.
-pub async fn resolve_entity(conn: &mut FilamentConnection, slug_or_id: &str) -> Result<Entity> {
-    conn.resolve_entity(slug_or_id).await
-}
-
-/// Resolve an entity by slug/ID and verify it is a Task.
-pub async fn resolve_task(conn: &mut FilamentConnection, slug_or_id: &str) -> Result<EntityCommon> {
-    conn.resolve_task(slug_or_id).await
-}
-
-/// Resolve an entity by slug/ID and verify it is an Agent.
-pub async fn resolve_agent(
-    conn: &mut FilamentConnection,
-    slug_or_id: &str,
-) -> Result<EntityCommon> {
-    conn.resolve_agent(slug_or_id).await
-}
-
-/// Resolve an entity slug/ID to just the ID.
-pub async fn resolve_entity_id(
-    conn: &mut FilamentConnection,
-    slug_or_id: &str,
-) -> Result<EntityId> {
-    Ok(resolve_entity(conn, slug_or_id).await?.id().clone())
 }
 
 /// Print a value as JSON.

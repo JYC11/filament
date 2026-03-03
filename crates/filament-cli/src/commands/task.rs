@@ -5,8 +5,7 @@ use filament_core::models::{
 };
 
 use super::helpers::{
-    connect, output_json, print_entity_list, print_relations, resolve_agent, resolve_entity,
-    resolve_entity_id, resolve_task, truncate_with_ellipsis,
+    connect, output_json, print_entity_list, print_relations, truncate_with_ellipsis,
 };
 use crate::Cli;
 
@@ -124,12 +123,12 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
 
     // Resolve relation targets before creating the entity
     let blocks_id = if let Some(blocks_slug) = &args.blocks {
-        Some(resolve_entity_id(&mut conn, blocks_slug).await?)
+        Some(conn.resolve_entity(blocks_slug).await?.id().clone())
     } else {
         None
     };
     let depends_on_id = if let Some(dep_slug) = &args.depends_on {
-        Some(resolve_entity_id(&mut conn, dep_slug).await?)
+        Some(conn.resolve_entity(dep_slug).await?.id().clone())
     } else {
         None
     };
@@ -230,7 +229,7 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
 
 async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let c = resolve_task(&mut conn, &args.slug).await?;
+    let c = conn.resolve_task(&args.slug).await?;
     let relations = conn.list_relations(c.id.as_str()).await?;
 
     if cli.json {
@@ -264,7 +263,7 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
 
 async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let c = resolve_task(&mut conn, &args.slug).await?;
+    let c = conn.resolve_task(&args.slug).await?;
 
     conn.update_entity_status(c.id.as_str(), filament_core::models::EntityStatus::Closed)
         .await?;
@@ -279,8 +278,8 @@ async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
 
 async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let task = resolve_task(&mut conn, &args.slug).await?;
-    let agent = resolve_agent(&mut conn, &args.to).await?;
+    let task = conn.resolve_task(&args.slug).await?;
+    let agent = conn.resolve_agent(&args.to).await?;
 
     let rel_req = CreateRelationRequest {
         source_id: agent.id.to_string(),
@@ -303,7 +302,7 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
 
 async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let entity = conn.resolve_entity(&args.slug).await?;
 
     let path = conn.critical_path(entity.id().as_str()).await?;
 

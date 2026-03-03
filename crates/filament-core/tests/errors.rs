@@ -23,6 +23,12 @@ fn error_codes_are_stable() {
             "MESSAGE_NOT_FOUND",
         ),
         (
+            FilamentError::MessageAlreadyRead {
+                id: "msg-1".to_string(),
+            },
+            "MESSAGE_ALREADY_READ",
+        ),
+        (
             FilamentError::AgentRunNotFound {
                 id: "run-1".to_string(),
             },

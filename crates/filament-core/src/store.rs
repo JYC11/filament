@@ -3,10 +3,10 @@ use sqlx::{Pool, Sqlite, SqliteConnection};
 
 use crate::error::{FilamentError, Result};
 use crate::models::{
-    AgentRun, AgentRunId, AgentStatus, Entity, EntityCommon, EntityId, EntityStatus, EntityType,
-    Event, EventId, EventType, Message, MessageId, NonEmptyString, Priority, Relation, RelationId,
-    Reservation, ReservationId, Slug, TtlSeconds, ValidCreateEntityRequest,
-    ValidCreateRelationRequest, ValidSendMessageRequest,
+    AgentRun, AgentRunId, AgentStatus, ContentRef, Entity, EntityCommon, EntityId, EntityStatus,
+    EntityType, Event, EventId, EventType, Message, MessageId, NonEmptyString, Priority, Relation,
+    RelationId, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
+    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
 };
 
 // ---------------------------------------------------------------------------
@@ -32,14 +32,17 @@ pub(crate) struct EntityRow {
 
 impl From<EntityRow> for Entity {
     fn from(row: EntityRow) -> Self {
+        let content = row.content_path.map(|path| ContentRef {
+            path,
+            hash: row.content_hash,
+        });
         let common = EntityCommon {
             id: row.id,
             slug: row.slug,
             name: row.name,
             summary: row.summary,
             key_facts: row.key_facts,
-            content_path: row.content_path,
-            content_hash: row.content_hash,
+            content,
             status: row.status,
             priority: row.priority,
             created_at: row.created_at,
@@ -552,7 +555,16 @@ pub async fn mark_message_read(conn: &mut SqliteConnection, id: &str) -> Result<
     .rows_affected();
 
     if rows == 0 {
-        return Err(FilamentError::MessageNotFound { id: id.to_string() });
+        // Distinguish "message doesn't exist" from "already read"
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?)")
+            .bind(id)
+            .fetch_one(&mut *conn)
+            .await?;
+        return if exists {
+            Err(FilamentError::MessageAlreadyRead { id: id.to_string() })
+        } else {
+            Err(FilamentError::MessageNotFound { id: id.to_string() })
+        };
     }
 
     record_event(conn, None, EventType::MessageRead, "system", None, Some(id)).await?;
@@ -573,7 +585,7 @@ pub async fn acquire_reservation(
     conn: &mut SqliteConnection,
     agent_name: &str,
     file_glob: &str,
-    exclusive: bool,
+    mode: ReservationMode,
     ttl: TtlSeconds,
 ) -> Result<ReservationId> {
     let now = Utc::now();
@@ -581,8 +593,8 @@ pub async fn acquire_reservation(
 
     // Check for conflicting reservations (simple glob equality check).
     // Exclusive requests conflict with ANY existing reservation by other agents.
-    // Non-exclusive requests only conflict with exclusive reservations by other agents.
-    let conflict_sql = if exclusive {
+    // Shared requests only conflict with exclusive reservations by other agents.
+    let conflict_sql = if mode.is_exclusive() {
         "SELECT * FROM file_reservations WHERE file_glob = ? AND expires_at > ? AND agent_name != ?"
     } else {
         "SELECT * FROM file_reservations WHERE file_glob = ? AND exclusive = 1 AND expires_at > ? AND agent_name != ?"
@@ -596,8 +608,8 @@ pub async fn acquire_reservation(
 
     if let Some(r) = conflict {
         return Err(FilamentError::FileReserved {
-            agent: r.agent_name,
-            glob: r.file_glob,
+            agent: r.agent_name.to_string(),
+            glob: r.file_glob.to_string(),
         });
     }
 
@@ -609,7 +621,7 @@ pub async fn acquire_reservation(
     .bind(id.as_str())
     .bind(agent_name)
     .bind(file_glob)
-    .bind(exclusive)
+    .bind(mode)
     .bind(now)
     .bind(expires_at)
     .execute(&mut *conn)

@@ -754,6 +754,87 @@ impl AgentRole {
     pub const ALL: &'static [Self] = &[Self::Coder, Self::Reviewer, Self::Planner, Self::Dockeeper];
 }
 
+/// Whether a file reservation is exclusive or shared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReservationMode {
+    Exclusive,
+    Shared,
+}
+
+impl ReservationMode {
+    pub const fn is_exclusive(self) -> bool {
+        matches!(self, Self::Exclusive)
+    }
+}
+
+impl From<bool> for ReservationMode {
+    fn from(exclusive: bool) -> Self {
+        if exclusive {
+            Self::Exclusive
+        } else {
+            Self::Shared
+        }
+    }
+}
+
+impl From<ReservationMode> for bool {
+    fn from(mode: ReservationMode) -> Self {
+        mode.is_exclusive()
+    }
+}
+
+impl std::fmt::Display for ReservationMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Exclusive => write!(f, "exclusive"),
+            Self::Shared => write!(f, "shared"),
+        }
+    }
+}
+
+impl std::str::FromStr for ReservationMode {
+    type Err = crate::error::FilamentError;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "exclusive" => Ok(Self::Exclusive),
+            "shared" => Ok(Self::Shared),
+            _ => Err(crate::error::FilamentError::Validation(format!(
+                "invalid ReservationMode: '{s}'"
+            ))),
+        }
+    }
+}
+
+// SQLite stores exclusive as INTEGER (1 = exclusive, 0 = shared)
+impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for ReservationMode {
+    fn decode(
+        value: <sqlx::Sqlite as sqlx::Database>::ValueRef<'r>,
+    ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
+        let v = <bool as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
+        Ok(Self::from(v))
+    }
+}
+
+impl sqlx::Encode<'_, sqlx::Sqlite> for ReservationMode {
+    fn encode_by_ref(
+        &self,
+        args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>,
+    ) -> std::result::Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        <bool as sqlx::Encode<'_, sqlx::Sqlite>>::encode_by_ref(&self.is_exclusive(), args)
+    }
+}
+
+impl sqlx::Type<sqlx::Sqlite> for ReservationMode {
+    fn type_info() -> <sqlx::Sqlite as sqlx::Database>::TypeInfo {
+        <bool as sqlx::Type<sqlx::Sqlite>>::type_info()
+    }
+
+    fn compatible(ty: &<sqlx::Sqlite as sqlx::Database>::TypeInfo) -> bool {
+        <bool as sqlx::Type<sqlx::Sqlite>>::compatible(ty)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
@@ -791,6 +872,13 @@ impl_enum_str!(EventType {
 // DB row structs
 // ---------------------------------------------------------------------------
 
+/// Reference to content stored on disk — groups path + integrity hash.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ContentRef {
+    pub path: String,
+    pub hash: Option<String>,
+}
+
 /// Shared fields for all entity types.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EntityCommon {
@@ -799,8 +887,7 @@ pub struct EntityCommon {
     pub name: NonEmptyString,
     pub summary: String,
     pub key_facts: serde_json::Value,
-    pub content_path: Option<String>,
-    pub content_hash: Option<String>,
+    pub content: Option<ContentRef>,
     pub status: EntityStatus,
     pub priority: Priority,
     pub created_at: DateTime<Utc>,
@@ -950,9 +1037,10 @@ pub struct Message {
 #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize, JsonSchema)]
 pub struct Reservation {
     pub id: ReservationId,
-    pub agent_name: String,
-    pub file_glob: String,
-    pub exclusive: bool,
+    pub agent_name: NonEmptyString,
+    pub file_glob: NonEmptyString,
+    #[sqlx(rename = "exclusive")]
+    pub mode: ReservationMode,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
