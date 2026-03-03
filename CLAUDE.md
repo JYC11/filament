@@ -15,7 +15,8 @@ filament/
 │   ├── test-standards.md       # layered test strategy
 │   ├── benchmarks.md           # beads_rust + Flywheel analysis
 │   ├── benchmarks-local.md     # workout-util + koupang patterns
-│   └── adr/                    # architecture decision records (001–016)
+│   ├── gotchas.md              # pitfalls & solutions (sqlx, thiserror, petgraph, etc.)
+│   └── adr/                    # architecture decision records (001–018)
 ├── crates/
 │   ├── filament-core/          # library: graph, storage, models, errors
 │   ├── filament-cli/           # the single binary (clap), depends on core + daemon + tui
@@ -26,7 +27,7 @@ filament/
 
 ## Architecture Decisions
 
-Full ADRs with rationale: `.plan/adr/` (001–017). Key choices:
+Full ADRs with rationale: `.plan/adr/` (001–018). Key choices:
 
 - **Hybrid daemon** — direct SQLite single-user, daemon for multi-agent (ADR-001)
 - **Unified graph** — all data as Entity nodes + Relation edges (ADR-003)
@@ -35,6 +36,7 @@ Full ADRs with rationale: `.plan/adr/` (001–017). Key choices:
 - **Targeted messaging only** — no broadcast (ADR-010)
 - **MCP agent interface** — ecosystem standard (ADR-011)
 - **Structured errors** — machine-readable codes, hints, retryable (ADR-007)
+- **Value types** — Priority, Weight, NonEmptyString etc. make invalid states unrepresentable (ADR-018)
 
 ## Stack
 
@@ -65,9 +67,18 @@ Full ADRs with rationale: `.plan/adr/` (001–017). Key choices:
 - Test standards: `.plan/test-standards.md`
 - Architecture decisions: `.plan/adr/` (use `make adr TITLE="..."` to add new ones)
 
+## Gotchas
+
+See `.plan/gotchas.md` for the full list. Top hits:
+
+- sqlx custom newtypes need `fn compatible()` override, not just `type_info()`
+- `thiserror` v2 treats fields named `source` as error sources
+- `with_transaction` requires `|conn| Box::pin(async move { ... })`
+- petgraph 0.7 requires `use petgraph::visit::EdgeRef` for edge methods
+
 ## Current Status
 
-**Phase 1 complete** (2026-03-03). filament-core library: models, errors, schema, store, graph, connection, protocol. 48 tests, zero warnings. Phase 2 (CLI) next.
+**Phase 1 complete + polished** (2026-03-03). filament-core library: models, errors, schema, store, graph, connection, protocol. Value types enforce invariants at compile time. 67 tests, zero warnings. Phase 2 (CLI) next.
 
 ## References
 
