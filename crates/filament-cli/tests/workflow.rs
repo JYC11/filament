@@ -82,10 +82,7 @@ fn full_workflow() {
         .stdout(predicate::str::contains("auth-module"));
 
     // Task ready: implement-login depends_on auth-module (open), so it's blocked
-    let output = filament(&dir)
-        .args(["task", "ready"])
-        .output()
-        .unwrap();
+    let output = filament(&dir).args(["task", "ready"]).output().unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(
         !stdout.contains("implement-login"),

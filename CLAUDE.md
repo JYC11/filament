@@ -98,18 +98,16 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**Phase 2 complete** (2026-03-03). Full CLI binary with all command groups:
-- `filament init` — project initialization
-- `filament add/remove/update/inspect/read/list` — entity CRUD (top-level)
-- `filament relate/unrelate` — relation management
-- `filament task add/list/ready/show/close/assign/critical-path` — task subgroup
-- `filament context --around <name> --depth N` — graph neighborhood query
-- `filament message send/inbox/read` — inter-agent messaging
-- `filament reserve/release/reservations` — file reservation management
-- Global flags: `--json`, `-v`/`-q` verbosity, structured error output
-- 142 tests (84 core + 58 CLI integration), zero clippy warnings
-- 3 code reviews + 2 manual QA rounds (65 test cases, results in `.qa/`)
-- Self-hosting: 26 entities + 16 relations in `.filament/` knowledge graph
+**Phase 3 complete** (2026-03-03). Daemon server with NDJSON Unix socket protocol:
+- `filament serve [--foreground]` — start daemon (background or foreground)
+- `filament stop` — stop daemon via PID file + SIGTERM
+- `SharedState` = `FilamentStore` + `RwLock<KnowledgeGraph>` (thread-safe shared state)
+- NDJSON protocol: all 23 `Method` variants dispatched over Unix socket
+- `DaemonClient` in filament-core: typed async methods for all operations
+- `CancellationToken`-based graceful shutdown + periodic stale reservation cleanup
+- `remove_edge()` added to `KnowledgeGraph`
+- 151 tests (84 core + 58 CLI + 9 daemon integration), zero clippy warnings
+- MCP server (3.3) deferred — tracked as `implement-mcp-server` task
 
 ## References
 

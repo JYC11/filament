@@ -31,7 +31,7 @@ pub async fn connect() -> Result<FilamentStore> {
     match conn {
         FilamentConnection::Direct(store) => Ok(store),
         FilamentConnection::Socket(_) => Err(FilamentError::Validation(
-            "daemon mode not yet supported".to_string(),
+            "daemon is running — CLI direct mode unavailable. Stop the daemon with `filament stop` or use a daemon-aware client.".to_string(),
         )),
     }
 }

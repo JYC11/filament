@@ -147,6 +147,33 @@ impl KnowledgeGraph {
         Ok(())
     }
 
+    /// Remove an edge by source, target, and relation type.
+    /// Returns `true` if an edge was removed, `false` if not found.
+    pub fn remove_edge(
+        &mut self,
+        source_id: &str,
+        target_id: &str,
+        relation_type: &RelationType,
+    ) -> bool {
+        let (Some(&src), Some(&tgt)) = (self.index.get(source_id), self.index.get(target_id))
+        else {
+            return false;
+        };
+
+        let edge_id = self
+            .graph
+            .edges_directed(src, Direction::Outgoing)
+            .find(|e| e.target() == tgt && &e.weight().relation_type == relation_type)
+            .map(|e| e.id());
+
+        if let Some(id) = edge_id {
+            self.graph.remove_edge(id);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Remove a node and all its edges.
     pub fn remove_node(&mut self, entity_id: &str) {
         if let Some(idx) = self.index.remove(entity_id) {
@@ -216,20 +243,20 @@ impl KnowledgeGraph {
                     return None;
                 }
                 // Check if blocked: incoming "blocks" or outgoing "depends_on" from non-closed node
-                let blocked_by_blocks = self
-                    .graph
-                    .edges_directed(idx, Direction::Incoming)
-                    .any(|edge| {
-                        edge.weight().relation_type == RelationType::Blocks
-                            && self.graph[edge.source()].status != EntityStatus::Closed
-                    });
-                let blocked_by_depends = self
-                    .graph
-                    .edges_directed(idx, Direction::Outgoing)
-                    .any(|edge| {
-                        edge.weight().relation_type == RelationType::DependsOn
-                            && self.graph[edge.target()].status != EntityStatus::Closed
-                    });
+                let blocked_by_blocks =
+                    self.graph
+                        .edges_directed(idx, Direction::Incoming)
+                        .any(|edge| {
+                            edge.weight().relation_type == RelationType::Blocks
+                                && self.graph[edge.source()].status != EntityStatus::Closed
+                        });
+                let blocked_by_depends =
+                    self.graph
+                        .edges_directed(idx, Direction::Outgoing)
+                        .any(|edge| {
+                            edge.weight().relation_type == RelationType::DependsOn
+                                && self.graph[edge.target()].status != EntityStatus::Closed
+                        });
                 if blocked_by_blocks || blocked_by_depends {
                     return None;
                 }

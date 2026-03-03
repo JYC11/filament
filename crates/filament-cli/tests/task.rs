@@ -364,7 +364,14 @@ fn task_close_rejects_non_task() {
     let dir = init_project();
 
     filament(&dir)
-        .args(["add", "my-module", "--type", "module", "--summary", "A module"])
+        .args([
+            "add",
+            "my-module",
+            "--type",
+            "module",
+            "--summary",
+            "A module",
+        ])
         .assert()
         .success();
 
@@ -380,7 +387,14 @@ fn task_assign_rejects_non_task() {
     let dir = init_project();
 
     filament(&dir)
-        .args(["add", "my-module", "--type", "module", "--summary", "A module"])
+        .args([
+            "add",
+            "my-module",
+            "--type",
+            "module",
+            "--summary",
+            "A module",
+        ])
         .assert()
         .success();
 
@@ -413,7 +427,13 @@ fn task_add_with_depends_on() {
     let dir = init_project();
 
     filament(&dir)
-        .args(["task", "add", "dep-target", "--summary", "Dependency target"])
+        .args([
+            "task",
+            "add",
+            "dep-target",
+            "--summary",
+            "Dependency target",
+        ])
         .assert()
         .success();
 

@@ -5,6 +5,7 @@ mod message;
 mod query;
 mod relation;
 mod reserve;
+mod serve;
 mod task;
 
 use clap::Subcommand;
@@ -56,6 +57,12 @@ pub enum Commands {
     Release(reserve::ReleaseArgs),
     /// List file reservations.
     Reservations(reserve::ReservationsArgs),
+
+    // -- Daemon commands --
+    /// Start the filament daemon.
+    Serve(serve::ServeArgs),
+    /// Stop the filament daemon.
+    Stop,
 }
 
 impl Commands {
@@ -76,6 +83,8 @@ impl Commands {
             Self::Reserve(args) => reserve::reserve(cli, args).await,
             Self::Release(args) => reserve::release(cli, args).await,
             Self::Reservations(args) => reserve::reservations(cli, args).await,
+            Self::Serve(args) => serve::serve(args).await,
+            Self::Stop => serve::stop().await,
         }
     }
 }

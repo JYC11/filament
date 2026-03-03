@@ -17,6 +17,7 @@ filament-daemon = { path = "../filament-daemon" }
 filament-tui = { path = "../filament-tui" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }

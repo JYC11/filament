@@ -3,6 +3,7 @@ use std::path::Path;
 use sqlx::{Pool, Sqlite};
 use tokio::net::UnixStream;
 
+use crate::client::DaemonClient;
 use crate::error::Result;
 use crate::schema::init_pool;
 use crate::store::FilamentStore;
@@ -12,7 +13,7 @@ pub enum FilamentConnection {
     /// Direct `SQLite` access (single-user mode).
     Direct(FilamentStore),
     /// Connected to daemon via Unix socket (multi-agent mode).
-    Socket(UnixStream),
+    Socket(DaemonClient),
 }
 
 /// Runtime directory name created by `filament init`.
@@ -35,7 +36,7 @@ impl FilamentConnection {
         // Try socket first (daemon mode)
         if sock_path.exists() {
             if let Ok(stream) = UnixStream::connect(&sock_path).await {
-                return Ok(Self::Socket(stream));
+                return Ok(Self::Socket(DaemonClient::from_stream(stream)));
             }
         }
 
@@ -76,6 +77,15 @@ impl FilamentConnection {
         match self {
             Self::Direct(store) => Some(store.pool()),
             Self::Socket(_) => None,
+        }
+    }
+
+    /// Get the daemon client (only available in Socket mode).
+    #[must_use]
+    pub const fn client(&mut self) -> Option<&mut DaemonClient> {
+        match self {
+            Self::Direct(_) => None,
+            Self::Socket(client) => Some(client),
         }
     }
 }

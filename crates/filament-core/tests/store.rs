@@ -1,6 +1,8 @@
 mod common;
 
-use common::{blocks_req, depends_on_req, sample_entity_req, sample_message_req, task_req, test_db};
+use common::{
+    blocks_req, depends_on_req, sample_entity_req, sample_message_req, task_req, test_db,
+};
 use filament_core::error::FilamentError;
 use filament_core::models::*;
 use filament_core::store::*;
