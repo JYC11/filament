@@ -270,15 +270,20 @@ impl KnowledgeGraph {
         tasks
     }
 
-    /// Critical path: longest dependency chain from a task to completion.
-    /// Returns the chain of entity IDs. Safe against cycles.
+    /// Critical path: longest chain of upstream prerequisites for a task.
+    ///
+    /// "Upstream" means things that must complete before this entity can proceed:
+    /// - Outgoing `DependsOn` edges (A `depends_on` B → B is upstream)
+    /// - Incoming `Blocks` edges (B `blocks` A → B is upstream)
+    ///
+    /// Returns the chain of entity IDs (starting with the given entity).
+    /// Safe against cycles.
     #[must_use]
     pub fn critical_path(&self, entity_id: &str) -> Vec<EntityId> {
         let Some(&start) = self.index.get(entity_id) else {
             return Vec::new();
         };
 
-        // DFS to find the longest path through "blocks"/"depends_on" edges
         let mut longest: Vec<EntityId> = Vec::new();
         let mut current: Vec<EntityId> = vec![EntityId::from(entity_id)];
         let mut visited = std::collections::HashSet::new();
@@ -295,9 +300,10 @@ impl KnowledgeGraph {
         visited: &mut std::collections::HashSet<NodeIndex>,
     ) {
         let mut found_dep = false;
+
+        // Follow outgoing DependsOn: A depends_on B → B is upstream
         for edge in self.graph.edges_directed(node, Direction::Outgoing) {
-            let etype = &edge.weight().relation_type;
-            if *etype == RelationType::Blocks || *etype == RelationType::DependsOn {
+            if edge.weight().relation_type == RelationType::DependsOn {
                 let target = edge.target();
                 if self.graph[target].status != EntityStatus::Closed && visited.insert(target) {
                     found_dep = true;
@@ -305,6 +311,20 @@ impl KnowledgeGraph {
                     self.dfs_longest_path(target, current, longest, visited);
                     current.pop();
                     visited.remove(&target);
+                }
+            }
+        }
+
+        // Follow incoming Blocks: B blocks A → B is upstream of A
+        for edge in self.graph.edges_directed(node, Direction::Incoming) {
+            if edge.weight().relation_type == RelationType::Blocks {
+                let source = edge.source();
+                if self.graph[source].status != EntityStatus::Closed && visited.insert(source) {
+                    found_dep = true;
+                    current.push(self.graph[source].entity_id.clone());
+                    self.dfs_longest_path(source, current, longest, visited);
+                    current.pop();
+                    visited.remove(&source);
                 }
             }
         }

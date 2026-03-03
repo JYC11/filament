@@ -1,6 +1,6 @@
 mod common;
 
-use common::{blocks_req, task_req, test_db};
+use common::{blocks_req, depends_on_req, task_req, test_db};
 use filament_core::error::FilamentError;
 use filament_core::graph::KnowledgeGraph;
 use filament_core::store::*;
@@ -71,10 +71,11 @@ async fn ready_tasks_excludes_blocked_nodes() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn critical_path_follows_dependencies() {
+async fn critical_path_follows_upstream_blocks() {
     let store = test_db().await;
 
-    let a_id = store
+    // A blocks B, B blocks C → C's upstream chain is C ← B ← A
+    let (_, _, c_id) = store
         .with_transaction(|conn| {
             Box::pin(async move {
                 let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
@@ -82,6 +83,33 @@ async fn critical_path_follows_dependencies() {
                 let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 create_relation(conn, &blocks_req(b.as_str(), c.as_str())).await?;
+                Ok((a, b, c))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    // Query from C (the most-blocked task): upstream is C ← B ← A
+    let path = graph.critical_path(c_id.as_str());
+    assert_eq!(path.len(), 3); // C -> B -> A (upstream prerequisites)
+}
+
+#[tokio::test]
+async fn critical_path_follows_depends_on() {
+    let store = test_db().await;
+
+    // A depends_on B, B depends_on C (A needs B, B needs C)
+    let a_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                create_relation(conn, &depends_on_req(a.as_str(), b.as_str())).await?;
+                create_relation(conn, &depends_on_req(b.as_str(), c.as_str())).await?;
                 Ok(a)
             })
         })
@@ -92,7 +120,67 @@ async fn critical_path_follows_dependencies() {
     graph.hydrate(store.pool()).await.unwrap();
 
     let path = graph.critical_path(a_id.as_str());
-    assert_eq!(path.len(), 3); // A -> B -> C
+    assert_eq!(path.len(), 3); // A -> B -> C (upstream chain)
+}
+
+#[tokio::test]
+async fn critical_path_mixed_blocks_and_depends_on() {
+    let store = test_db().await;
+
+    // B blocks A (incoming blocks → B is upstream of A)
+    // A depends_on C (outgoing depends_on → C is upstream of A)
+    // Both B and C are upstream of A, so critical path from A should find the longer chain.
+    let a_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                let (d, _) = create_entity(conn, &task_req("D", 1)).await?;
+                // B blocks A (B is upstream of A)
+                create_relation(conn, &blocks_req(b.as_str(), a.as_str())).await?;
+                // A depends_on C (C is upstream of A)
+                create_relation(conn, &depends_on_req(a.as_str(), c.as_str())).await?;
+                // C depends_on D (D is upstream of C)
+                create_relation(conn, &depends_on_req(c.as_str(), d.as_str())).await?;
+                Ok(a)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let path = graph.critical_path(a_id.as_str());
+    // Longest upstream chain: A → C → D (length 3), vs A → B (length 2)
+    assert_eq!(path.len(), 3);
+}
+
+#[tokio::test]
+async fn critical_path_does_not_follow_outgoing_blocks() {
+    let store = test_db().await;
+
+    // A blocks B (outgoing blocks from A — B is downstream, NOT upstream)
+    // So critical_path(A) should NOT follow A→B.
+    let a_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                Ok(a)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let path = graph.critical_path(a_id.as_str());
+    // A has no upstream prerequisites, so path is just [A]
+    assert_eq!(path.len(), 1);
 }
 
 // ---------------------------------------------------------------------------

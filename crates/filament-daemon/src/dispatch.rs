@@ -12,6 +12,43 @@ use tracing::{debug, error, info, warn};
 use crate::roles::AgentRole;
 use crate::server::SharedState;
 
+/// Guard that kills a child process and cleans up MCP config on drop,
+/// unless explicitly disarmed after a successful transaction.
+struct ChildGuard {
+    child: Option<std::process::Child>,
+    mcp_config_path: Option<PathBuf>,
+}
+
+impl ChildGuard {
+    const fn new(child: std::process::Child, mcp_config_path: PathBuf) -> Self {
+        Self {
+            child: Some(child),
+            mcp_config_path: Some(mcp_config_path),
+        }
+    }
+
+    /// Disarm the guard and return the child process for monitoring.
+    /// After this call, Drop will not kill the child.
+    fn disarm(mut self) -> (std::process::Child, PathBuf) {
+        let child = self.child.take().expect("child already taken");
+        let path = self.mcp_config_path.take().expect("path already taken");
+        (child, path)
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            warn!("killing orphaned child process pid={}", child.id());
+            let _ = child.kill();
+            let _ = child.wait(); // reap zombie
+        }
+        if let Some(path) = self.mcp_config_path.take() {
+            cleanup_mcp_config(&path);
+        }
+    }
+}
+
 /// Configuration for agent dispatch.
 #[derive(Debug, Clone)]
 pub struct DispatchConfig {
@@ -31,21 +68,6 @@ impl DispatchConfig {
             project_root: root.to_path_buf(),
         }
     }
-}
-
-/// Verify pre-dispatch conditions: no running agent on this task.
-/// Note: For race-free checking, prefer the in-transaction check in `create_agent_run_checked`.
-///
-/// # Errors
-///
-/// Returns `AgentAlreadyRunning` if the task already has a running agent.
-pub async fn pre_dispatch_checks(state: &Arc<SharedState>, task_id: &str) -> Result<()> {
-    if store::has_running_agent(state.store.pool(), task_id).await? {
-        return Err(FilamentError::AgentAlreadyRunning {
-            task_id: task_id.to_string(),
-        });
-    }
-    Ok(())
 }
 
 /// Build a temporary MCP config JSON file for the subprocess.
@@ -133,6 +155,14 @@ pub async fn dispatch_agent(
         });
     }
 
+    // Pre-flight check: fast reject if agent already running (avoids spawning
+    // a subprocess that would be immediately orphaned).
+    if store::has_running_agent(state.store.pool(), &task_id).await? {
+        return Err(FilamentError::AgentAlreadyRunning {
+            task_id: task_id.clone(),
+        });
+    }
+
     // Build MCP config
     let mcp_config_path = build_mcp_config(&AgentRunId::new(), &config.project_root)?;
 
@@ -165,8 +195,12 @@ pub async fn dispatch_agent(
             reason: format!("failed to spawn '{agent_command}': {e}"),
         })?;
 
+    // Guard kills the child + cleans MCP config if the transaction below fails.
+    // Disarmed only after successful transaction commit.
+    let guard = ChildGuard::new(child, mcp_config_path);
+
     #[allow(clippy::cast_possible_wrap)]
-    let pid = Some(child.id() as i32);
+    let pid = guard.child.as_ref().map(|c| c.id() as i32);
 
     // Atomically check for running agent + create run in a single transaction
     let agent_name = format!("{}-{task_slug_resolved}", role.name());
@@ -186,6 +220,9 @@ pub async fn dispatch_agent(
             })
         })
         .await?;
+
+    // Transaction succeeded — disarm the guard so the child isn't killed.
+    let (child, mcp_config_path) = guard.disarm();
 
     // Update task to in_progress
     state
@@ -550,5 +587,65 @@ mod tests {
         assert!(prompt.contains("Reviewer agent"));
         assert!(prompt.contains("review-pr"));
         assert!(!prompt.contains("CONTEXT"));
+    }
+
+    #[test]
+    fn test_child_guard_kills_on_drop() {
+        // Spawn a long-running process
+        let mut verification_child = Command::new("sleep")
+            .arg("60")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("failed to spawn sleep");
+
+        let tmp =
+            std::env::temp_dir().join(format!("mcp-guard-test-{}.json", verification_child.id()));
+        std::fs::write(&tmp, "{}").unwrap();
+        assert!(tmp.exists());
+
+        // Verify process is alive before guard
+        assert!(
+            verification_child.try_wait().unwrap().is_none(),
+            "child should be running"
+        );
+
+        // Create guard and drop it — child should be killed, config cleaned up
+        {
+            let _guard = ChildGuard::new(verification_child, tmp.clone());
+        }
+        // After guard drop, we can't check the child directly since it's moved,
+        // but MCP config should be cleaned up
+        assert!(
+            !tmp.exists(),
+            "MCP config should be removed after guard drop"
+        );
+    }
+
+    #[test]
+    fn test_child_guard_disarm_preserves_child() {
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("failed to spawn sleep");
+
+        let tmp = std::env::temp_dir().join(format!("mcp-guard-test-disarm-{}.json", child.id()));
+        std::fs::write(&tmp, "{}").unwrap();
+
+        let guard = ChildGuard::new(child, tmp.clone());
+        let (mut child, path) = guard.disarm();
+
+        // Process should still be alive after disarm
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "child should still be running after disarm"
+        );
+
+        // Clean up
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_file(&path);
     }
 }

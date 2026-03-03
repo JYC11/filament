@@ -93,14 +93,26 @@ impl DaemonClient {
             .ok_or_else(|| FilamentError::Protocol("empty response".to_string()))
     }
 
+    /// Parse a JSON value into a typed result, mapping serde errors to Protocol.
+    fn parse_result<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Result<T> {
+        serde_json::from_value(value).map_err(|e| FilamentError::Protocol(e.to_string()))
+    }
+
+    /// Extract and parse a single field from a JSON object.
+    fn extract_field<T: serde::de::DeserializeOwned>(
+        value: &serde_json::Value,
+        field: &str,
+    ) -> Result<T> {
+        serde_json::from_value(value[field].clone())
+            .map_err(|e| FilamentError::Protocol(e.to_string()))
+    }
+
     // -- Entity operations --
 
     pub async fn create_entity(&mut self, params: serde_json::Value) -> Result<(EntityId, Slug)> {
         let result = self.call(Method::CreateEntity, params).await?;
-        let id: String = serde_json::from_value(result["id"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
-        let slug: String = serde_json::from_value(result["slug"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let id: String = Self::extract_field(&result, "id")?;
+        let slug: String = Self::extract_field(&result, "slug")?;
         let slug = Slug::try_from(slug).map_err(FilamentError::Protocol)?;
         Ok((EntityId::from(id), slug))
     }
@@ -109,14 +121,14 @@ impl DaemonClient {
         let result = self
             .call(Method::GetEntity, serde_json::json!({ "id": id }))
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn get_entity_by_slug(&mut self, slug: &str) -> Result<Entity> {
         let result = self
             .call(Method::GetEntityBySlug, serde_json::json!({ "slug": slug }))
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn list_entities(
@@ -133,7 +145,7 @@ impl DaemonClient {
                 }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn update_entity_summary(&mut self, id: &str, summary: &str) -> Result<()> {
@@ -164,8 +176,7 @@ impl DaemonClient {
 
     pub async fn create_relation(&mut self, params: serde_json::Value) -> Result<RelationId> {
         let result = self.call(Method::CreateRelation, params).await?;
-        let id: String = serde_json::from_value(result["id"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let id: String = Self::extract_field(&result, "id")?;
         Ok(RelationId::from(id))
     }
 
@@ -176,7 +187,7 @@ impl DaemonClient {
                 serde_json::json!({ "entity_id": entity_id }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn delete_relation(
@@ -201,8 +212,7 @@ impl DaemonClient {
 
     pub async fn send_message(&mut self, params: serde_json::Value) -> Result<MessageId> {
         let result = self.call(Method::SendMessage, params).await?;
-        let id: String = serde_json::from_value(result["id"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let id: String = Self::extract_field(&result, "id")?;
         Ok(MessageId::from(id))
     }
 
@@ -210,7 +220,7 @@ impl DaemonClient {
         let result = self
             .call(Method::GetInbox, serde_json::json!({ "agent": agent }))
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn mark_message_read(&mut self, id: &str) -> Result<()> {
@@ -239,8 +249,7 @@ impl DaemonClient {
                 }),
             )
             .await?;
-        let id: String = serde_json::from_value(result["id"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let id: String = Self::extract_field(&result, "id")?;
         Ok(ReservationId::from(id))
     }
 
@@ -259,7 +268,7 @@ impl DaemonClient {
             .get("reservation")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
-        serde_json::from_value(inner).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(inner)
     }
 
     pub async fn list_reservations(&mut self, agent: Option<&str>) -> Result<Vec<Reservation>> {
@@ -269,7 +278,7 @@ impl DaemonClient {
                 serde_json::json!({ "agent": agent }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn release_reservation(&mut self, id: &str) -> Result<()> {
@@ -282,8 +291,7 @@ impl DaemonClient {
         let result = self
             .call(Method::ExpireStaleReservations, serde_json::json!({}))
             .await?;
-        let count: u64 = serde_json::from_value(result["expired"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let count: u64 = Self::extract_field(&result, "expired")?;
         Ok(count)
     }
 
@@ -305,8 +313,7 @@ impl DaemonClient {
                 }),
             )
             .await?;
-        let id: String = serde_json::from_value(result["id"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let id: String = Self::extract_field(&result, "id")?;
         Ok(AgentRunId::from(id))
     }
 
@@ -332,7 +339,7 @@ impl DaemonClient {
         let result = self
             .call(Method::ListRunningAgents, serde_json::json!({}))
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     // -- Dispatch operations --
@@ -344,8 +351,7 @@ impl DaemonClient {
                 serde_json::json!({ "task_slug": task_slug, "role": role }),
             )
             .await?;
-        let id: String = serde_json::from_value(result["run_id"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let id: String = Self::extract_field(&result, "run_id")?;
         Ok(AgentRunId::from(id))
     }
 
@@ -353,7 +359,7 @@ impl DaemonClient {
         let result = self
             .call(Method::GetAgentRun, serde_json::json!({ "run_id": run_id }))
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn list_agent_runs_by_task(&mut self, task_id: &str) -> Result<Vec<AgentRun>> {
@@ -363,14 +369,14 @@ impl DaemonClient {
                 serde_json::json!({ "task_id": task_id }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     // -- Graph operations --
 
     pub async fn ready_tasks(&mut self) -> Result<Vec<Entity>> {
         let result = self.call(Method::ReadyTasks, serde_json::json!({})).await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn critical_path(&mut self, entity_id: &str) -> Result<Vec<EntityId>> {
@@ -380,7 +386,7 @@ impl DaemonClient {
                 serde_json::json!({ "entity_id": entity_id }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn impact_score(&mut self, entity_id: &str) -> Result<usize> {
@@ -390,8 +396,7 @@ impl DaemonClient {
                 serde_json::json!({ "entity_id": entity_id }),
             )
             .await?;
-        let score: usize = serde_json::from_value(result["score"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let score: usize = Self::extract_field(&result, "score")?;
         Ok(score)
     }
 
@@ -402,7 +407,7 @@ impl DaemonClient {
         let result = self
             .call(Method::BatchGetEntities, serde_json::json!({ "ids": ids }))
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn batch_impact_scores(
@@ -415,14 +420,14 @@ impl DaemonClient {
                 serde_json::json!({ "entity_ids": entity_ids }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn blocked_by_counts(&mut self) -> Result<std::collections::HashMap<String, usize>> {
         let result = self
             .call(Method::BlockedByCounts, serde_json::json!({}))
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn context_query(
@@ -436,13 +441,12 @@ impl DaemonClient {
                 serde_json::json!({ "entity_id": entity_id, "depth": depth }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 
     pub async fn check_cycle(&mut self) -> Result<bool> {
         let result = self.call(Method::CheckCycle, serde_json::json!({})).await?;
-        let has_cycle: bool = serde_json::from_value(result["has_cycle"].clone())
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let has_cycle: bool = Self::extract_field(&result, "has_cycle")?;
         Ok(has_cycle)
     }
 
@@ -453,6 +457,6 @@ impl DaemonClient {
                 serde_json::json!({ "entity_id": entity_id }),
             )
             .await?;
-        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+        Self::parse_result(result)
     }
 }

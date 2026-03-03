@@ -13,11 +13,21 @@ pub async fn handle_events(app: &mut App) {
         app.refresh_all().await;
     }
 
-    // Poll for crossterm events
-    if event::poll(POLL_TIMEOUT).unwrap_or(false) {
-        if let Ok(Event::Key(key)) = event::read() {
-            handle_key(app, key).await;
+    // Poll for crossterm events on a blocking thread so we don't block the
+    // tokio runtime (crossterm::event::poll is synchronous).
+    let key_event = tokio::task::spawn_blocking(|| {
+        if event::poll(POLL_TIMEOUT).unwrap_or(false) {
+            if let Ok(Event::Key(key)) = event::read() {
+                return Some(key);
+            }
         }
+        None
+    })
+    .await
+    .unwrap_or(None);
+
+    if let Some(key) = key_event {
+        handle_key(app, key).await;
     }
 }
 

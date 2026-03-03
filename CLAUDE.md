@@ -70,6 +70,12 @@ Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
 - Test standards: `.plan/test-standards.md`
 - Architecture decisions: `.plan/adr/` (use `make adr TITLE="..."` to add new ones)
 
+## Development Rules
+
+- **Every bug fix must include a test** — if a bug is found, write a regression test that would have caught it before fixing the implementation.
+- Tests gate completion — always run `make test CRATE=all` after changes.
+- Never weaken or modify a test to make it pass — the bug is in the implementation, not the test.
+
 ## Gotchas
 
 See `.plan/gotchas.md` for the full list. Top hits:
@@ -114,8 +120,8 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 - **No server-side batch dispatch** — CLI `dispatch-all` loops individual `dispatch_agent` RPCs to avoid child process reaping races
 - **Slug-based identity** (ADR-019): 8-char `[a-z0-9]` slugs replace name-based lookup
 - **Entity ADT** (ADR-020): `Entity` enum with typed variants, `TypeMismatch` error, compile-time type safety
-- 212 tests (105 core + 58 CLI + 39 daemon + 10 MCP), zero clippy warnings
-- **Next**: Phase 5 — TUI
+- 230 tests (115 core + 58 CLI + 39 daemon + 10 MCP + 8 TUI), zero clippy warnings
+- **Next**: Remaining code smell fixes (Tasks 7-9, 14-15), then Phase 6 — Integration
 
 ## References
 

@@ -995,6 +995,63 @@ async fn blocked_by_counts_returns_correct_counts() {
     assert_eq!(counts.get(id_c.as_str()).copied().unwrap_or(0), 0);
 }
 
+#[tokio::test]
+async fn blocked_by_counts_includes_blocks_relations() {
+    let store = test_db().await;
+
+    // Create three tasks: B blocks A (via blocks relation), A depends_on C
+    let (id_a, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Task A", 3);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let (id_b, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Task B", 2);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let (id_c, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Task C", 1);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // B blocks A (blocks relation: source=B, target=A → A is blocked)
+    store
+        .with_transaction(|conn| {
+            let req = blocks_req(id_b.as_str(), id_a.as_str());
+            Box::pin(async move { create_relation(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // A depends_on C (depends_on relation: source=A, target=C → A is blocked)
+    store
+        .with_transaction(|conn| {
+            let req = depends_on_req(id_a.as_str(), id_c.as_str());
+            Box::pin(async move { create_relation(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let counts = blocked_by_counts(store.pool()).await.unwrap();
+
+    // A is blocked by 2 things: B (via blocks) + C (via depends_on)
+    assert_eq!(counts.get(id_a.as_str()).copied().unwrap_or(0), 2);
+    // B is not blocked by anything
+    assert_eq!(counts.get(id_b.as_str()).copied().unwrap_or(0), 0);
+    // C is not blocked by anything
+    assert_eq!(counts.get(id_c.as_str()).copied().unwrap_or(0), 0);
+}
+
 // ---------------------------------------------------------------------------
 // Batch get entities
 // ---------------------------------------------------------------------------

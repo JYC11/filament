@@ -4,7 +4,9 @@ use clap::Args;
 use filament_core::error::Result;
 use filament_core::models::CreateEntityRequest;
 
-use super::helpers::{connect, output_json, print_entity_list, read_content_file, resolve_entity};
+use super::helpers::{
+    connect, output_json, print_entity_list, print_relations, read_content_file, resolve_entity,
+};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -182,37 +184,7 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
         if let Some(ref path) = c.content_path {
             println!("Content:  {path}");
         }
-        if !relations.is_empty() {
-            // Batch-fetch all related entity names in one query (avoids N+1)
-            let other_ids: Vec<String> = relations
-                .iter()
-                .map(|r| {
-                    if r.source_id == c.id {
-                        r.target_id.to_string()
-                    } else {
-                        r.source_id.to_string()
-                    }
-                })
-                .collect();
-            let name_map = conn.batch_get_entities(&other_ids).await?;
-
-            println!("Relations:");
-            for r in &relations {
-                let other_id = if r.source_id == c.id {
-                    &r.target_id
-                } else {
-                    &r.source_id
-                };
-                let other_name = name_map
-                    .get(other_id.as_str())
-                    .map_or_else(|| other_id.to_string(), |e| e.name().to_string());
-                if r.source_id == c.id {
-                    println!("  {} -> {} ({})", c.name, other_name, r.relation_type);
-                } else {
-                    println!("  {} -> {} ({})", other_name, c.name, r.relation_type);
-                }
-            }
-        }
+        print_relations(&mut conn, &c.id, c.name.as_str(), &relations).await?;
         println!("Created:  {}", c.created_at);
         println!("Updated:  {}", c.updated_at);
     }

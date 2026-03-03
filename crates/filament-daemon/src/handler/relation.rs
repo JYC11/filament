@@ -24,7 +24,15 @@ pub async fn create(
 
     // Update in-memory graph: fetch the exact relation we just created
     let rel = store::get_relation(state.store.pool(), relation_id.as_str()).await?;
-    let _ = state.graph_write().await.add_edge_from_relation(&rel);
+    let edge_result = state.graph_write().await.add_edge_from_relation(&rel);
+    if let Err(e) = edge_result {
+        tracing::warn!("graph edge add failed, re-hydrating: {e}");
+        state
+            .graph_write()
+            .await
+            .hydrate(state.store.pool())
+            .await?;
+    }
 
     Ok(serde_json::json!({ "id": relation_id }))
 }

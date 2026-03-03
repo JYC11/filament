@@ -706,13 +706,11 @@ impl_enum_str!(MessageType {
 pub enum MessageStatus {
     Unread,
     Read,
-    Archived,
 }
 
 impl_enum_str!(MessageStatus {
     Unread => "unread",
     Read => "read",
-    Archived => "archived",
 });
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
@@ -866,6 +864,38 @@ impl Entity {
     #[must_use]
     pub fn summary(&self) -> &str {
         &self.common().summary
+    }
+
+    /// Consume the entity, returning the inner `EntityCommon` if it is a Task.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TypeMismatch` if the entity is not a task.
+    pub fn into_task(self) -> Result<EntityCommon, FilamentError> {
+        match self {
+            Self::Task(c) => Ok(c),
+            other => Err(FilamentError::TypeMismatch {
+                expected: EntityType::Task,
+                actual: other.entity_type(),
+                slug: other.slug().clone(),
+            }),
+        }
+    }
+
+    /// Consume the entity, returning the inner `EntityCommon` if it is an Agent.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TypeMismatch` if the entity is not an agent.
+    pub fn into_agent(self) -> Result<EntityCommon, FilamentError> {
+        match self {
+            Self::Agent(c) => Ok(c),
+            other => Err(FilamentError::TypeMismatch {
+                expected: EntityType::Agent,
+                actual: other.entity_type(),
+                slug: other.slug().clone(),
+            }),
+        }
     }
 }
 

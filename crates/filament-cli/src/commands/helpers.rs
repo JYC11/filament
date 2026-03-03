@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use filament_core::connection::FilamentConnection;
 use filament_core::error::{FilamentError, Result};
-use filament_core::models::{Entity, EntityCommon, EntityId};
+use filament_core::models::{Entity, EntityCommon, EntityId, Relation};
 
 use crate::Cli;
 
@@ -72,12 +72,55 @@ pub fn read_content_file(path: &Path) -> Result<String> {
 /// Safe for multi-byte UTF-8 strings (operates on char boundaries).
 pub fn truncate_with_ellipsis(s: &str, max_chars: usize) -> String {
     let char_count = s.chars().count();
-    if char_count > max_chars {
-        let truncated: String = s.chars().take(max_chars.saturating_sub(3)).collect();
-        format!("{truncated}...")
-    } else {
-        s.to_string()
+    if char_count <= max_chars {
+        return s.to_string();
     }
+    if max_chars < 4 {
+        return s.chars().take(max_chars).collect();
+    }
+    let truncated: String = s.chars().take(max_chars - 3).collect();
+    format!("{truncated}...")
+}
+
+/// Print relations for an entity, batch-fetching related entity names.
+pub async fn print_relations(
+    conn: &mut FilamentConnection,
+    entity_id: &EntityId,
+    entity_name: &str,
+    relations: &[Relation],
+) -> Result<()> {
+    if relations.is_empty() {
+        return Ok(());
+    }
+    let other_ids: Vec<String> = relations
+        .iter()
+        .map(|r| {
+            if r.source_id == *entity_id {
+                r.target_id.to_string()
+            } else {
+                r.source_id.to_string()
+            }
+        })
+        .collect();
+    let name_map = conn.batch_get_entities(&other_ids).await?;
+
+    println!("Relations:");
+    for r in relations {
+        let other_id = if r.source_id == *entity_id {
+            &r.target_id
+        } else {
+            &r.source_id
+        };
+        let other_name = name_map
+            .get(other_id.as_str())
+            .map_or_else(|| other_id.to_string(), |e| e.name().to_string());
+        if r.source_id == *entity_id {
+            println!("  {entity_name} -> {other_name} ({})", r.relation_type);
+        } else {
+            println!("  {other_name} -> {entity_name} ({})", r.relation_type);
+        }
+    }
+    Ok(())
 }
 
 /// Print a list of entities in human-readable or JSON format.

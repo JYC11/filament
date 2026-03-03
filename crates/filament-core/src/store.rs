@@ -57,10 +57,6 @@ impl From<EntityRow> for Entity {
 }
 
 // ---------------------------------------------------------------------------
-// Executor abstraction (from workout-util pattern)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // FilamentStore
 // ---------------------------------------------------------------------------
 
@@ -210,15 +206,7 @@ pub async fn resolve_entity(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<Ent
 ///
 /// Returns `TypeMismatch` if the entity is not a task.
 pub async fn resolve_task(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<EntityCommon> {
-    let entity = resolve_entity(pool, slug_or_id).await?;
-    match entity {
-        Entity::Task(c) => Ok(c),
-        other => Err(FilamentError::TypeMismatch {
-            expected: EntityType::Task,
-            actual: other.entity_type(),
-            slug: other.slug().clone(),
-        }),
-    }
+    resolve_entity(pool, slug_or_id).await?.into_task()
 }
 
 /// Resolve an entity and verify it is an agent.
@@ -227,15 +215,7 @@ pub async fn resolve_task(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<Entit
 ///
 /// Returns `TypeMismatch` if the entity is not an agent.
 pub async fn resolve_agent(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<EntityCommon> {
-    let entity = resolve_entity(pool, slug_or_id).await?;
-    match entity {
-        Entity::Agent(c) => Ok(c),
-        other => Err(FilamentError::TypeMismatch {
-            expected: EntityType::Agent,
-            actual: other.entity_type(),
-            slug: other.slug().clone(),
-        }),
-    }
+    resolve_entity(pool, slug_or_id).await?.into_agent()
 }
 
 /// List entities, optionally filtered by type and/or status.
@@ -896,10 +876,13 @@ pub async fn release_reservations_by_agent(
     Ok(rows)
 }
 
-/// Count `DependsOn` relations where each entity is the source (i.e., "blocked by" count).
+/// Count how many things block each entity (i.e., "blocked by" count).
 ///
-/// Returns a map of `source_id → count` for all entities that have at least one `DependsOn`
-/// relation as source.
+/// An entity X is "blocked by" another entity if:
+/// - X has an outgoing `DependsOn` relation (X `depends_on` Y → Y blocks X)
+/// - X has an incoming `Blocks` relation (Y `blocks` X)
+///
+/// Returns a map of `entity_id → count` for all entities with at least one blocker.
 ///
 /// # Errors
 ///
@@ -908,9 +891,11 @@ pub async fn blocked_by_counts(
     pool: &Pool<Sqlite>,
 ) -> Result<std::collections::HashMap<String, usize>> {
     let rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT source_id, COUNT(*) FROM relations \
-         WHERE relation_type = 'depends_on' \
-         GROUP BY source_id",
+        "SELECT entity_id, COUNT(*) FROM ( \
+           SELECT source_id AS entity_id FROM relations WHERE relation_type = 'depends_on' \
+           UNION ALL \
+           SELECT target_id AS entity_id FROM relations WHERE relation_type = 'blocks' \
+         ) GROUP BY entity_id",
     )
     .fetch_all(pool)
     .await?;

@@ -144,13 +144,15 @@ fn task_critical_path() {
     let slug1 = add_task(&dir, "step-1", &["--summary", "First step"]);
     let slug2 = add_task(&dir, "step-2", &["--summary", "Second step"]);
 
+    // step-1 blocks step-2 → step-1 is upstream of step-2
     filament(&dir)
         .args(["relate", &slug1, "blocks", &slug2])
         .assert()
         .success();
 
+    // critical-path from step-2 shows upstream prerequisites: step-2 ← step-1
     filament(&dir)
-        .args(["task", "critical-path", &slug1])
+        .args(["task", "critical-path", &slug2])
         .assert()
         .success()
         .stdout(predicate::str::contains("step-1").and(predicate::str::contains("step-2")));
@@ -270,14 +272,15 @@ fn task_critical_path_plural_steps() {
     let slug_a = add_task(&dir, "cp-a", &["--summary", "Step A"]);
     let slug_b = add_task(&dir, "cp-b", &["--summary", "Step B"]);
 
+    // cp-a blocks cp-b → cp-a is upstream of cp-b
     filament(&dir)
         .args(["relate", &slug_a, "blocks", &slug_b])
         .assert()
         .success();
 
-    // 2 steps should use plural "steps"
+    // 2 steps should use plural "steps" (query from blocked task)
     filament(&dir)
-        .args(["task", "critical-path", &slug_a])
+        .args(["task", "critical-path", &slug_b])
         .assert()
         .success()
         .stdout(predicate::str::contains("Critical path (2 steps)"));

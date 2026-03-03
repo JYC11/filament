@@ -113,28 +113,12 @@ impl FilamentConnection {
 
     /// Resolve an entity by slug/ID and verify it is a Task.
     pub async fn resolve_task(&mut self, slug_or_id: &str) -> Result<EntityCommon> {
-        let entity = self.resolve_entity(slug_or_id).await?;
-        match entity {
-            Entity::Task(c) => Ok(c),
-            other => Err(FilamentError::TypeMismatch {
-                expected: EntityType::Task,
-                actual: other.entity_type(),
-                slug: other.slug().clone(),
-            }),
-        }
+        self.resolve_entity(slug_or_id).await?.into_task()
     }
 
     /// Resolve an entity by slug/ID and verify it is an Agent.
     pub async fn resolve_agent(&mut self, slug_or_id: &str) -> Result<EntityCommon> {
-        let entity = self.resolve_entity(slug_or_id).await?;
-        match entity {
-            Entity::Agent(c) => Ok(c),
-            other => Err(FilamentError::TypeMismatch {
-                expected: EntityType::Agent,
-                actual: other.entity_type(),
-                slug: other.slug().clone(),
-            }),
-        }
+        self.resolve_entity(slug_or_id).await?.into_agent()
     }
 
     /// Resolve entity by slug (first) or UUID fallback.
@@ -142,10 +126,11 @@ impl FilamentConnection {
         match self {
             Self::Direct(s) => store::resolve_entity(s.pool(), slug_or_id).await,
             Self::Socket(c) => {
-                // Try slug first, then ID
+                // Try slug first, then ID (only fall back on "not found" errors)
                 match c.get_entity_by_slug(slug_or_id).await {
                     Ok(entity) => Ok(entity),
-                    Err(FilamentError::Protocol(_) | FilamentError::EntityNotFound { .. }) => {
+                    Err(FilamentError::EntityNotFound { .. }) => c.get_entity(slug_or_id).await,
+                    Err(FilamentError::Protocol(ref msg)) if msg.contains("ENTITY_NOT_FOUND") => {
                         c.get_entity(slug_or_id).await
                     }
                     Err(e) => Err(e),
