@@ -169,7 +169,7 @@ async fn delete_entity_cascades_relations() {
     let store = test_db().await;
     let req1 = sample_entity_req();
     let mut req2 = sample_entity_req();
-    req2.name = "Blocker task".to_string();
+    req2.name = NonEmptyString::new("Blocker task").unwrap();
 
     let (id1, id2) = store
         .with_transaction(|conn| {
@@ -236,11 +236,12 @@ async fn update_entity_status_works() {
 #[tokio::test]
 async fn reservation_acquire_and_conflict() {
     let store = test_db().await;
+    let ttl = TtlSeconds::new(3600).unwrap();
 
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                acquire_reservation(conn, "agent-1", "src/*.rs", true, 3600).await?;
+                acquire_reservation(conn, "agent-1", "src/*.rs", true, ttl).await?;
                 Ok(())
             })
         })
@@ -250,7 +251,7 @@ async fn reservation_acquire_and_conflict() {
     let result = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                acquire_reservation(conn, "agent-2", "src/*.rs", true, 3600).await?;
+                acquire_reservation(conn, "agent-2", "src/*.rs", true, ttl).await?;
                 Ok(())
             })
         })
@@ -262,12 +263,13 @@ async fn reservation_acquire_and_conflict() {
 #[tokio::test]
 async fn reservation_release_allows_reacquire() {
     let store = test_db().await;
+    let ttl = TtlSeconds::new(3600).unwrap();
 
     let id = store
         .with_transaction(|conn| {
-            Box::pin(async move {
-                acquire_reservation(conn, "agent-1", "src/*.rs", true, 3600).await
-            })
+            Box::pin(
+                async move { acquire_reservation(conn, "agent-1", "src/*.rs", true, ttl).await },
+            )
         })
         .await
         .unwrap();
@@ -283,7 +285,7 @@ async fn reservation_release_allows_reacquire() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                acquire_reservation(conn, "agent-2", "src/*.rs", true, 3600).await?;
+                acquire_reservation(conn, "agent-2", "src/*.rs", true, ttl).await?;
                 Ok(())
             })
         })
@@ -352,16 +354,16 @@ async fn ready_tasks_excludes_blocked() {
     let store = test_db().await;
 
     let mut req_blocker = sample_entity_req();
-    req_blocker.name = "Blocker".to_string();
-    req_blocker.priority = 1;
+    req_blocker.name = NonEmptyString::new("Blocker").unwrap();
+    req_blocker.priority = Priority::new(1).unwrap();
 
     let mut req_blocked = sample_entity_req();
-    req_blocked.name = "Blocked".to_string();
-    req_blocked.priority = 0;
+    req_blocked.name = NonEmptyString::new("Blocked").unwrap();
+    req_blocked.priority = Priority::new(0).unwrap();
 
     let mut req_free = sample_entity_req();
-    req_free.name = "Free".to_string();
-    req_free.priority = 0;
+    req_free.name = NonEmptyString::new("Free").unwrap();
+    req_free.priority = Priority::new(0).unwrap();
 
     store
         .with_transaction(|conn| {
@@ -402,7 +404,7 @@ async fn event_recording() {
                 record_event(
                     conn,
                     Some("e1"),
-                    "status_change",
+                    EventType::StatusChange,
                     "cli",
                     Some("open"),
                     Some("closed"),
@@ -416,5 +418,5 @@ async fn event_recording() {
 
     let events = get_entity_events(store.pool(), "e1").await.unwrap();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].event_type, "status_change");
+    assert_eq!(events[0].event_type, EventType::StatusChange);
 }

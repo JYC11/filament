@@ -34,10 +34,7 @@ fn error_codes_are_stable() {
             FilamentError::Validation("bad".to_string()),
             "VALIDATION_ERROR",
         ),
-        (
-            FilamentError::Protocol("bad".to_string()),
-            "PROTOCOL_ERROR",
-        ),
+        (FilamentError::Protocol("bad".to_string()), "PROTOCOL_ERROR"),
     ];
 
     for (err, expected_code) in &cases {
@@ -47,12 +44,10 @@ fn error_codes_are_stable() {
 
 #[test]
 fn retryable_only_for_db_and_io() {
-    assert!(
-        !FilamentError::EntityNotFound {
-            id: "x".to_string()
-        }
-        .is_retryable()
-    );
+    assert!(!FilamentError::EntityNotFound {
+        id: "x".to_string()
+    }
+    .is_retryable());
     assert!(!FilamentError::Validation("bad".to_string()).is_retryable());
     // Database and IO errors are retryable — but we can't easily construct them in a unit test.
 }
@@ -83,10 +78,7 @@ fn exit_codes_categorized() {
         .exit_code(),
         3
     );
-    assert_eq!(
-        FilamentError::Validation("x".to_string()).exit_code(),
-        4
-    );
+    assert_eq!(FilamentError::Validation("x".to_string()).exit_code(), 4);
     assert_eq!(
         FilamentError::CycleDetected {
             path: "x".to_string()

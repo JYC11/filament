@@ -6,7 +6,10 @@ use petgraph::Direction;
 use sqlx::{Pool, Sqlite};
 
 use crate::error::{FilamentError, Result};
-use crate::models::{Entity, EntityId, EntityStatus, EntityType, Relation, RelationType};
+use crate::models::{
+    Entity, EntityId, EntityStatus, EntityType, NonEmptyString, Priority, Relation, RelationType,
+    Weight,
+};
 
 // ---------------------------------------------------------------------------
 // Graph node/edge data
@@ -16,10 +19,10 @@ use crate::models::{Entity, EntityId, EntityStatus, EntityType, Relation, Relati
 #[derive(Debug, Clone)]
 pub struct GraphNode {
     pub entity_id: EntityId,
-    pub name: String,
+    pub name: NonEmptyString,
     pub entity_type: EntityType,
     pub status: EntityStatus,
-    pub priority: i32,
+    pub priority: Priority,
     pub summary: String,
 }
 
@@ -27,7 +30,7 @@ pub struct GraphNode {
 #[derive(Debug, Clone)]
 pub struct GraphEdge {
     pub relation_type: RelationType,
-    pub weight: f64,
+    pub weight: Weight,
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +58,8 @@ impl KnowledgeGraph {
     ///
     /// # Errors
     ///
-    /// Returns `FilamentError::Database` on SQL failure.
+    /// Returns `FilamentError::Database` on SQL failure, or
+    /// `FilamentError::EntityNotFound` if a relation references a missing node.
     pub async fn hydrate(&mut self, pool: &Pool<Sqlite>) -> Result<()> {
         self.graph.clear();
         self.index.clear();
@@ -73,7 +77,7 @@ impl KnowledgeGraph {
             .await?;
 
         for relation in &relations {
-            self.add_edge_from_relation(relation);
+            self.add_edge_from_relation(relation)?;
         }
 
         Ok(())
@@ -101,17 +105,46 @@ impl KnowledgeGraph {
         }
     }
 
-    /// Add an edge from a relation (requires both endpoints to exist).
-    pub fn add_edge_from_relation(&mut self, relation: &Relation) {
-        let source = self.index.get(relation.source_id.as_str());
-        let target = self.index.get(relation.target_id.as_str());
-        if let (Some(&src), Some(&tgt)) = (source, target) {
-            let edge = GraphEdge {
-                relation_type: relation.relation_type.clone(),
-                weight: relation.weight,
-            };
-            self.graph.add_edge(src, tgt, edge);
+    /// Add an edge from a relation.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FilamentError::EntityNotFound` if either endpoint is missing, or
+    /// `FilamentError::Validation` if a duplicate edge (same source, target, type) exists.
+    pub fn add_edge_from_relation(&mut self, relation: &Relation) -> Result<()> {
+        let source = self
+            .index
+            .get(relation.source_id.as_str())
+            .copied()
+            .ok_or_else(|| FilamentError::EntityNotFound {
+                id: relation.source_id.to_string(),
+            })?;
+        let target = self
+            .index
+            .get(relation.target_id.as_str())
+            .copied()
+            .ok_or_else(|| FilamentError::EntityNotFound {
+                id: relation.target_id.to_string(),
+            })?;
+
+        // Reject duplicate edges (same source, target, relation type)
+        let has_duplicate = self
+            .graph
+            .edges_directed(source, Direction::Outgoing)
+            .any(|e| e.target() == target && e.weight().relation_type == relation.relation_type);
+        if has_duplicate {
+            return Err(FilamentError::Validation(format!(
+                "duplicate edge: {} -{}-> {}",
+                relation.source_id, relation.relation_type, relation.target_id
+            )));
         }
+
+        let edge = GraphEdge {
+            relation_type: relation.relation_type.clone(),
+            weight: relation.weight,
+        };
+        self.graph.add_edge(source, target, edge);
+        Ok(())
     }
 
     /// Remove a node and all its edges.

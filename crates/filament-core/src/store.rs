@@ -3,8 +3,8 @@ use sqlx::{Pool, Sqlite, SqliteConnection};
 
 use crate::error::{FilamentError, Result};
 use crate::models::{
-    AgentRun, AgentRunId, AgentStatus, Entity, EntityId, EntityStatus, Event, EventId, Message,
-    MessageId, Relation, RelationId, Reservation, ReservationId,
+    AgentRun, AgentRunId, AgentStatus, Entity, EntityId, EntityStatus, Event, EventId, EventType,
+    Message, MessageId, Relation, RelationId, Reservation, ReservationId, TtlSeconds,
     ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
 };
 
@@ -49,8 +49,9 @@ impl FilamentStore {
     where
         F: for<'c> FnOnce(
             &'c mut SqliteConnection,
-        )
-            -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T>> + Send + 'c>>,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<T>> + Send + 'c>,
+        >,
     {
         let mut tx = self.pool.begin().await?;
         let result = f(&mut tx).await?;
@@ -81,7 +82,7 @@ pub async fn create_entity(
          VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)",
     )
     .bind(id.as_str())
-    .bind(&req.name)
+    .bind(req.name.as_str())
     .bind(req.entity_type.as_str())
     .bind(&req.summary)
     .bind(&key_facts)
@@ -223,15 +224,13 @@ pub async fn create_relation(
 ///
 /// Returns `FilamentError::Database` on SQL failure.
 pub async fn list_relations(pool: &Pool<Sqlite>, entity_id: &str) -> Result<Vec<Relation>> {
-    Ok(
-        sqlx::query_as::<_, Relation>(
-            "SELECT * FROM relations WHERE source_id = ? OR target_id = ? ORDER BY created_at ASC",
-        )
-        .bind(entity_id)
-        .bind(entity_id)
-        .fetch_all(pool)
-        .await?,
+    Ok(sqlx::query_as::<_, Relation>(
+        "SELECT * FROM relations WHERE source_id = ? OR target_id = ? ORDER BY created_at ASC",
     )
+    .bind(entity_id)
+    .bind(entity_id)
+    .fetch_all(pool)
+    .await?)
 }
 
 /// Delete a relation.
@@ -276,10 +275,10 @@ pub async fn send_message(
          VALUES (?, ?, ?, ?, ?, 'unread', ?, ?, ?)",
     )
     .bind(id.as_str())
-    .bind(&req.from_agent)
-    .bind(&req.to_agent)
+    .bind(req.from_agent.as_str())
+    .bind(req.to_agent.as_str())
     .bind(req.msg_type.as_str())
-    .bind(&req.body)
+    .bind(req.body.as_str())
     .bind(&req.in_reply_to)
     .bind(&req.task_id)
     .bind(now)
@@ -332,10 +331,10 @@ pub async fn acquire_reservation(
     agent_name: &str,
     file_glob: &str,
     exclusive: bool,
-    ttl_seconds: i64,
+    ttl: TtlSeconds,
 ) -> Result<ReservationId> {
     let now = Utc::now();
-    let expires_at = now + chrono::Duration::seconds(ttl_seconds);
+    let expires_at = now + ttl.as_duration();
 
     // Check for conflicting exclusive reservations (simple glob equality check)
     let conflict = sqlx::query_as::<_, Reservation>(
@@ -445,15 +444,13 @@ pub async fn finish_agent_run(
 ) -> Result<()> {
     let now = Utc::now();
 
-    sqlx::query(
-        "UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?",
-    )
-    .bind(status.as_str())
-    .bind(result_json)
-    .bind(now)
-    .bind(id)
-    .execute(conn)
-    .await?;
+    sqlx::query("UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?")
+        .bind(status.as_str())
+        .bind(result_json)
+        .bind(now)
+        .bind(id)
+        .execute(conn)
+        .await?;
 
     Ok(())
 }
@@ -483,7 +480,7 @@ pub async fn list_running_agents(pool: &Pool<Sqlite>) -> Result<Vec<AgentRun>> {
 pub async fn record_event(
     conn: &mut SqliteConnection,
     entity_id: Option<&str>,
-    event_type: &str,
+    event_type: EventType,
     actor: &str,
     old_value: Option<&str>,
     new_value: Option<&str>,
@@ -497,7 +494,7 @@ pub async fn record_event(
     )
     .bind(id.as_str())
     .bind(entity_id)
-    .bind(event_type)
+    .bind(event_type.as_str())
     .bind(actor)
     .bind(old_value)
     .bind(new_value)

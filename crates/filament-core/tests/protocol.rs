@@ -71,9 +71,6 @@ fn method_enum_all_variants_serialize() {
     for method in &methods {
         let json = serde_json::to_string(method).unwrap();
         let parsed: Method = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            serde_json::to_string(&parsed).unwrap(),
-            json
-        );
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), json);
     }
 }

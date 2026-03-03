@@ -40,6 +40,144 @@ fn relation_id_uniqueness() {
 }
 
 // ---------------------------------------------------------------------------
+// Value type tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn priority_valid_range() {
+    for i in 0..=4u8 {
+        assert!(Priority::new(i).is_ok());
+    }
+    assert!(Priority::new(5).is_err());
+    assert!(Priority::new(255).is_err());
+}
+
+#[test]
+fn priority_default_is_2() {
+    assert_eq!(Priority::DEFAULT.value(), 2);
+}
+
+#[test]
+fn priority_ordering() {
+    let p0 = Priority::new(0).unwrap();
+    let p4 = Priority::new(4).unwrap();
+    assert!(p0 < p4);
+}
+
+#[test]
+fn priority_serde_roundtrip() {
+    let p = Priority::new(3).unwrap();
+    let json = serde_json::to_string(&p).unwrap();
+    assert_eq!(json, "3");
+    let parsed: Priority = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, p);
+}
+
+#[test]
+fn priority_serde_rejects_invalid() {
+    let result: Result<Priority, _> = serde_json::from_str("5");
+    assert!(result.is_err());
+}
+
+#[test]
+fn weight_valid() {
+    assert!(Weight::new(0.0).is_ok());
+    assert!(Weight::new(1.0).is_ok());
+    assert!(Weight::new(100.0).is_ok());
+}
+
+#[test]
+fn weight_rejects_invalid() {
+    assert!(Weight::new(-1.0).is_err());
+    assert!(Weight::new(f64::NAN).is_err());
+    assert!(Weight::new(f64::INFINITY).is_err());
+    assert!(Weight::new(f64::NEG_INFINITY).is_err());
+}
+
+#[test]
+fn weight_serde_roundtrip() {
+    let w = Weight::new(2.5).unwrap();
+    let json = serde_json::to_string(&w).unwrap();
+    assert_eq!(json, "2.5");
+    let parsed: Weight = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, w);
+}
+
+#[test]
+fn budget_pct_valid_range() {
+    assert!(BudgetPct::new(0.0).is_ok());
+    assert!(BudgetPct::new(0.5).is_ok());
+    assert!(BudgetPct::new(1.0).is_ok());
+}
+
+#[test]
+fn budget_pct_rejects_out_of_range() {
+    assert!(BudgetPct::new(-0.1).is_err());
+    assert!(BudgetPct::new(1.1).is_err());
+    assert!(BudgetPct::new(f64::NAN).is_err());
+}
+
+#[test]
+fn non_empty_string_rejects_empty() {
+    assert!(NonEmptyString::new("").is_err());
+    assert!(NonEmptyString::new("   ").is_err());
+}
+
+#[test]
+fn non_empty_string_trims() {
+    let s = NonEmptyString::new("  hello  ").unwrap();
+    assert_eq!(s.as_str(), "hello");
+}
+
+#[test]
+fn non_empty_string_partial_eq_str() {
+    let s = NonEmptyString::new("hello").unwrap();
+    assert_eq!(s, "hello");
+    assert!(s != "world");
+}
+
+#[test]
+fn non_empty_string_serde_roundtrip() {
+    let s = NonEmptyString::new("test").unwrap();
+    let json = serde_json::to_string(&s).unwrap();
+    assert_eq!(json, "\"test\"");
+    let parsed: NonEmptyString = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, s);
+}
+
+#[test]
+fn non_empty_string_serde_rejects_empty() {
+    let result: Result<NonEmptyString, _> = serde_json::from_str("\"\"");
+    assert!(result.is_err());
+    let result: Result<NonEmptyString, _> = serde_json::from_str("\"   \"");
+    assert!(result.is_err());
+}
+
+#[test]
+fn ttl_seconds_valid() {
+    assert!(TtlSeconds::new(1).is_ok());
+    assert!(TtlSeconds::new(3600).is_ok());
+}
+
+#[test]
+fn ttl_seconds_rejects_zero() {
+    assert!(TtlSeconds::new(0).is_err());
+}
+
+// ---------------------------------------------------------------------------
+// EventType tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn event_type_serde_roundtrip() {
+    let val = EventType::StatusChange;
+    let json = serde_json::to_string(&val).unwrap();
+    assert_eq!(json, "\"status_change\"");
+    let parsed: EventType = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, val);
+}
+
+// ---------------------------------------------------------------------------
 // Enum serde round-trips
 // ---------------------------------------------------------------------------
 
@@ -123,7 +261,7 @@ fn create_entity_valid() {
     let valid = ValidCreateEntityRequest::try_from(req).unwrap();
     assert_eq!(valid.name, "My Task");
     assert_eq!(valid.entity_type, EntityType::Task);
-    assert_eq!(valid.priority, 2); // default
+    assert_eq!(valid.priority, Priority::DEFAULT);
 }
 
 #[test]
@@ -175,6 +313,20 @@ fn create_relation_self_loop_rejected() {
         target_id: "abc".to_string(),
         relation_type: "blocks".to_string(),
         weight: None,
+        summary: None,
+        metadata: None,
+    };
+    let err = ValidCreateRelationRequest::try_from(req).unwrap_err();
+    assert!(matches!(err, FilamentError::Validation(_)));
+}
+
+#[test]
+fn create_relation_bad_weight_rejected() {
+    let req = CreateRelationRequest {
+        source_id: "a".to_string(),
+        target_id: "b".to_string(),
+        relation_type: "blocks".to_string(),
+        weight: Some(-1.0),
         summary: None,
         metadata: None,
     };
