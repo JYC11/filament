@@ -109,6 +109,71 @@ async fn entity_crud_via_socket() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn update_summary_refreshes_graph() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Create two related entities
+    let id_a = client
+        .create_entity(serde_json::json!({
+            "name": "graph-node-a",
+            "entity_type": "module",
+            "summary": "Original summary A",
+        }))
+        .await
+        .expect("create a");
+
+    let id_b = client
+        .create_entity(serde_json::json!({
+            "name": "graph-node-b",
+            "entity_type": "module",
+            "summary": "Original summary B",
+        }))
+        .await
+        .expect("create b");
+
+    client
+        .create_relation(serde_json::json!({
+            "source_id": id_a.as_str(),
+            "target_id": id_b.as_str(),
+            "relation_type": "relates_to",
+        }))
+        .await
+        .expect("relate a to b");
+
+    // Context query from B should show A's original summary as a neighbor
+    let ctx = client
+        .context_query(id_b.as_str(), Some(1))
+        .await
+        .expect("context before update");
+    assert!(
+        ctx.iter().any(|s| s.contains("Original summary A")),
+        "should contain original summary A: {ctx:?}"
+    );
+
+    // Update summary of entity A
+    client
+        .update_entity_summary(id_a.as_str(), "Updated summary A")
+        .await
+        .expect("update summary");
+
+    // Context query from B should now show A's updated summary
+    let ctx_after = client
+        .context_query(id_b.as_str(), Some(1))
+        .await
+        .expect("context after update");
+    assert!(
+        ctx_after.iter().any(|s| s.contains("Updated summary A")),
+        "should contain updated summary A: {ctx_after:?}"
+    );
+    assert!(
+        !ctx_after.iter().any(|s| s.contains("Original summary A")),
+        "should NOT contain stale summary A: {ctx_after:?}"
+    );
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn relation_crud_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 

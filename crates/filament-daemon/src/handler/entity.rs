@@ -72,6 +72,10 @@ pub async fn update_summary(
         })
         .await?;
 
+    // Update in-memory graph
+    let entity = store::get_entity(state.store.pool(), &p.id).await?;
+    state.graph_write().await.add_node_from_entity(&entity);
+
     Ok(serde_json::json!({ "ok": true }))
 }
 
