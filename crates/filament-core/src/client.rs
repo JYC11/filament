@@ -349,18 +349,6 @@ impl DaemonClient {
         Ok(AgentRunId::from(id))
     }
 
-    pub async fn dispatch_batch(
-        &mut self,
-        role: &str,
-        max_parallel: Option<usize>,
-    ) -> Result<serde_json::Value> {
-        self.call(
-            Method::DispatchBatch,
-            serde_json::json!({ "role": role, "max_parallel": max_parallel }),
-        )
-        .await
-    }
-
     pub async fn get_agent_run(&mut self, run_id: &str) -> Result<AgentRun> {
         let result = self
             .call(Method::GetAgentRun, serde_json::json!({ "run_id": run_id }))

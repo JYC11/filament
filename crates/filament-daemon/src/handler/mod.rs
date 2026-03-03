@@ -58,7 +58,6 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::ListAgentRunsByTask => dispatch::list_runs_by_task(params, state).await,
         // Dispatch
         Method::DispatchAgent => dispatch::dispatch_agent(params, state).await,
-        Method::DispatchBatch => dispatch::dispatch_batch(params, state).await,
         // Graph
         Method::ReadyTasks => graph::ready_tasks(params, state).await,
         Method::CriticalPath => graph::critical_path(params, state).await,

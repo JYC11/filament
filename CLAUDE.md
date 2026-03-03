@@ -110,10 +110,11 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 - `filament agent dispatch|dispatch-all|status|list|history`
 - CLI routes through daemon when running (falls back to direct DB access)
 - **Agent roles**: Coder, Reviewer, Planner, Dockeeper with compiled-in prompts and tool whitelists
-- **Dispatch engine**: spawn subprocess, monitor via `tokio::spawn`, parse `AgentResult` JSON, route messages, death cleanup (revert task, release reservations, refresh graph)
+- **Dispatch engine**: spawn subprocess via `std::process`, monitor via `tokio::spawn` + `spawn_blocking`, parse `AgentResult` JSON, route messages, death cleanup (revert task, release reservations, refresh graph)
+- **No server-side batch dispatch** — CLI `dispatch-all` loops individual `dispatch_agent` RPCs to avoid child process reaping races
 - **Slug-based identity** (ADR-019): 8-char `[a-z0-9]` slugs replace name-based lookup
 - **Entity ADT** (ADR-020): `Entity` enum with typed variants, `TypeMismatch` error, compile-time type safety
-- 208 tests (105 core + 58 CLI + 35 daemon + 10 MCP), zero clippy warnings
+- 212 tests (105 core + 58 CLI + 39 daemon + 10 MCP), zero clippy warnings
 - **Next**: Phase 5 — TUI
 
 ## References

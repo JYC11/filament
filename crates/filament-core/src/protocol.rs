@@ -85,7 +85,6 @@ pub enum Method {
 
     // Dispatch operations
     DispatchAgent,
-    DispatchBatch,
 
     // Graph operations
     ReadyTasks,

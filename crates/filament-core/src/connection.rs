@@ -69,6 +69,12 @@ impl FilamentConnection {
         Ok(Self::Direct(FilamentStore::new(pool)))
     }
 
+    /// Returns `true` if connected to the daemon via socket.
+    #[must_use]
+    pub const fn is_daemon_mode(&self) -> bool {
+        matches!(self, Self::Socket(_))
+    }
+
     // -----------------------------------------------------------------------
     // Dispatch methods — route through Direct (SQLite) or Socket (daemon)
     // -----------------------------------------------------------------------
@@ -403,19 +409,6 @@ impl FilamentConnection {
                 reason: "dispatch requires daemon mode (run `filament serve` first)".to_string(),
             }),
             Self::Socket(c) => c.dispatch_agent(task_slug, role).await,
-        }
-    }
-
-    pub async fn dispatch_batch(
-        &mut self,
-        role: &str,
-        max_parallel: Option<usize>,
-    ) -> Result<serde_json::Value> {
-        match self {
-            Self::Direct(_) => Err(FilamentError::AgentDispatchFailed {
-                reason: "dispatch requires daemon mode (run `filament serve` first)".to_string(),
-            }),
-            Self::Socket(c) => c.dispatch_batch(role, max_parallel).await,
         }
     }
 

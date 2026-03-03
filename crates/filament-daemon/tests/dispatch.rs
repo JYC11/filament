@@ -331,7 +331,7 @@ async fn dispatch_result_routes_messages() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn batch_dispatch() {
+async fn sequential_multi_dispatch() {
     let mock = MockConfig {
         delay_ms: 500,
         ..MockConfig::default()
@@ -339,11 +339,10 @@ async fn batch_dispatch() {
     let (mut client, cancel, _tmp) = start_test_daemon(&mock).await;
 
     // Create multiple tasks
-    let (_id1, slug1) = create_test_task(&mut client, "batch-task-1").await;
-    let (_id2, slug2) = create_test_task(&mut client, "batch-task-2").await;
+    let (id1, slug1) = create_test_task(&mut client, "multi-task-1").await;
+    let (id2, slug2) = create_test_task(&mut client, "multi-task-2").await;
 
-    // Dispatch individually (batch handler calls dispatch_agent sequentially,
-    // which can cause monitor lifecycle issues when processes exit between spawn and wait)
+    // Dispatch individually, waiting for each to complete before next dispatch
     let run_id1 = client
         .dispatch_agent(&slug1, "coder")
         .await
@@ -360,11 +359,11 @@ async fn batch_dispatch() {
 
     // Verify both runs exist
     let runs1 = client
-        .list_agent_runs_by_task(&_id1)
+        .list_agent_runs_by_task(&id1)
         .await
         .expect("list runs 1");
     let runs2 = client
-        .list_agent_runs_by_task(&_id2)
+        .list_agent_runs_by_task(&id2)
         .await
         .expect("list runs 2");
     assert_eq!(runs1.len(), 1);

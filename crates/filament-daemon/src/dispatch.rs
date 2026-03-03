@@ -6,7 +6,7 @@ use filament_core::models::{
     AgentResult, AgentRunId, AgentStatus, EntityStatus, SendMessageRequest, ValidSendMessageRequest,
 };
 use filament_core::store;
-use tokio::process::Command;
+use std::process::Command;
 use tracing::{debug, error, info, warn};
 
 use crate::roles::AgentRole;
@@ -143,7 +143,10 @@ pub async fn dispatch_agent(
     };
     let system_prompt = build_system_prompt(role, &task_name, &summary, &context);
 
-    // Spawn subprocess
+    // Spawn subprocess using std::process (not tokio::process) so that
+    // wait_with_output() uses direct waitpid() instead of tokio's SIGCHLD
+    // machinery, which can lose notifications when multiple children exit
+    // before their monitors are polled.
     let agent_command = config.agent_command.clone();
     let project_root = config.project_root.clone();
 
@@ -163,7 +166,7 @@ pub async fn dispatch_agent(
         })?;
 
     #[allow(clippy::cast_possible_wrap)]
-    let pid = child.id().map(|p| p as i32);
+    let pid = Some(child.id() as i32);
 
     // Atomically check for running agent + create run in a single transaction
     let agent_name = format!("{}-{task_slug_resolved}", role.name());
@@ -195,22 +198,10 @@ pub async fn dispatch_agent(
         })
         .await?;
 
-    // Refresh graph
-    state
-        .graph_write()
-        .await
-        .hydrate(state.store.pool())
-        .await?;
-
-    info!(
-        run_id = %run_id,
-        task = %task_slug,
-        role = %role,
-        pid = ?pid,
-        "agent dispatched"
-    );
-
-    // Spawn monitor task
+    // Spawn monitor task IMMEDIATELY after agent_run creation + status update.
+    // Minimises the gap between cmd.spawn() and wait_with_output() to prevent
+    // child-exit races (P1 bug: monitors failing to reap fast-exiting children
+    // during batch dispatch).
     let monitor_state = Arc::clone(state);
     let monitor_run_id = run_id.clone();
     let monitor_task_id = task_id.clone();
@@ -228,22 +219,48 @@ pub async fn dispatch_agent(
         .await;
     });
 
+    // Refresh graph (non-critical, safe to run after monitor is already watching)
+    state
+        .graph_write()
+        .await
+        .hydrate(state.store.pool())
+        .await?;
+
+    info!(
+        run_id = %run_id,
+        task = %task_slug,
+        role = %role,
+        pid = ?pid,
+        "agent dispatched"
+    );
+
     Ok(run_id)
 }
 
 /// Monitor a spawned agent subprocess, parse its output, and route the result.
+///
+/// Uses `spawn_blocking` for `wait_with_output()` to avoid tokio's SIGCHLD
+/// race condition where child exit notifications are lost when monitors
+/// aren't polled before the child exits.
 async fn monitor_agent(
     state: &Arc<SharedState>,
-    child: tokio::process::Child,
+    child: std::process::Child,
     run_id: &AgentRunId,
     task_id: &str,
     agent_name: &str,
     mcp_config_path: &Path,
 ) {
-    let output = match child.wait_with_output().await {
-        Ok(output) => output,
-        Err(e) => {
+    // Use spawn_blocking for reliable child reaping via direct waitpid()
+    let output = match tokio::task::spawn_blocking(move || child.wait_with_output()).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
             error!(run_id = %run_id, "failed to wait on agent: {e}");
+            finish_run_failed(state, run_id, task_id, agent_name, &e.to_string()).await;
+            cleanup_mcp_config(mcp_config_path);
+            return;
+        }
+        Err(e) => {
+            error!(run_id = %run_id, "monitor task panicked: {e}");
             finish_run_failed(state, run_id, task_id, agent_name, &e.to_string()).await;
             cleanup_mcp_config(mcp_config_path);
             return;

@@ -82,33 +82,50 @@ async fn dispatch(cli: &Cli, args: &DispatchArgs) -> Result<()> {
 
 async fn dispatch_all(cli: &Cli, args: &DispatchAllArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let result = conn
-        .dispatch_batch(&args.role, Some(args.max_parallel))
-        .await?;
+
+    // dispatch-all requires daemon mode (dispatch_agent only works via socket)
+    if !conn.is_daemon_mode() {
+        return Err(filament_core::error::FilamentError::AgentDispatchFailed {
+            reason: "dispatch requires daemon mode (run `filament serve` first)".to_string(),
+        });
+    }
+
+    // Get ready tasks, then dispatch individually to avoid concurrent write races
+    let ready = conn.ready_tasks().await?;
+    let to_dispatch: Vec<_> = ready.into_iter().take(args.max_parallel).collect();
+
+    let mut dispatched = Vec::new();
+    let mut errors = Vec::new();
+
+    for task in &to_dispatch {
+        let slug = task.slug().as_str();
+        match conn.dispatch_agent(slug, &args.role).await {
+            Ok(run_id) => dispatched.push((slug.to_string(), run_id)),
+            Err(e) => errors.push((slug.to_string(), e.to_string())),
+        }
+    }
 
     if cli.json {
+        let result = serde_json::json!({
+            "dispatched": dispatched.iter().map(|(slug, run_id)| {
+                serde_json::json!({"task_slug": slug, "run_id": run_id.as_str()})
+            }).collect::<Vec<_>>(),
+            "errors": errors.iter().map(|(slug, err)| {
+                serde_json::json!({"task_slug": slug, "error": err})
+            }).collect::<Vec<_>>(),
+        });
         output_json(&result);
     } else {
-        let dispatched = result["dispatched"].as_array().map_or(0, Vec::len);
-        let errors = result["errors"].as_array().map_or(0, Vec::len);
-        println!("Dispatched {dispatched} agents ({errors} errors)");
-        if let Some(runs) = result["dispatched"].as_array() {
-            for run in runs {
-                println!(
-                    "  {} -> {}",
-                    run["task_slug"].as_str().unwrap_or("?"),
-                    run["run_id"].as_str().unwrap_or("?")
-                );
-            }
+        println!(
+            "Dispatched {} agents ({} errors)",
+            dispatched.len(),
+            errors.len()
+        );
+        for (slug, run_id) in &dispatched {
+            println!("  {slug} -> {run_id}");
         }
-        if let Some(errs) = result["errors"].as_array() {
-            for err in errs {
-                eprintln!(
-                    "  {} error: {}",
-                    err["task_slug"].as_str().unwrap_or("?"),
-                    err["error"].as_str().unwrap_or("?")
-                );
-            }
+        for (slug, err) in &errors {
+            eprintln!("  {slug} error: {err}");
         }
     }
     Ok(())
