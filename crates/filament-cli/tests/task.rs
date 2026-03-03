@@ -358,3 +358,86 @@ fn task_critical_path_plural_steps() {
         .success()
         .stdout(predicate::str::contains("Critical path (2 steps)"));
 }
+
+#[test]
+fn task_close_rejects_non_task() {
+    let dir = init_project();
+
+    filament(&dir)
+        .args(["add", "my-module", "--type", "module", "--summary", "A module"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["task", "close", "my-module"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not a task"));
+}
+
+#[test]
+fn task_assign_rejects_non_task() {
+    let dir = init_project();
+
+    filament(&dir)
+        .args(["add", "my-module", "--type", "module", "--summary", "A module"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["add", "worker", "--type", "agent", "--summary", "An agent"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["task", "assign", "my-module", "--to", "worker"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not a task"));
+}
+
+#[test]
+fn task_list_status_conflicts_with_unblocked() {
+    let dir = init_project();
+
+    // --status and --unblocked should conflict
+    filament(&dir)
+        .args(["task", "list", "--status", "closed", "--unblocked"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn task_add_with_depends_on() {
+    let dir = init_project();
+
+    filament(&dir)
+        .args(["task", "add", "dep-target", "--summary", "Dependency target"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args([
+            "task",
+            "add",
+            "dep-source",
+            "--summary",
+            "Depends on target",
+            "--depends-on",
+            "dep-target",
+        ])
+        .assert()
+        .success();
+
+    // The dependency should show in task show
+    filament(&dir)
+        .args(["task", "show", "dep-source"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Relations:")
+                .and(predicate::str::contains("dep-target"))
+                .and(predicate::str::contains("depends_on")),
+        );
+}

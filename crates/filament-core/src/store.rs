@@ -379,12 +379,13 @@ pub async fn get_inbox(pool: &Pool<Sqlite>, agent: &str) -> Result<Vec<Message>>
 /// Returns `FilamentError::Database` on SQL failure.
 pub async fn mark_message_read(conn: &mut SqliteConnection, id: &str) -> Result<()> {
     let now = Utc::now();
-    let rows = sqlx::query("UPDATE messages SET status = 'read', read_at = ? WHERE id = ?")
-        .bind(now)
-        .bind(id)
-        .execute(conn)
-        .await?
-        .rows_affected();
+    let rows =
+        sqlx::query("UPDATE messages SET status = 'read', read_at = ? WHERE id = ? AND status = 'unread'")
+            .bind(now)
+            .bind(id)
+            .execute(conn)
+            .await?
+            .rows_affected();
 
     if rows == 0 {
         return Err(FilamentError::MessageNotFound { id: id.to_string() });
@@ -411,15 +412,20 @@ pub async fn acquire_reservation(
     let now = Utc::now();
     let expires_at = now + ttl.as_duration();
 
-    // Check for conflicting exclusive reservations (simple glob equality check)
-    let conflict = sqlx::query_as::<_, Reservation>(
-        "SELECT * FROM file_reservations WHERE file_glob = ? AND exclusive = 1 AND expires_at > ? AND agent_name != ?",
-    )
-    .bind(file_glob)
-    .bind(now)
-    .bind(agent_name)
-    .fetch_optional(&mut *conn)
-    .await?;
+    // Check for conflicting reservations (simple glob equality check).
+    // Exclusive requests conflict with ANY existing reservation by other agents.
+    // Non-exclusive requests only conflict with exclusive reservations by other agents.
+    let conflict_sql = if exclusive {
+        "SELECT * FROM file_reservations WHERE file_glob = ? AND expires_at > ? AND agent_name != ?"
+    } else {
+        "SELECT * FROM file_reservations WHERE file_glob = ? AND exclusive = 1 AND expires_at > ? AND agent_name != ?"
+    };
+    let conflict = sqlx::query_as::<_, Reservation>(conflict_sql)
+        .bind(file_glob)
+        .bind(now)
+        .bind(agent_name)
+        .fetch_optional(&mut *conn)
+        .await?;
 
     if let Some(r) = conflict {
         return Err(FilamentError::FileReserved {
@@ -688,10 +694,14 @@ pub async fn rebuild_blocked_cache(conn: &mut SqliteConnection) -> Result<()> {
 
 /// Get ready tasks: open tasks not in the blocked cache, ordered by priority.
 ///
+/// Automatically rebuilds the blocked cache before querying.
+///
 /// # Errors
 ///
 /// Returns `FilamentError::Database` on SQL failure.
-pub async fn ready_tasks(pool: &Pool<Sqlite>) -> Result<Vec<Entity>> {
+pub async fn ready_tasks(conn: &mut SqliteConnection) -> Result<Vec<Entity>> {
+    rebuild_blocked_cache(conn).await?;
+
     Ok(sqlx::query_as::<_, Entity>(
         "SELECT e.* FROM entities e
          WHERE e.entity_type = 'task'
@@ -699,6 +709,6 @@ pub async fn ready_tasks(pool: &Pool<Sqlite>) -> Result<Vec<Entity>> {
            AND e.id NOT IN (SELECT entity_id FROM blocked_entities_cache)
          ORDER BY e.priority ASC, e.created_at ASC",
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?)
 }

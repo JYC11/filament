@@ -70,9 +70,9 @@ struct TaskAddArgs {
 struct TaskListArgs {
     #[allow(clippy::doc_markdown)]
     /// Filter by status (open, closed, in_progress, all).
-    #[arg(long, default_value = "open")]
+    #[arg(long, default_value = "open", conflicts_with = "unblocked")]
     status: String,
-    /// Show only unblocked tasks.
+    /// Show only unblocked tasks (cannot be combined with --status).
     #[arg(long)]
     unblocked: bool,
 }
@@ -191,9 +191,9 @@ async fn list(cli: &Cli, args: &TaskListArgs) -> Result<()> {
     };
 
     if args.unblocked {
-        s.with_transaction(|tx| Box::pin(async move { store::rebuild_blocked_cache(tx).await }))
+        let tasks = s
+            .with_transaction(|tx| Box::pin(async move { store::ready_tasks(tx).await }))
             .await?;
-        let tasks = store::ready_tasks(s.pool()).await?;
         print_entity_list(cli, &tasks, "No tasks found.");
         return Ok(());
     }
@@ -293,6 +293,14 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
 async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
     let s = connect().await?;
     let entity = resolve_entity(&s, &args.name).await?;
+
+    if entity.entity_type.as_str() != "task" {
+        return Err(filament_core::error::FilamentError::Validation(format!(
+            "'{}' is a {}, not a task",
+            entity.name, entity.entity_type
+        )));
+    }
+
     let id = entity.id.clone();
 
     s.with_transaction(|tx| {
@@ -313,6 +321,14 @@ async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
 async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
     let s = connect().await?;
     let task = resolve_entity(&s, &args.name).await?;
+
+    if task.entity_type.as_str() != "task" {
+        return Err(filament_core::error::FilamentError::Validation(format!(
+            "'{}' is a {}, not a task",
+            task.name, task.entity_type
+        )));
+    }
+
     let agent = resolve_entity_id(&s, &args.to).await?;
     let task_id = task.id.clone();
 

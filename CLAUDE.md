@@ -87,7 +87,8 @@ See `.plan/gotchas.md` for the full list. Top hits:
 - `filament message send/inbox/read` — inter-agent messaging
 - `filament reserve/release/reservations` — file reservation management
 - Global flags: `--json`, `-v`/`-q` verbosity, structured error output
-- 107 tests (80 core + 27 CLI integration), zero clippy warnings
+- 140 tests (83 core + 57 CLI integration), zero clippy warnings
+- 3 code reviews + 2 manual QA rounds (65 test cases, results in `.qa/`)
 
 ## References
 

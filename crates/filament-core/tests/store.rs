@@ -293,6 +293,68 @@ async fn reservation_release_allows_reacquire() {
         .unwrap();
 }
 
+#[tokio::test]
+async fn exclusive_reservation_conflicts_with_nonexclusive() {
+    let store = test_db().await;
+    let ttl = TtlSeconds::new(3600).unwrap();
+
+    // Agent-1 acquires a non-exclusive reservation
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                acquire_reservation(conn, "agent-1", "src/*.rs", false, ttl).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // Agent-2 tries to acquire an exclusive reservation on the same glob — should fail
+    let result = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                acquire_reservation(conn, "agent-2", "src/*.rs", true, ttl).await?;
+                Ok(())
+            })
+        })
+        .await;
+
+    assert!(matches!(result, Err(FilamentError::FileReserved { .. })));
+}
+
+#[tokio::test]
+async fn mark_already_read_message_returns_not_found() {
+    let store = test_db().await;
+    let msg = sample_message_req();
+
+    let id = store
+        .with_transaction(|conn| {
+            let msg = msg.clone();
+            Box::pin(async move { send_message(conn, &msg).await })
+        })
+        .await
+        .unwrap();
+
+    // Mark as read the first time — should succeed
+    store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            Box::pin(async move { mark_message_read(conn, id.as_str()).await })
+        })
+        .await
+        .unwrap();
+
+    // Mark as read again — should return not found (already read)
+    let result = store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            Box::pin(async move { mark_message_read(conn, id.as_str()).await })
+        })
+        .await;
+
+    assert!(matches!(result, Err(FilamentError::MessageNotFound { .. })));
+}
+
 // ---------------------------------------------------------------------------
 // Message queries
 // ---------------------------------------------------------------------------
@@ -365,7 +427,7 @@ async fn ready_tasks_excludes_blocked() {
     req_free.name = NonEmptyString::new("Free").unwrap();
     req_free.priority = Priority::new(0).unwrap();
 
-    store
+    let ready = store
         .with_transaction(|conn| {
             let req_blocker = req_blocker.clone();
             let req_blocked = req_blocked.clone();
@@ -378,14 +440,11 @@ async fn ready_tasks_excludes_blocked() {
                 let rel = blocks_req(blocker_id.as_str(), blocked_id.as_str());
                 create_relation(conn, &rel).await?;
 
-                rebuild_blocked_cache(conn).await?;
-                Ok(())
+                ready_tasks(conn).await
             })
         })
         .await
         .unwrap();
-
-    let ready = ready_tasks(store.pool()).await.unwrap();
     assert_eq!(ready.len(), 2); // Blocker + Free
     assert!(ready.iter().all(|e| e.name != "Blocked"));
 }
