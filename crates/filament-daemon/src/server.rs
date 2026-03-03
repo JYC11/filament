@@ -9,12 +9,14 @@ use tokio::net::UnixStream;
 use tokio::sync::RwLock;
 use tracing::{debug, error};
 
+use crate::dispatch::DispatchConfig;
 use crate::handler;
 
 /// Shared state accessible by all connection handlers.
 pub struct SharedState {
     pub store: FilamentStore,
     graph: RwLock<KnowledgeGraph>,
+    dispatch_config: Option<DispatchConfig>,
 }
 
 impl SharedState {
@@ -22,7 +24,27 @@ impl SharedState {
         Self {
             store,
             graph: RwLock::new(graph),
+            dispatch_config: None,
         }
+    }
+
+    /// Create with dispatch configuration enabled.
+    pub fn with_dispatch(
+        store: FilamentStore,
+        graph: KnowledgeGraph,
+        config: DispatchConfig,
+    ) -> Self {
+        Self {
+            store,
+            graph: RwLock::new(graph),
+            dispatch_config: Some(config),
+        }
+    }
+
+    /// Get the dispatch config, if configured.
+    #[must_use]
+    pub fn dispatch_config(&self) -> Option<DispatchConfig> {
+        self.dispatch_config.clone()
     }
 
     pub async fn graph_read(&self) -> tokio::sync::RwLockReadGuard<'_, KnowledgeGraph> {

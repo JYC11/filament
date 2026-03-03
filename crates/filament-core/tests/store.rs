@@ -703,3 +703,187 @@ async fn release_nonexistent_reservation_returns_error() {
         "expected ReservationNotFound, got: {err:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// get_agent_run
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn get_agent_run_returns_run() {
+    let store = test_db().await;
+
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = sample_entity_req();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let run_id = store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move { create_agent_run(conn, tid.as_str(), "coder", Some(42)).await })
+        })
+        .await
+        .unwrap();
+
+    let run = get_agent_run(store.pool(), run_id.as_str()).await.unwrap();
+    assert_eq!(run.id, run_id);
+    assert_eq!(run.agent_role, "coder");
+    assert_eq!(run.pid, Some(42));
+    assert_eq!(run.status, AgentStatus::Running);
+}
+
+#[tokio::test]
+async fn get_agent_run_not_found() {
+    let store = test_db().await;
+    let err = get_agent_run(store.pool(), "nonexistent")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, FilamentError::AgentRunNotFound { .. }));
+}
+
+// ---------------------------------------------------------------------------
+// has_running_agent
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn has_running_agent_true_when_running() {
+    let store = test_db().await;
+
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = sample_entity_req();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move { create_agent_run(conn, tid.as_str(), "coder", None).await })
+        })
+        .await
+        .unwrap();
+
+    assert!(has_running_agent(store.pool(), task_id.as_str())
+        .await
+        .unwrap());
+}
+
+#[tokio::test]
+async fn has_running_agent_false_when_none() {
+    let store = test_db().await;
+    assert!(!has_running_agent(store.pool(), "nonexistent-task")
+        .await
+        .unwrap());
+}
+
+#[tokio::test]
+async fn has_running_agent_false_after_finish() {
+    let store = test_db().await;
+
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = sample_entity_req();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let run_id = store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move { create_agent_run(conn, tid.as_str(), "coder", None).await })
+        })
+        .await
+        .unwrap();
+
+    store
+        .with_transaction(|conn| {
+            let rid = run_id.clone();
+            Box::pin(async move {
+                finish_agent_run(conn, rid.as_str(), AgentStatus::Completed, None).await
+            })
+        })
+        .await
+        .unwrap();
+
+    assert!(!has_running_agent(store.pool(), task_id.as_str())
+        .await
+        .unwrap());
+}
+
+// ---------------------------------------------------------------------------
+// list_agent_runs_by_task
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_agent_runs_by_task_returns_all_runs() {
+    let store = test_db().await;
+
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = sample_entity_req();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // Create two runs
+    for role in &["coder", "reviewer"] {
+        store
+            .with_transaction(|conn| {
+                let tid = task_id.clone();
+                let role = role.to_string();
+                Box::pin(async move { create_agent_run(conn, tid.as_str(), &role, None).await })
+            })
+            .await
+            .unwrap();
+    }
+
+    let runs = list_agent_runs_by_task(store.pool(), task_id.as_str())
+        .await
+        .unwrap();
+    assert_eq!(runs.len(), 2);
+}
+
+// ---------------------------------------------------------------------------
+// release_reservations_by_agent
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn release_reservations_by_agent_releases_all() {
+    let store = test_db().await;
+
+    // Create two reservations for the same agent
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let ttl = filament_core::models::TtlSeconds::new(3600).unwrap();
+                acquire_reservation(conn, "my-agent", "src/*.rs", true, ttl).await?;
+                acquire_reservation(conn, "my-agent", "tests/*.rs", false, ttl).await?;
+                // Also one for a different agent (should not be released)
+                acquire_reservation(conn, "other-agent", "docs/*.md", true, ttl).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let released = store
+        .with_transaction(|conn| {
+            Box::pin(async move { release_reservations_by_agent(conn, "my-agent").await })
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(released, 2);
+
+    // other-agent's reservation should still exist
+    let remaining = list_reservations(store.pool(), None).await.unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].agent_name, "other-agent");
+}

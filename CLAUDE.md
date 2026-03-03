@@ -101,13 +101,17 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**Phase 3 complete + slug/ADT refactor** (2026-03-03):
-- Daemon server: NDJSON Unix socket protocol + MCP server (16 tools via `rmcp`)
+**Phases 1–3 complete + slug/ADT refactor** (2026-03-03):
+- Phase 1: Core library — models, errors, schema, store, graph, connection, protocol
+- Phase 2: CLI — entity, task, relation, query, message, reserve commands (54 integration tests)
+- Phase 3: Daemon — NDJSON Unix socket server + MCP server (16 tools via `rmcp`)
 - `filament serve [--foreground]` / `filament stop` / `filament mcp`
 - CLI routes through daemon when running (falls back to direct DB access)
 - **Slug-based identity** (ADR-019): 8-char `[a-z0-9]` slugs replace name-based lookup
 - **Entity ADT** (ADR-020): `Entity` enum with typed variants, `TypeMismatch` error, compile-time type safety
+- **Typed API boundaries**: `update_entity_status` and `list_entities` take typed enums, `resolve_task`/`resolve_agent` helpers
 - 184 tests (97 core + 54 CLI + 22 daemon + 10 MCP + 1 TUI), zero clippy warnings
+- **Next**: Phase 4 — agent dispatching
 
 ## References
 

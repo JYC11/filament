@@ -824,6 +824,64 @@ pub async fn finish_agent_run(
     Ok(())
 }
 
+/// Get a single agent run by ID.
+///
+/// # Errors
+///
+/// Returns `FilamentError::AgentRunNotFound` if no run with that ID exists.
+pub async fn get_agent_run(pool: &Pool<Sqlite>, id: &str) -> Result<AgentRun> {
+    sqlx::query_as::<_, AgentRun>("SELECT * FROM agent_runs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| FilamentError::AgentRunNotFound { id: id.to_string() })
+}
+
+/// List agent runs for a specific task, ordered by start time (most recent first).
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_agent_runs_by_task(pool: &Pool<Sqlite>, task_id: &str) -> Result<Vec<AgentRun>> {
+    Ok(sqlx::query_as::<_, AgentRun>(
+        "SELECT * FROM agent_runs WHERE task_id = ? ORDER BY started_at DESC",
+    )
+    .bind(task_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Check if a task has a running agent.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn has_running_agent(pool: &Pool<Sqlite>, task_id: &str) -> Result<bool> {
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT 1 FROM agent_runs WHERE task_id = ? AND status = 'running' LIMIT 1")
+            .bind(task_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.is_some())
+}
+
+/// Release all reservations held by a specific agent. Used for death cleanup.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn release_reservations_by_agent(
+    conn: &mut SqliteConnection,
+    agent_name: &str,
+) -> Result<u64> {
+    let rows = sqlx::query("DELETE FROM file_reservations WHERE agent_name = ?")
+        .bind(agent_name)
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
+    Ok(rows)
+}
+
 /// Get running agent runs.
 ///
 /// # Errors

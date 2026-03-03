@@ -335,6 +335,49 @@ impl DaemonClient {
         serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
     }
 
+    // -- Dispatch operations --
+
+    pub async fn dispatch_agent(&mut self, task_slug: &str, role: &str) -> Result<AgentRunId> {
+        let result = self
+            .call(
+                Method::DispatchAgent,
+                serde_json::json!({ "task_slug": task_slug, "role": role }),
+            )
+            .await?;
+        let id: String = serde_json::from_value(result["run_id"].clone())
+            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        Ok(AgentRunId::from(id))
+    }
+
+    pub async fn dispatch_batch(
+        &mut self,
+        role: &str,
+        max_parallel: Option<usize>,
+    ) -> Result<serde_json::Value> {
+        self.call(
+            Method::DispatchBatch,
+            serde_json::json!({ "role": role, "max_parallel": max_parallel }),
+        )
+        .await
+    }
+
+    pub async fn get_agent_run(&mut self, run_id: &str) -> Result<AgentRun> {
+        let result = self
+            .call(Method::GetAgentRun, serde_json::json!({ "run_id": run_id }))
+            .await?;
+        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+    }
+
+    pub async fn list_agent_runs_by_task(&mut self, task_id: &str) -> Result<Vec<AgentRun>> {
+        let result = self
+            .call(
+                Method::ListAgentRunsByTask,
+                serde_json::json!({ "task_id": task_id }),
+            )
+            .await?;
+        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+    }
+
     // -- Graph operations --
 
     pub async fn ready_tasks(&mut self) -> Result<Vec<Entity>> {

@@ -390,6 +390,60 @@ impl FilamentConnection {
     }
 
     // -----------------------------------------------------------------------
+    // Dispatch methods (require daemon)
+    // -----------------------------------------------------------------------
+
+    pub async fn dispatch_agent(
+        &mut self,
+        task_slug: &str,
+        role: &str,
+    ) -> Result<crate::models::AgentRunId> {
+        match self {
+            Self::Direct(_) => Err(FilamentError::AgentDispatchFailed {
+                reason: "dispatch requires daemon mode (run `filament serve` first)".to_string(),
+            }),
+            Self::Socket(c) => c.dispatch_agent(task_slug, role).await,
+        }
+    }
+
+    pub async fn dispatch_batch(
+        &mut self,
+        role: &str,
+        max_parallel: Option<usize>,
+    ) -> Result<serde_json::Value> {
+        match self {
+            Self::Direct(_) => Err(FilamentError::AgentDispatchFailed {
+                reason: "dispatch requires daemon mode (run `filament serve` first)".to_string(),
+            }),
+            Self::Socket(c) => c.dispatch_batch(role, max_parallel).await,
+        }
+    }
+
+    pub async fn get_agent_run(&mut self, run_id: &str) -> Result<crate::models::AgentRun> {
+        match self {
+            Self::Direct(s) => store::get_agent_run(s.pool(), run_id).await,
+            Self::Socket(c) => c.get_agent_run(run_id).await,
+        }
+    }
+
+    pub async fn list_agent_runs_by_task(
+        &mut self,
+        task_id: &str,
+    ) -> Result<Vec<crate::models::AgentRun>> {
+        match self {
+            Self::Direct(s) => store::list_agent_runs_by_task(s.pool(), task_id).await,
+            Self::Socket(c) => c.list_agent_runs_by_task(task_id).await,
+        }
+    }
+
+    pub async fn list_running_agents(&mut self) -> Result<Vec<crate::models::AgentRun>> {
+        match self {
+            Self::Direct(s) => store::list_running_agents(s.pool()).await,
+            Self::Socket(c) => c.list_running_agents().await,
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Graph dispatch methods
     // -----------------------------------------------------------------------
 

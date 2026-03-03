@@ -80,6 +80,12 @@ pub enum Method {
     CreateAgentRun,
     FinishAgentRun,
     ListRunningAgents,
+    GetAgentRun,
+    ListAgentRunsByTask,
+
+    // Dispatch operations
+    DispatchAgent,
+    DispatchBatch,
 
     // Graph operations
     ReadyTasks,

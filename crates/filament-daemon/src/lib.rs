@@ -1,6 +1,8 @@
 pub mod config;
+pub mod dispatch;
 pub mod handler;
 pub mod mcp;
+pub mod roles;
 pub mod server;
 
 use std::sync::Arc;
@@ -14,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use config::ServeConfig;
+use dispatch::DispatchConfig;
 use server::SharedState;
 
 /// Start the daemon server.
@@ -43,7 +46,14 @@ pub async fn serve(config: ServeConfig, cancel: CancellationToken) -> Result<()>
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(&pool).await?;
 
-    let state = Arc::new(SharedState::new(store, graph));
+    // Derive project root from config (db_path parent is .filament, its parent is project root)
+    let project_root = config
+        .db_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let dispatch_config = DispatchConfig::from_project_root(project_root);
+    let state = Arc::new(SharedState::with_dispatch(store, graph, dispatch_config));
 
     // Bind socket first — write PID file only after successful bind
     let listener = UnixListener::bind(&config.socket_path)?;

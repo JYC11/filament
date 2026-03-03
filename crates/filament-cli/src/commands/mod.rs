@@ -1,3 +1,4 @@
+mod agent;
 mod entity;
 pub mod helpers;
 mod init;
@@ -43,6 +44,10 @@ pub enum Commands {
     /// Task management commands.
     Task(task::TaskCommand),
 
+    // -- Agent subgroup --
+    /// Agent dispatching and monitoring commands.
+    Agent(agent::AgentCommand),
+
     // -- Query commands --
     /// Show context around an entity (graph neighborhood).
     Context(query::ContextArgs),
@@ -83,6 +88,7 @@ impl Commands {
             Self::Relate(args) => relation::relate(cli, args).await,
             Self::Unrelate(args) => relation::unrelate(cli, args).await,
             Self::Task(cmd) => cmd.run(cli).await,
+            Self::Agent(cmd) => cmd.run(cli).await,
             Self::Context(args) => query::context(cli, args).await,
             Self::Message(cmd) => cmd.run(cli).await,
             Self::Reserve(args) => reserve::reserve(cli, args).await,

@@ -37,6 +37,12 @@ pub enum FilamentError {
     #[error("Reservation expired")]
     ReservationExpired,
 
+    #[error("Agent dispatch failed: {reason}")]
+    AgentDispatchFailed { reason: String },
+
+    #[error("Task {task_id} already has a running agent")]
+    AgentAlreadyRunning { task_id: String },
+
     #[error("Validation: {0}")]
     Validation(String),
 
@@ -63,6 +69,8 @@ impl FilamentError {
             Self::CycleDetected { .. } => "CYCLE_DETECTED",
             Self::FileReserved { .. } => "FILE_RESERVED",
             Self::ReservationExpired => "RESERVATION_EXPIRED",
+            Self::AgentDispatchFailed { .. } => "AGENT_DISPATCH_FAILED",
+            Self::AgentAlreadyRunning { .. } => "AGENT_ALREADY_RUNNING",
             Self::Validation(_) => "VALIDATION_ERROR",
             Self::Database(_) => "DATABASE_ERROR",
             Self::Protocol(_) => "PROTOCOL_ERROR",
@@ -72,7 +80,10 @@ impl FilamentError {
 
     /// Whether this error is retryable.
     pub const fn is_retryable(&self) -> bool {
-        matches!(self, Self::Database(_) | Self::Io(_))
+        matches!(
+            self,
+            Self::Database(_) | Self::Io(_) | Self::AgentDispatchFailed { .. }
+        )
     }
 
     /// Agent-friendly hint for resolving the error.
@@ -107,6 +118,12 @@ impl FilamentError {
             Self::ReservationExpired => {
                 Some("Re-acquire the reservation before proceeding".to_string())
             }
+            Self::AgentDispatchFailed { .. } => {
+                Some("Check agent command and task configuration, then retry".to_string())
+            }
+            Self::AgentAlreadyRunning { task_id } => Some(format!(
+                "Wait for the running agent to finish, or check status with `filament agent history {task_id}`"
+            )),
             Self::Validation(msg) => Some(format!("Fix input: {msg}")),
             _ => None,
         }
@@ -125,6 +142,7 @@ impl FilamentError {
             Self::CycleDetected { .. } => 5,
             Self::FileReserved { .. } | Self::ReservationExpired => 6,
             Self::Io(_) => 7,
+            Self::AgentDispatchFailed { .. } | Self::AgentAlreadyRunning { .. } => 8,
         }
     }
 }
