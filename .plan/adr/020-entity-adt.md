@@ -32,7 +32,7 @@ pub enum Entity {
 
 ### Accessor methods
 
-`Entity` provides: `common()`, `id()`, `slug()`, `name()`, `entity_type()`, `status()`, `priority()`, `summary()`, `is_task()`, `is_agent()`, `into_common()`.
+`Entity` provides: `common()`, `id()`, `slug()`, `name()`, `entity_type()`, `status()`, `priority()`, `summary()`, `into_common()`. Typed resolution via `FilamentConnection::resolve_task()`/`resolve_agent()` replaces ad-hoc checks.
 
 ### Type-safe error
 

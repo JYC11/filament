@@ -8,7 +8,7 @@ use crate::error::FilamentError;
 // Typed ID macro
 // ---------------------------------------------------------------------------
 
-/// Generate `as_str()` and `Display` for enums with `snake_case` string mapping.
+/// Generate `as_str()`, `Display`, and `FromStr` for enums with `snake_case` string mapping.
 macro_rules! impl_enum_str {
     ($name:ident { $($variant:ident => $str:literal),+ $(,)? }) => {
         impl $name {
@@ -23,6 +23,18 @@ macro_rules! impl_enum_str {
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str(self.as_str())
+            }
+        }
+
+        impl std::str::FromStr for $name {
+            type Err = FilamentError;
+            fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+                match s {
+                    $(s if s.eq_ignore_ascii_case($str) => Ok(Self::$variant),)+
+                    _ => Err(FilamentError::Validation(format!(
+                        "invalid {}: '{}'", stringify!($name), s
+                    ))),
+                }
             }
         }
     };
@@ -854,16 +866,6 @@ impl Entity {
     #[must_use]
     pub fn summary(&self) -> &str {
         &self.common().summary
-    }
-
-    #[must_use]
-    pub const fn is_task(&self) -> bool {
-        matches!(self, Self::Task(_))
-    }
-
-    #[must_use]
-    pub const fn is_agent(&self) -> bool {
-        matches!(self, Self::Agent(_))
     }
 }
 

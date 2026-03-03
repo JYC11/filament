@@ -149,7 +149,7 @@ fn entity_update_invalid_status() {
         .args(["update", &slug, "--status", "nonexistent"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("invalid status"));
+        .stderr(predicate::str::contains("invalid EntityStatus"));
 }
 
 #[test]

@@ -212,21 +212,14 @@ impl FilamentMcp {
         Parameters(p): Parameters<TaskCloseParams>,
     ) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
-        let entity = conn
-            .resolve_entity(&p.slug)
-            .await
-            .map_err(|e| map_err(&e))?;
-        if !entity.is_task() {
-            return Err(map_err(&FilamentError::TypeMismatch {
-                expected: filament_core::models::EntityType::Task,
-                actual: entity.entity_type(),
-                slug: entity.slug().clone(),
-            }));
-        }
-        conn.update_entity_status(entity.id().as_str(), "closed")
-            .await
-            .map_err(|e| map_err(&e))?;
-        Ok(format!("Closed: {} ({})", entity.name(), entity.slug()))
+        let task = conn.resolve_task(&p.slug).await.map_err(|e| map_err(&e))?;
+        conn.update_entity_status(
+            task.id.as_str(),
+            filament_core::models::EntityStatus::Closed,
+        )
+        .await
+        .map_err(|e| map_err(&e))?;
+        Ok(format!("Closed: {} ({})", task.name, task.slug))
     }
 
     /// Get graph neighborhood summaries around an entity.
@@ -253,19 +246,9 @@ impl FilamentMcp {
     ) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
         // Validate recipient exists and is an agent
-        let recipient = conn.resolve_entity(&p.to_agent).await.map_err(|_| {
-            map_err(&FilamentError::Validation(format!(
-                "recipient agent '{}' not found",
-                p.to_agent
-            )))
-        })?;
-        if !recipient.is_agent() {
-            return Err(map_err(&FilamentError::TypeMismatch {
-                expected: filament_core::models::EntityType::Agent,
-                actual: recipient.entity_type(),
-                slug: recipient.slug().clone(),
-            }));
-        }
+        conn.resolve_agent(&p.to_agent)
+            .await
+            .map_err(|e| map_err(&e))?;
         let req = SendMessageRequest {
             from_agent: p.from_agent,
             to_agent: p.to_agent,
@@ -352,8 +335,20 @@ impl FilamentMcp {
     #[tool(name = "filament_list")]
     async fn list(&self, Parameters(p): Parameters<ListParams>) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
+        let entity_type: Option<filament_core::models::EntityType> = p
+            .entity_type
+            .as_deref()
+            .map(str::parse)
+            .transpose()
+            .map_err(|e: FilamentError| map_err(&e))?;
+        let status: Option<filament_core::models::EntityStatus> = p
+            .status
+            .as_deref()
+            .map(str::parse)
+            .transpose()
+            .map_err(|e: FilamentError| map_err(&e))?;
         let entities = conn
-            .list_entities(p.entity_type.as_deref(), p.status.as_deref())
+            .list_entities(entity_type, status)
             .await
             .map_err(|e| map_err(&e))?;
         Ok(serde_json::to_string_pretty(&entities).expect("JSON"))
@@ -396,7 +391,9 @@ impl FilamentMcp {
                 .await
                 .map_err(|e| map_err(&e))?;
         }
-        if let Some(ref status) = p.status {
+        if let Some(ref status_str) = p.status {
+            let status: filament_core::models::EntityStatus =
+                status_str.parse().map_err(|e: FilamentError| map_err(&e))?;
             conn.update_entity_status(id, status)
                 .await
                 .map_err(|e| map_err(&e))?;

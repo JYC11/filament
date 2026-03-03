@@ -137,7 +137,8 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     if let Some(summary) = &args.summary {
         conn.update_entity_summary(id.as_str(), summary).await?;
     }
-    if let Some(status) = &args.status {
+    if let Some(ref status_str) = args.status {
+        let status: filament_core::models::EntityStatus = status_str.parse()?;
         conn.update_entity_status(id.as_str(), status).await?;
     }
 
@@ -238,9 +239,10 @@ pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
 pub async fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
     let mut conn = connect().await?;
 
-    let entities = conn
-        .list_entities(args.r#type.as_deref(), args.status.as_deref())
-        .await?;
+    let entity_type = args.r#type.as_deref().map(str::parse).transpose()?;
+    let status = args.status.as_deref().map(str::parse).transpose()?;
+
+    let entities = conn.list_entities(entity_type, status).await?;
 
     print_entity_list(cli, &entities, "No entities found.");
     Ok(())

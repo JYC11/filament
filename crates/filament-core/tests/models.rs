@@ -496,16 +496,16 @@ fn sample_common() -> EntityCommon {
 fn entity_adt_task_variant() {
     let e = Entity::Task(sample_common());
     assert_eq!(e.entity_type(), EntityType::Task);
-    assert!(e.is_task());
-    assert!(!e.is_agent());
+    assert!(matches!(e, Entity::Task(_)));
+    assert!(!matches!(e, Entity::Agent(_)));
 }
 
 #[test]
 fn entity_adt_agent_variant() {
     let e = Entity::Agent(sample_common());
     assert_eq!(e.entity_type(), EntityType::Agent);
-    assert!(e.is_agent());
-    assert!(!e.is_task());
+    assert!(matches!(e, Entity::Agent(_)));
+    assert!(!matches!(e, Entity::Task(_)));
 }
 
 #[test]

@@ -5,8 +5,8 @@ use tokio::net::UnixStream;
 
 use crate::error::{FilamentError, Result};
 use crate::models::{
-    AgentRun, AgentRunId, Entity, EntityId, Event, Message, MessageId, Relation, RelationId,
-    Reservation, ReservationId, Slug,
+    AgentRun, AgentRunId, Entity, EntityId, EntityStatus, EntityType, Event, Message, MessageId,
+    Relation, RelationId, Reservation, ReservationId, Slug,
 };
 use crate::protocol::{Method, Request, Response};
 
@@ -121,13 +121,16 @@ impl DaemonClient {
 
     pub async fn list_entities(
         &mut self,
-        entity_type: Option<&str>,
-        status: Option<&str>,
+        entity_type: Option<EntityType>,
+        status: Option<EntityStatus>,
     ) -> Result<Vec<Entity>> {
         let result = self
             .call(
                 Method::ListEntities,
-                serde_json::json!({ "entity_type": entity_type, "status": status }),
+                serde_json::json!({
+                    "entity_type": entity_type.as_ref().map(EntityType::as_str),
+                    "status": status.as_ref().map(EntityStatus::as_str),
+                }),
             )
             .await?;
         serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
@@ -142,10 +145,10 @@ impl DaemonClient {
         Ok(())
     }
 
-    pub async fn update_entity_status(&mut self, id: &str, status: &str) -> Result<()> {
+    pub async fn update_entity_status(&mut self, id: &str, status: EntityStatus) -> Result<()> {
         self.call(
             Method::UpdateEntityStatus,
-            serde_json::json!({ "id": id, "status": status }),
+            serde_json::json!({ "id": id, "status": status.as_str() }),
         )
         .await?;
         Ok(())

@@ -6,9 +6,10 @@ use crate::client::DaemonClient;
 use crate::error::{FilamentError, Result};
 use crate::graph::KnowledgeGraph;
 use crate::models::{
-    CreateEntityRequest, CreateRelationRequest, Entity, EntityId, Event, Message, MessageId,
-    Relation, RelationId, Reservation, ReservationId, SendMessageRequest, Slug, TtlSeconds,
-    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
+    CreateEntityRequest, CreateRelationRequest, Entity, EntityCommon, EntityId, EntityStatus,
+    EntityType, Event, Message, MessageId, Relation, RelationId, Reservation, ReservationId,
+    SendMessageRequest, Slug, TtlSeconds, ValidCreateEntityRequest, ValidCreateRelationRequest,
+    ValidSendMessageRequest,
 };
 use crate::schema::init_pool;
 use crate::store::{self, FilamentStore};
@@ -104,6 +105,32 @@ impl FilamentConnection {
         }
     }
 
+    /// Resolve an entity by slug/ID and verify it is a Task.
+    pub async fn resolve_task(&mut self, slug_or_id: &str) -> Result<EntityCommon> {
+        let entity = self.resolve_entity(slug_or_id).await?;
+        match entity {
+            Entity::Task(c) => Ok(c),
+            other => Err(FilamentError::TypeMismatch {
+                expected: EntityType::Task,
+                actual: other.entity_type(),
+                slug: other.slug().clone(),
+            }),
+        }
+    }
+
+    /// Resolve an entity by slug/ID and verify it is an Agent.
+    pub async fn resolve_agent(&mut self, slug_or_id: &str) -> Result<EntityCommon> {
+        let entity = self.resolve_entity(slug_or_id).await?;
+        match entity {
+            Entity::Agent(c) => Ok(c),
+            other => Err(FilamentError::TypeMismatch {
+                expected: EntityType::Agent,
+                actual: other.entity_type(),
+                slug: other.slug().clone(),
+            }),
+        }
+    }
+
     /// Resolve entity by slug (first) or UUID fallback.
     pub async fn resolve_entity(&mut self, slug_or_id: &str) -> Result<Entity> {
         match self {
@@ -123,11 +150,18 @@ impl FilamentConnection {
 
     pub async fn list_entities(
         &mut self,
-        entity_type: Option<&str>,
-        status: Option<&str>,
+        entity_type: Option<EntityType>,
+        status: Option<EntityStatus>,
     ) -> Result<Vec<Entity>> {
         match self {
-            Self::Direct(s) => store::list_entities(s.pool(), entity_type, status).await,
+            Self::Direct(s) => {
+                store::list_entities(
+                    s.pool(),
+                    entity_type.as_ref().map(EntityType::as_str),
+                    status.as_ref().map(EntityStatus::as_str),
+                )
+                .await
+            }
             Self::Socket(c) => c.list_entities(entity_type, status).await,
         }
     }
@@ -148,18 +182,14 @@ impl FilamentConnection {
         }
     }
 
-    pub async fn update_entity_status(&mut self, id: &str, status: &str) -> Result<()> {
+    pub async fn update_entity_status(&mut self, id: &str, status: EntityStatus) -> Result<()> {
         match self {
             Self::Direct(s) => {
-                let es: crate::models::EntityStatus = serde_json::from_value(
-                    serde_json::Value::String(status.to_string()),
-                )
-                .map_err(|_| FilamentError::Validation(format!("invalid status: '{status}'")))?;
                 let id = id.to_string();
                 s.with_transaction(|conn| {
                     let id = id.clone();
-                    let es = es.clone();
-                    Box::pin(async move { store::update_entity_status(conn, &id, es).await })
+                    let status = status.clone();
+                    Box::pin(async move { store::update_entity_status(conn, &id, status).await })
                 })
                 .await
             }

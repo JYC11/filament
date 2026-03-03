@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use filament_core::client::DaemonClient;
+use filament_core::models::{EntityStatus, EntityType};
 use filament_core::schema::init_pool;
 use filament_daemon::config::ServeConfig;
 use tokio_util::sync::CancellationToken;
@@ -82,7 +83,7 @@ async fn entity_crud_via_socket() {
 
     // Update status
     client
-        .update_entity_status(id.as_str(), "in_progress")
+        .update_entity_status(id.as_str(), EntityStatus::InProgress)
         .await
         .expect("update status");
 
@@ -91,7 +92,7 @@ async fn entity_crud_via_socket() {
 
     // List
     let entities = client
-        .list_entities(Some("task"), None)
+        .list_entities(Some(EntityType::Task), None)
         .await
         .expect("list entities");
     assert_eq!(entities.len(), 1);
@@ -385,7 +386,7 @@ async fn concurrent_clients() {
     // Verify all 5 exist
     let mut verify_client = DaemonClient::connect(&socket_path).await.expect("connect");
     let all = verify_client
-        .list_entities(Some("task"), None)
+        .list_entities(Some(EntityType::Task), None)
         .await
         .expect("list");
     assert_eq!(all.len(), 5);
@@ -516,7 +517,7 @@ async fn entity_events_via_socket() {
 
     // Update status — should generate a status_change event
     client
-        .update_entity_status(id.as_str(), "in_progress")
+        .update_entity_status(id.as_str(), EntityStatus::InProgress)
         .await
         .expect("update status");
 
@@ -550,10 +551,8 @@ async fn update_entity_status_invalid_returns_error() {
         .await
         .expect("create entity");
 
-    // Try invalid status
-    let result = client
-        .update_entity_status(id.as_str(), "totally_bogus_status")
-        .await;
+    // Try invalid status — parse should fail before reaching the client
+    let result: std::result::Result<EntityStatus, _> = "totally_bogus_status".parse();
     assert!(result.is_err(), "expected error for invalid status");
 
     // Entity should still have original status
@@ -793,10 +792,10 @@ async fn multi_agent_task_scheduling() {
     let cr_id = core_refactor.clone();
     let agent_a = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp).await.expect("agent-a connect");
-        c.update_entity_status(cr_id.as_str(), "in_progress")
+        c.update_entity_status(cr_id.as_str(), EntityStatus::InProgress)
             .await
             .expect("agent-a in_progress");
-        c.update_entity_status(cr_id.as_str(), "closed")
+        c.update_entity_status(cr_id.as_str(), EntityStatus::Closed)
             .await
             .expect("agent-a closed");
     });
@@ -832,10 +831,10 @@ async fn multi_agent_task_scheduling() {
     let wt_id = write_tests.clone();
     let agent_b = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp_b).await.expect("agent-b connect");
-        c.update_entity_status(wt_id.as_str(), "in_progress")
+        c.update_entity_status(wt_id.as_str(), EntityStatus::InProgress)
             .await
             .expect("agent-b in_progress");
-        c.update_entity_status(wt_id.as_str(), "closed")
+        c.update_entity_status(wt_id.as_str(), EntityStatus::Closed)
             .await
             .expect("agent-b closed");
     });
@@ -844,10 +843,10 @@ async fn multi_agent_task_scheduling() {
     let cr_rev_id = code_review.clone();
     let agent_c = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp_c).await.expect("agent-c connect");
-        c.update_entity_status(cr_rev_id.as_str(), "in_progress")
+        c.update_entity_status(cr_rev_id.as_str(), EntityStatus::InProgress)
             .await
             .expect("agent-c in_progress");
-        c.update_entity_status(cr_rev_id.as_str(), "closed")
+        c.update_entity_status(cr_rev_id.as_str(), EntityStatus::Closed)
             .await
             .expect("agent-c closed");
     });
@@ -860,7 +859,7 @@ async fn multi_agent_task_scheduling() {
         .await
         .expect("verify connect");
     let all_tasks = verify
-        .list_entities(Some("task"), Some("closed"))
+        .list_entities(Some(EntityType::Task), Some(EntityStatus::Closed))
         .await
         .expect("list closed tasks");
     assert_eq!(all_tasks.len(), 3, "all 3 tasks should be closed");
@@ -1165,7 +1164,7 @@ async fn multi_agent_full_workflow() {
             .expect("create agent run for design");
 
         // Set in_progress
-        c.update_entity_status(design_id.as_str(), "in_progress")
+        c.update_entity_status(design_id.as_str(), EntityStatus::InProgress)
             .await
             .expect("design in_progress");
 
@@ -1180,7 +1179,7 @@ async fn multi_agent_full_workflow() {
             .await
             .expect("finish design run");
 
-        c.update_entity_status(design_id.as_str(), "closed")
+        c.update_entity_status(design_id.as_str(), EntityStatus::Closed)
             .await
             .expect("design closed");
 
@@ -1226,7 +1225,7 @@ async fn multi_agent_full_workflow() {
             .create_agent_run(impl_id.as_str(), "implementer", Some(1002))
             .await
             .expect("create implement run");
-        c.update_entity_status(impl_id.as_str(), "in_progress")
+        c.update_entity_status(impl_id.as_str(), EntityStatus::InProgress)
             .await
             .expect("implement in_progress");
         let res_id = c
@@ -1238,7 +1237,7 @@ async fn multi_agent_full_workflow() {
         c.finish_agent_run(run_id.as_str(), "completed", Some(r#"{"impl":"done"}"#))
             .await
             .expect("finish implement run");
-        c.update_entity_status(impl_id.as_str(), "closed")
+        c.update_entity_status(impl_id.as_str(), EntityStatus::Closed)
             .await
             .expect("implement closed");
         c.release_reservation(res_id.as_str())
@@ -1274,13 +1273,13 @@ async fn multi_agent_full_workflow() {
             .create_agent_run(tst_id.as_str(), "tester", Some(1003))
             .await
             .expect("create test run");
-        c.update_entity_status(tst_id.as_str(), "in_progress")
+        c.update_entity_status(tst_id.as_str(), EntityStatus::InProgress)
             .await
             .expect("test in_progress");
         c.finish_agent_run(run_id.as_str(), "completed", Some(r#"{"tests":"pass"}"#))
             .await
             .expect("finish test run");
-        c.update_entity_status(tst_id.as_str(), "closed")
+        c.update_entity_status(tst_id.as_str(), EntityStatus::Closed)
             .await
             .expect("test closed");
 
@@ -1293,7 +1292,7 @@ async fn multi_agent_full_workflow() {
             .create_agent_run(rev_id.as_str(), "reviewer", Some(1004))
             .await
             .expect("create review run");
-        c.update_entity_status(rev_id.as_str(), "in_progress")
+        c.update_entity_status(rev_id.as_str(), EntityStatus::InProgress)
             .await
             .expect("review in_progress");
         c.finish_agent_run(
@@ -1303,7 +1302,7 @@ async fn multi_agent_full_workflow() {
         )
         .await
         .expect("finish review run");
-        c.update_entity_status(rev_id.as_str(), "closed")
+        c.update_entity_status(rev_id.as_str(), EntityStatus::Closed)
             .await
             .expect("review closed");
     });
@@ -1316,7 +1315,7 @@ async fn multi_agent_full_workflow() {
 
     // All 4 tasks closed
     let closed = verify
-        .list_entities(Some("task"), Some("closed"))
+        .list_entities(Some(EntityType::Task), Some(EntityStatus::Closed))
         .await
         .expect("list closed");
     assert_eq!(closed.len(), 4, "all 4 tasks should be closed");

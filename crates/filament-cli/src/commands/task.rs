@@ -1,10 +1,10 @@
 use clap::{Args, Subcommand};
-use filament_core::error::{FilamentError, Result};
+use filament_core::error::Result;
 use filament_core::models::{CreateEntityRequest, CreateRelationRequest, EntityId};
 
 use super::helpers::{
-    connect, output_json, print_entity_list, resolve_entity, resolve_entity_id,
-    truncate_with_ellipsis,
+    connect, output_json, print_entity_list, resolve_agent, resolve_entity, resolve_entity_id,
+    resolve_task, truncate_with_ellipsis,
 };
 use crate::Cli;
 
@@ -169,18 +169,20 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
 async fn list(cli: &Cli, args: &TaskListArgs) -> Result<()> {
     let mut conn = connect().await?;
 
-    let status_filter = match args.status.as_str() {
-        "all" => None,
-        other => Some(other),
-    };
-
     if args.unblocked {
         let tasks = conn.ready_tasks().await?;
         print_entity_list(cli, &tasks, "No tasks found.");
         return Ok(());
     }
 
-    let entities = conn.list_entities(Some("task"), status_filter).await?;
+    let status_filter: Option<filament_core::models::EntityStatus> = match args.status.as_str() {
+        "all" => None,
+        other => Some(other.parse()?),
+    };
+
+    let entities = conn
+        .list_entities(Some(filament_core::models::EntityType::Task), status_filter)
+        .await?;
     print_entity_list(cli, &entities, "No tasks found.");
     Ok(())
 }
@@ -226,20 +228,11 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
 
 async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.slug).await?;
-
-    if !entity.is_task() {
-        return Err(FilamentError::TypeMismatch {
-            expected: filament_core::models::EntityType::Task,
-            actual: entity.entity_type(),
-            slug: entity.slug().clone(),
-        });
-    }
-
-    let c = entity.common();
+    let c = resolve_task(&mut conn, &args.slug).await?;
     let relations = conn.list_relations(c.id.as_str()).await?;
 
     if cli.json {
+        let entity = filament_core::models::Entity::Task(c.clone());
         let out = serde_json::json!({
             "entity": entity,
             "relations": relations,
@@ -287,52 +280,27 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
 
 async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let c = resolve_task(&mut conn, &args.slug).await?;
 
-    if !entity.is_task() {
-        return Err(FilamentError::TypeMismatch {
-            expected: filament_core::models::EntityType::Task,
-            actual: entity.entity_type(),
-            slug: entity.slug().clone(),
-        });
-    }
-
-    conn.update_entity_status(entity.id().as_str(), "closed")
+    conn.update_entity_status(c.id.as_str(), filament_core::models::EntityStatus::Closed)
         .await?;
 
     if cli.json {
-        output_json(&serde_json::json!({"closed": entity.id().as_str()}));
+        output_json(&serde_json::json!({"closed": c.id.as_str()}));
     } else {
-        println!("Closed task: {} ({})", entity.name(), entity.slug());
+        println!("Closed task: {} ({})", c.name, c.slug);
     }
     Ok(())
 }
 
 async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let task = resolve_entity(&mut conn, &args.slug).await?;
-
-    if !task.is_task() {
-        return Err(FilamentError::TypeMismatch {
-            expected: filament_core::models::EntityType::Task,
-            actual: task.entity_type(),
-            slug: task.slug().clone(),
-        });
-    }
-
-    let agent = resolve_entity(&mut conn, &args.to).await?;
-
-    if !agent.is_agent() {
-        return Err(FilamentError::TypeMismatch {
-            expected: filament_core::models::EntityType::Agent,
-            actual: agent.entity_type(),
-            slug: agent.slug().clone(),
-        });
-    }
+    let task = resolve_task(&mut conn, &args.slug).await?;
+    let agent = resolve_agent(&mut conn, &args.to).await?;
 
     let rel_req = CreateRelationRequest {
-        source_id: agent.id().to_string(),
-        target_id: task.id().to_string(),
+        source_id: agent.id.to_string(),
+        target_id: task.id.to_string(),
         relation_type: "assigned_to".to_string(),
         weight: None,
         summary: None,
@@ -342,9 +310,9 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
     conn.create_relation(rel_req).await?;
 
     if cli.json {
-        output_json(&serde_json::json!({"assigned": task.name().as_str(), "to": args.to}));
+        output_json(&serde_json::json!({"assigned": task.name.as_str(), "to": args.to}));
     } else {
-        println!("Assigned {} to {}", task.name(), args.to);
+        println!("Assigned {} to {}", task.name, args.to);
     }
     Ok(())
 }
