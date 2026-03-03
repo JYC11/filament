@@ -12,9 +12,6 @@ use crate::models::{
 // Executor abstraction (from workout-util pattern)
 // ---------------------------------------------------------------------------
 
-/// Type alias for a `SQLite` transaction.
-pub type SqliteTx<'a> = sqlx::Transaction<'a, Sqlite>;
-
 // ---------------------------------------------------------------------------
 // FilamentStore
 // ---------------------------------------------------------------------------
@@ -69,7 +66,10 @@ impl FilamentStore {
 /// # Errors
 ///
 /// Returns `FilamentError::Database` on SQL failure.
-#[allow(clippy::missing_panics_doc)] // serde_json::Value serialization is infallible
+///
+/// # Panics
+///
+/// Panics if `serde_json::Value` serialization fails (infallible in practice).
 pub async fn create_entity(
     conn: &mut SqliteConnection,
     req: &ValidCreateEntityRequest,
@@ -278,7 +278,10 @@ pub async fn delete_entity(conn: &mut SqliteConnection, id: &str) -> Result<()> 
 /// # Errors
 ///
 /// Returns `FilamentError::Database` on SQL failure (including FK violations).
-#[allow(clippy::missing_panics_doc)] // serde_json::Value serialization is infallible
+///
+/// # Panics
+///
+/// Panics if `serde_json::Value` serialization fails (infallible in practice).
 pub async fn create_relation(
     conn: &mut SqliteConnection,
     req: &ValidCreateRelationRequest,
@@ -345,24 +348,6 @@ pub async fn list_relations(pool: &Pool<Sqlite>, entity_id: &str) -> Result<Vec<
     .bind(entity_id)
     .fetch_all(pool)
     .await?)
-}
-
-/// Delete a relation.
-///
-/// # Errors
-///
-/// Returns `FilamentError::RelationNotFound` if the relation doesn't exist.
-pub async fn delete_relation(conn: &mut SqliteConnection, id: &str) -> Result<()> {
-    let rows = sqlx::query("DELETE FROM relations WHERE id = ?")
-        .bind(id)
-        .execute(conn)
-        .await?
-        .rows_affected();
-
-    if rows == 0 {
-        return Err(FilamentError::RelationNotFound { id: id.to_string() });
-    }
-    Ok(())
 }
 
 /// Delete a relation by its endpoints and type.

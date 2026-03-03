@@ -48,7 +48,10 @@ impl SharedState {
 }
 
 /// Handle a single client connection: read NDJSON lines, dispatch, write responses.
-#[allow(clippy::missing_panics_doc)]
+///
+/// # Panics
+///
+/// Panics if response serialization fails (infallible for well-formed `Response`).
 pub async fn handle_connection(stream: UnixStream, state: Arc<SharedState>) {
     let (reader, mut writer) = stream.into_split();
     let mut lines = BufReader::new(reader).lines();

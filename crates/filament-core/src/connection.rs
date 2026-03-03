@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use sqlx::{Pool, Sqlite};
 use tokio::net::UnixStream;
 
 use crate::client::DaemonClient;
@@ -67,33 +66,6 @@ impl FilamentConnection {
     pub async fn direct(db_path: &str) -> Result<Self> {
         let pool = init_pool(db_path).await?;
         Ok(Self::Direct(FilamentStore::new(pool)))
-    }
-
-    /// Get the store (only available in Direct mode).
-    #[must_use]
-    pub const fn store(&self) -> Option<&FilamentStore> {
-        match self {
-            Self::Direct(store) => Some(store),
-            Self::Socket(_) => None,
-        }
-    }
-
-    /// Get the underlying pool (only available in Direct mode).
-    #[must_use]
-    pub const fn pool(&self) -> Option<&Pool<Sqlite>> {
-        match self {
-            Self::Direct(store) => Some(store.pool()),
-            Self::Socket(_) => None,
-        }
-    }
-
-    /// Get the daemon client (only available in Socket mode).
-    #[must_use]
-    pub const fn client(&mut self) -> Option<&mut DaemonClient> {
-        match self {
-            Self::Direct(_) => None,
-            Self::Socket(client) => Some(client),
-        }
     }
 
     // -----------------------------------------------------------------------

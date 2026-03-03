@@ -5,6 +5,7 @@ use filament_core::error::{FilamentError, Result};
 use tokio_util::sync::CancellationToken;
 
 use super::helpers;
+use crate::Cli;
 
 #[derive(Args, Debug)]
 pub struct ServeArgs {
@@ -18,7 +19,7 @@ pub struct ServeArgs {
 }
 
 /// Start the daemon.
-pub async fn serve(args: &ServeArgs) -> Result<()> {
+pub async fn serve(cli: &Cli, args: &ServeArgs) -> Result<()> {
     let root = helpers::find_project_root()?;
     let mut config = filament_daemon::config::ServeConfig::from_project_root(&root);
 
@@ -76,14 +77,19 @@ pub async fn serve(args: &ServeArgs) -> Result<()> {
         cmd.stderr(std::process::Stdio::null());
 
         let child = cmd.spawn().map_err(FilamentError::Io)?;
-        println!("daemon started (PID {})", child.id());
+        let pid = child.id();
+        if cli.json {
+            helpers::output_json(&serde_json::json!({ "status": "started", "pid": pid }));
+        } else {
+            println!("daemon started (PID {pid})");
+        }
         Ok(())
     }
 }
 
 /// Stop the daemon by reading the PID file and sending SIGTERM.
 #[allow(clippy::unused_async)]
-pub async fn stop() -> Result<()> {
+pub async fn stop(cli: &Cli) -> Result<()> {
     let root = helpers::find_project_root()?;
     let config = filament_daemon::config::ServeConfig::from_project_root(&root);
 
@@ -107,7 +113,11 @@ pub async fn stop() -> Result<()> {
         .map_err(FilamentError::Io)?;
 
     if status.success() {
-        println!("sent SIGTERM to daemon (PID {pid})");
+        if cli.json {
+            helpers::output_json(&serde_json::json!({ "status": "stopped", "pid": pid }));
+        } else {
+            println!("sent SIGTERM to daemon (PID {pid})");
+        }
         // Clean up PID file (daemon should do this, but be safe)
         let _ = std::fs::remove_file(&config.pid_path);
     } else {

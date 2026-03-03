@@ -84,6 +84,7 @@ async fn tools_list_returns_all_tools() {
         "filament_context",
         "filament_message_send",
         "filament_message_inbox",
+        "filament_message_read",
         "filament_reserve",
         "filament_release",
         "filament_reservations",
@@ -91,6 +92,9 @@ async fn tools_list_returns_all_tools() {
         "filament_list",
         "filament_add",
         "filament_update",
+        "filament_delete",
+        "filament_relate",
+        "filament_unrelate",
     ] {
         assert!(names.contains(expected), "missing tool: {expected}");
     }

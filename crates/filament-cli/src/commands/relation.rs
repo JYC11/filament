@@ -9,8 +9,7 @@ use crate::Cli;
 pub struct RelateArgs {
     /// Source entity name.
     source: String,
-    #[allow(clippy::doc_markdown)]
-    /// Relation type (blocks, depends_on, produces, owns, relates_to, assigned_to).
+    /// Relation type (blocks, `depends_on`, produces, owns, `relates_to`, `assigned_to`).
     relation_type: String,
     /// Target entity name.
     target: String,

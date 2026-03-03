@@ -41,8 +41,7 @@ pub struct UpdateArgs {
     /// New summary.
     #[arg(long)]
     summary: Option<String>,
-    #[allow(clippy::doc_markdown)]
-    /// New status: open, closed, in_progress, blocked.
+    /// New status: open, closed, `in_progress`, blocked.
     #[arg(long)]
     status: Option<String>,
 }
@@ -70,6 +69,14 @@ pub struct ListArgs {
 }
 
 pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
+    if let Some(ref path) = args.content {
+        if !std::path::Path::new(path).exists() {
+            return Err(filament_core::error::FilamentError::Validation(format!(
+                "content file not found: {path}"
+            )));
+        }
+    }
+
     let mut conn = connect().await?;
 
     let key_facts: Option<serde_json::Value> = args

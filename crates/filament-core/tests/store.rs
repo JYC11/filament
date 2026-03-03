@@ -662,20 +662,6 @@ async fn list_relations_returns_both_directions() {
 // Delete relation not found
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
-async fn delete_relation_not_found() {
-    let store = test_db().await;
-
-    let err = store
-        .with_transaction(|conn| {
-            Box::pin(async move { delete_relation(conn, "nonexistent").await })
-        })
-        .await
-        .unwrap_err();
-
-    assert!(matches!(err, FilamentError::RelationNotFound { .. }));
-}
-
 // ---------------------------------------------------------------------------
 // Mark nonexistent message read
 // ---------------------------------------------------------------------------

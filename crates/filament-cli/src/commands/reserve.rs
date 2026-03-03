@@ -79,8 +79,10 @@ pub async fn release(cli: &Cli, args: &ReleaseArgs) -> Result<()> {
 pub async fn reservations(cli: &Cli, args: &ReservationsArgs) -> Result<()> {
     let mut conn = connect().await?;
 
+    let mut cleaned_count = None;
     if args.clean {
         let cleaned = conn.expire_stale_reservations().await?;
+        cleaned_count = Some(cleaned);
         if !cli.json && cleaned > 0 {
             println!("Cleaned up {cleaned} expired reservation(s).");
         }
@@ -89,7 +91,14 @@ pub async fn reservations(cli: &Cli, args: &ReservationsArgs) -> Result<()> {
     let reservations = conn.list_reservations(args.agent.as_deref()).await?;
 
     if cli.json {
-        output_json(&reservations);
+        if let Some(cleaned) = cleaned_count {
+            output_json(&serde_json::json!({
+                "cleaned": cleaned,
+                "reservations": reservations,
+            }));
+        } else {
+            output_json(&reservations);
+        }
     } else if reservations.is_empty() {
         println!("No active reservations.");
     } else {

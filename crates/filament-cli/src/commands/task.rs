@@ -66,8 +66,7 @@ struct TaskAddArgs {
 
 #[derive(Args, Debug)]
 struct TaskListArgs {
-    #[allow(clippy::doc_markdown)]
-    /// Filter by status (open, closed, in_progress, all).
+    /// Filter by status (open, closed, `in_progress`, all).
     #[arg(long, default_value = "open", conflicts_with = "unblocked")]
     status: String,
     /// Show only unblocked tasks (cannot be combined with --status).
@@ -247,6 +246,12 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
         if !entity.summary.is_empty() {
             println!("Summary:  {}", entity.summary);
         }
+        if entity.key_facts != serde_json::json!({}) {
+            println!(
+                "Facts:    {}",
+                serde_json::to_string_pretty(&entity.key_facts).expect("JSON")
+            );
+        }
         if !relations.is_empty() {
             println!("Relations:");
             for r in &relations {
@@ -266,6 +271,8 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
                 }
             }
         }
+        println!("Created:  {}", entity.created_at);
+        println!("Updated:  {}", entity.updated_at);
     }
     Ok(())
 }
@@ -303,10 +310,17 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
         )));
     }
 
-    let agent = resolve_entity_id(&mut conn, &args.to).await?;
+    let agent = resolve_entity(&mut conn, &args.to).await?;
+
+    if agent.entity_type.as_str() != "agent" {
+        return Err(filament_core::error::FilamentError::Validation(format!(
+            "'{}' is a {}, not an agent",
+            agent.name, agent.entity_type
+        )));
+    }
 
     let rel_req = CreateRelationRequest {
-        source_id: agent.to_string(),
+        source_id: agent.id.to_string(),
         target_id: task.id.to_string(),
         relation_type: "assigned_to".to_string(),
         weight: None,

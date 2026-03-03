@@ -1,6 +1,8 @@
 use filament_core::connection::FilamentConnection;
 use filament_core::error::{FilamentError, StructuredError};
-use filament_core::models::{CreateEntityRequest, SendMessageRequest, TtlSeconds};
+use filament_core::models::{
+    CreateEntityRequest, CreateRelationRequest, SendMessageRequest, TtlSeconds,
+};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -43,6 +45,16 @@ pub struct MessageSendParams {
     pub body: String,
     /// Message type: text, question, blocker, artifact (default: text).
     pub msg_type: Option<String>,
+    /// Message ID this is replying to (optional).
+    pub in_reply_to: Option<String>,
+    /// Related task entity ID (optional).
+    pub task_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MessageReadParams {
+    /// Message ID to mark as read.
+    pub message_id: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -115,12 +127,42 @@ pub struct UpdateParams {
     pub status: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RelateParams {
+    /// Source entity name (or ID).
+    pub source: String,
+    /// Relation type: blocks, `depends_on`, produces, owns, `relates_to`, `assigned_to`.
+    pub relation_type: String,
+    /// Target entity name (or ID).
+    pub target: String,
+    /// Optional relation summary.
+    pub summary: Option<String>,
+    /// Optional weight (numeric).
+    pub weight: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UnrelateParams {
+    /// Source entity name (or ID).
+    pub source: String,
+    /// Relation type to remove.
+    pub relation_type: String,
+    /// Target entity name (or ID).
+    pub target: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DeleteParams {
+    /// Entity name (or ID) to delete.
+    pub name: String,
+}
+
 // ---------------------------------------------------------------------------
 // MCP Server
 // ---------------------------------------------------------------------------
 
 /// Number of MCP tools exposed by the server.
-pub const TOOL_COUNT: usize = 12;
+pub const TOOL_COUNT: usize = 16;
 
 #[derive(Clone)]
 pub struct FilamentMcp {
@@ -128,14 +170,9 @@ pub struct FilamentMcp {
     tool_router: ToolRouter<Self>,
 }
 
-fn filament_err(e: &FilamentError) -> String {
+fn map_err(e: &FilamentError) -> String {
     let structured = StructuredError::from(e);
     serde_json::to_string_pretty(&structured).unwrap_or_else(|_| e.to_string())
-}
-
-#[allow(clippy::needless_pass_by_value)]
-fn map_err(e: FilamentError) -> String {
-    filament_err(&e)
 }
 
 #[tool_router]
@@ -164,7 +201,7 @@ impl FilamentMcp {
                 }
                 Ok(serde_json::to_string_pretty(&tasks).expect("JSON"))
             }
-            Err(e) => Err(map_err(e)),
+            Err(e) => Err(map_err(&e)),
         }
     }
 
@@ -175,10 +212,12 @@ impl FilamentMcp {
         Parameters(p): Parameters<TaskCloseParams>,
     ) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
-        let entity = resolve_entity(&mut conn, &p.name).await.map_err(map_err)?;
+        let entity = resolve_entity(&mut conn, &p.name)
+            .await
+            .map_err(|e| map_err(&e))?;
         conn.update_entity_status(entity.id.as_str(), "closed")
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
         Ok(format!("Closed: {} ({})", entity.name, entity.id))
     }
 
@@ -186,12 +225,14 @@ impl FilamentMcp {
     #[tool(name = "filament_context")]
     async fn context(&self, Parameters(p): Parameters<ContextParams>) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
-        let entity = resolve_entity(&mut conn, &p.name).await.map_err(map_err)?;
+        let entity = resolve_entity(&mut conn, &p.name)
+            .await
+            .map_err(|e| map_err(&e))?;
         let depth = p.depth.unwrap_or(2);
         let summaries = conn
             .context_summaries(entity.id.as_str(), depth)
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
         Ok(serde_json::to_string_pretty(&summaries).expect("JSON"))
     }
 
@@ -207,10 +248,10 @@ impl FilamentMcp {
             to_agent: p.to_agent,
             body: p.body,
             msg_type: p.msg_type,
-            in_reply_to: None,
-            task_id: None,
+            in_reply_to: p.in_reply_to,
+            task_id: p.task_id,
         };
-        let id = conn.send_message(req).await.map_err(map_err)?;
+        let id = conn.send_message(req).await.map_err(|e| map_err(&e))?;
         Ok(format!("Message sent: {id}"))
     }
 
@@ -221,7 +262,7 @@ impl FilamentMcp {
         Parameters(p): Parameters<MessageInboxParams>,
     ) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
-        let msgs = conn.get_inbox(&p.agent).await.map_err(map_err)?;
+        let msgs = conn.get_inbox(&p.agent).await.map_err(|e| map_err(&e))?;
         Ok(serde_json::to_string_pretty(&msgs).expect("JSON"))
     }
 
@@ -231,11 +272,11 @@ impl FilamentMcp {
         let mut conn = self.conn.lock().await;
         let exclusive = p.exclusive.unwrap_or(false);
         let ttl_val = p.ttl_secs.unwrap_or(300);
-        let ttl = TtlSeconds::new(ttl_val).map_err(map_err)?;
+        let ttl = TtlSeconds::new(ttl_val).map_err(|e| map_err(&e))?;
         let id = conn
             .acquire_reservation(&p.agent, &p.file_glob, exclusive, ttl)
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
         Ok(format!("Reservation acquired: {id}"))
     }
 
@@ -245,7 +286,7 @@ impl FilamentMcp {
         let mut conn = self.conn.lock().await;
         conn.release_reservation(&p.reservation_id)
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
         Ok("Reservation released".to_string())
     }
 
@@ -259,7 +300,7 @@ impl FilamentMcp {
         let reservations = conn
             .list_reservations(p.agent.as_deref())
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
         Ok(serde_json::to_string_pretty(&reservations).expect("JSON"))
     }
 
@@ -269,11 +310,13 @@ impl FilamentMcp {
     #[tool(name = "filament_inspect")]
     async fn inspect(&self, Parameters(p): Parameters<InspectParams>) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
-        let entity = resolve_entity(&mut conn, &p.name).await.map_err(map_err)?;
+        let entity = resolve_entity(&mut conn, &p.name)
+            .await
+            .map_err(|e| map_err(&e))?;
         let relations = conn
             .list_relations(entity.id.as_str())
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
         let result = serde_json::json!({
             "entity": entity,
             "relations": relations,
@@ -288,7 +331,7 @@ impl FilamentMcp {
         let entities = conn
             .list_entities(p.entity_type.as_deref(), p.status.as_deref())
             .await
-            .map_err(map_err)?;
+            .map_err(|e| map_err(&e))?;
         Ok(serde_json::to_string_pretty(&entities).expect("JSON"))
     }
 
@@ -304,7 +347,7 @@ impl FilamentMcp {
             content_path: p.content_path,
             priority: p.priority,
         };
-        let id = conn.create_entity(req).await.map_err(map_err)?;
+        let id = conn.create_entity(req).await.map_err(|e| map_err(&e))?;
         Ok(format!("Created: {id}"))
     }
 
@@ -312,11 +355,13 @@ impl FilamentMcp {
     #[tool(name = "filament_update")]
     async fn update(&self, Parameters(p): Parameters<UpdateParams>) -> Result<String, String> {
         let mut conn = self.conn.lock().await;
-        let entity = resolve_entity(&mut conn, &p.name).await.map_err(map_err)?;
+        let entity = resolve_entity(&mut conn, &p.name)
+            .await
+            .map_err(|e| map_err(&e))?;
         let id = entity.id.as_str();
 
         if p.summary.is_none() && p.status.is_none() {
-            return Err(map_err(FilamentError::Validation(
+            return Err(map_err(&FilamentError::Validation(
                 "at least one of summary or status is required".to_string(),
             )));
         }
@@ -324,12 +369,12 @@ impl FilamentMcp {
         if let Some(ref summary) = p.summary {
             conn.update_entity_summary(id, summary)
                 .await
-                .map_err(map_err)?;
+                .map_err(|e| map_err(&e))?;
         }
         if let Some(ref status) = p.status {
             conn.update_entity_status(id, status)
                 .await
-                .map_err(map_err)?;
+                .map_err(|e| map_err(&e))?;
         }
 
         let mut parts = Vec::new();
@@ -345,6 +390,76 @@ impl FilamentMcp {
             entity.name,
             entity.id
         ))
+    }
+
+    /// Delete an entity and its relations.
+    #[tool(name = "filament_delete")]
+    async fn delete(&self, Parameters(p): Parameters<DeleteParams>) -> Result<String, String> {
+        let mut conn = self.conn.lock().await;
+        let entity = resolve_entity(&mut conn, &p.name)
+            .await
+            .map_err(|e| map_err(&e))?;
+        conn.delete_entity(entity.id.as_str())
+            .await
+            .map_err(|e| map_err(&e))?;
+        Ok(format!("Deleted: {} ({})", entity.name, entity.id))
+    }
+
+    /// Create a relation between two entities.
+    #[tool(name = "filament_relate")]
+    async fn relate(&self, Parameters(p): Parameters<RelateParams>) -> Result<String, String> {
+        let mut conn = self.conn.lock().await;
+        let source = resolve_entity(&mut conn, &p.source)
+            .await
+            .map_err(|e| map_err(&e))?;
+        let target = resolve_entity(&mut conn, &p.target)
+            .await
+            .map_err(|e| map_err(&e))?;
+        let req = CreateRelationRequest {
+            source_id: source.id.to_string(),
+            target_id: target.id.to_string(),
+            relation_type: p.relation_type,
+            weight: p.weight,
+            summary: p.summary,
+            metadata: None,
+        };
+        let id = conn.create_relation(req).await.map_err(|e| map_err(&e))?;
+        Ok(format!(
+            "Related: {} -> {} ({})",
+            source.name, target.name, id
+        ))
+    }
+
+    /// Remove a relation between two entities.
+    #[tool(name = "filament_unrelate")]
+    async fn unrelate(&self, Parameters(p): Parameters<UnrelateParams>) -> Result<String, String> {
+        let mut conn = self.conn.lock().await;
+        let source = resolve_entity(&mut conn, &p.source)
+            .await
+            .map_err(|e| map_err(&e))?;
+        let target = resolve_entity(&mut conn, &p.target)
+            .await
+            .map_err(|e| map_err(&e))?;
+        conn.delete_relation(source.id.as_str(), target.id.as_str(), &p.relation_type)
+            .await
+            .map_err(|e| map_err(&e))?;
+        Ok(format!(
+            "Unrelated: {} -/-> {} ({})",
+            source.name, target.name, p.relation_type
+        ))
+    }
+
+    /// Mark a message as read.
+    #[tool(name = "filament_message_read")]
+    async fn message_read(
+        &self,
+        Parameters(p): Parameters<MessageReadParams>,
+    ) -> Result<String, String> {
+        let mut conn = self.conn.lock().await;
+        conn.mark_message_read(&p.message_id)
+            .await
+            .map_err(|e| map_err(&e))?;
+        Ok(format!("Message marked as read: {}", p.message_id))
     }
 }
 

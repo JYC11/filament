@@ -88,8 +88,8 @@ impl Commands {
             Self::Reserve(args) => reserve::reserve(cli, args).await,
             Self::Release(args) => reserve::release(cli, args).await,
             Self::Reservations(args) => reserve::reservations(cli, args).await,
-            Self::Serve(args) => serve::serve(args).await,
-            Self::Stop => serve::stop().await,
+            Self::Serve(args) => serve::serve(cli, args).await,
+            Self::Stop => serve::stop(cli).await,
             Self::Mcp => mcp::run().await,
         }
     }

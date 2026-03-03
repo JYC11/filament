@@ -111,7 +111,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 - All 12 mutating store functions record events
 - Handler refactored: `handler/` module directory (entity, relation, message, reservation, agent_run, graph, event)
 - `store::get_relation()` added — direct lookup by ID
-- MCP server: 12 tools via `rmcp` crate (stdio transport, `FilamentConnection::auto_detect()`)
+- MCP server: 16 tools via `rmcp` crate (stdio transport, `FilamentConnection::auto_detect()`)
 - 170 tests (84 core + 54 CLI + 22 daemon + 10 MCP), zero clippy warnings
 - Multi-agent integration tests: task scheduling, reservation conflicts, messaging, full workflow
 

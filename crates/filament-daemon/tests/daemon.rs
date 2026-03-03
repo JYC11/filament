@@ -329,7 +329,7 @@ async fn graph_operations_via_socket() {
         .critical_path(task_b.as_str())
         .await
         .expect("critical path");
-    assert!(path.len() >= 1);
+    assert!(!path.is_empty());
 
     // Impact score of task-a
     let score = client
@@ -1354,13 +1354,14 @@ async fn multi_agent_full_workflow() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn invalid_request_returns_error() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
 
     let socket_path = tmp.path().join(".filament/filament.sock");
 
     // Send raw malformed JSON over the socket
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let stream = tokio::net::UnixStream::connect(&socket_path)
         .await
         .expect("connect");
