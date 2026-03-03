@@ -65,7 +65,7 @@ async fn entity_crud_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
     // Create
-    let id = client
+    let (id, _slug) = client
         .create_entity(serde_json::json!({
             "name": "test-task",
             "entity_type": "task",
@@ -77,8 +77,8 @@ async fn entity_crud_via_socket() {
 
     // Get
     let entity = client.get_entity(id.as_str()).await.expect("get entity");
-    assert_eq!(entity.name, "test-task");
-    assert_eq!(entity.summary, "A test task");
+    assert_eq!(entity.name(), "test-task");
+    assert_eq!(entity.summary(), "A test task");
 
     // Update status
     client
@@ -87,7 +87,7 @@ async fn entity_crud_via_socket() {
         .expect("update status");
 
     let entity = client.get_entity(id.as_str()).await.expect("get updated");
-    assert_eq!(entity.status.as_str(), "in_progress");
+    assert_eq!(entity.status().as_str(), "in_progress");
 
     // List
     let entities = client
@@ -113,7 +113,7 @@ async fn update_summary_refreshes_graph() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
     // Create two related entities
-    let id_a = client
+    let (id_a, _) = client
         .create_entity(serde_json::json!({
             "name": "graph-node-a",
             "entity_type": "module",
@@ -122,7 +122,7 @@ async fn update_summary_refreshes_graph() {
         .await
         .expect("create a");
 
-    let id_b = client
+    let (id_b, _) = client
         .create_entity(serde_json::json!({
             "name": "graph-node-b",
             "entity_type": "module",
@@ -177,7 +177,7 @@ async fn update_summary_refreshes_graph() {
 async fn relation_crud_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
-    let id_a = client
+    let (id_a, _) = client
         .create_entity(serde_json::json!({
             "name": "module-a",
             "entity_type": "module",
@@ -185,7 +185,7 @@ async fn relation_crud_via_socket() {
         .await
         .expect("create a");
 
-    let id_b = client
+    let (id_b, _) = client
         .create_entity(serde_json::json!({
             "name": "module-b",
             "entity_type": "module",
@@ -289,7 +289,7 @@ async fn graph_operations_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
     // Create tasks with dependency
-    let task_a = client
+    let (task_a, _) = client
         .create_entity(serde_json::json!({
             "name": "task-a",
             "entity_type": "task",
@@ -299,7 +299,7 @@ async fn graph_operations_via_socket() {
         .await
         .expect("create task-a");
 
-    let task_b = client
+    let (task_b, _) = client
         .create_entity(serde_json::json!({
             "name": "task-b",
             "entity_type": "task",
@@ -322,7 +322,7 @@ async fn graph_operations_via_socket() {
     // Ready tasks: only task-a should be ready (task-b is blocked)
     let ready = client.ready_tasks().await.expect("ready tasks");
     assert_eq!(ready.len(), 1);
-    assert_eq!(ready[0].name, "task-a");
+    assert_eq!(ready[0].name(), "task-a");
 
     // Critical path from task-b
     let path = client
@@ -365,7 +365,7 @@ async fn concurrent_clients() {
         handles.push(tokio::spawn(async move {
             let mut c = DaemonClient::connect(&path).await.expect("connect");
             let name = format!("concurrent-entity-{i}");
-            let id = c
+            let (id, _) = c
                 .create_entity(serde_json::json!({
                     "name": name,
                     "entity_type": "task",
@@ -374,7 +374,7 @@ async fn concurrent_clients() {
                 .await
                 .expect("create");
             let entity = c.get_entity(id.as_str()).await.expect("get");
-            assert_eq!(entity.name.as_str(), name.as_str());
+            assert_eq!(entity.name(), name.as_str());
         }));
     }
 
@@ -456,7 +456,7 @@ async fn agent_run_operations_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
     // Create a task entity to associate the run with
-    let task_id = client
+    let (task_id, _) = client
         .create_entity(serde_json::json!({
             "name": "run-target-task",
             "entity_type": "task",
@@ -497,7 +497,7 @@ async fn entity_events_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
     // Create entity — should generate an entity_created event
-    let id = client
+    let (id, _) = client
         .create_entity(serde_json::json!({
             "name": "event-test",
             "entity_type": "task",
@@ -541,7 +541,7 @@ async fn entity_events_via_socket() {
 async fn update_entity_status_invalid_returns_error() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
-    let id = client
+    let (id, _) = client
         .create_entity(serde_json::json!({
             "name": "status-test",
             "entity_type": "task",
@@ -558,7 +558,7 @@ async fn update_entity_status_invalid_returns_error() {
 
     // Entity should still have original status
     let entity = client.get_entity(id.as_str()).await.expect("get entity");
-    assert_eq!(entity.status.as_str(), "open");
+    assert_eq!(entity.status().as_str(), "open");
 
     cancel.cancel();
 }
@@ -567,7 +567,7 @@ async fn update_entity_status_invalid_returns_error() {
 async fn delete_relation_invalid_type_returns_error() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
-    let id_a = client
+    let (id_a, _) = client
         .create_entity(serde_json::json!({
             "name": "rel-err-a",
             "entity_type": "module",
@@ -575,7 +575,7 @@ async fn delete_relation_invalid_type_returns_error() {
         .await
         .expect("create a");
 
-    let id_b = client
+    let (id_b, _) = client
         .create_entity(serde_json::json!({
             "name": "rel-err-b",
             "entity_type": "module",
@@ -593,29 +593,29 @@ async fn delete_relation_invalid_type_returns_error() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn get_entity_by_name_via_socket() {
+async fn get_entity_by_slug_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
     // Create entity
-    let id = client
+    let (id, slug) = client
         .create_entity(serde_json::json!({
-            "name": "named-lookup",
+            "name": "slug-lookup",
             "entity_type": "module",
-            "summary": "Test get by name",
+            "summary": "Test get by slug",
         }))
         .await
         .expect("create entity");
 
-    // Look up by name
+    // Look up by slug
     let entity = client
-        .get_entity_by_name("named-lookup")
+        .get_entity_by_slug(slug.as_str())
         .await
-        .expect("get by name");
-    assert_eq!(entity.id, id);
-    assert_eq!(entity.name, "named-lookup");
+        .expect("get by slug");
+    assert_eq!(entity.id(), &id);
+    assert_eq!(entity.name(), "slug-lookup");
 
-    // Nonexistent name should error
-    let result = client.get_entity_by_name("no-such-entity").await;
+    // Nonexistent slug should error
+    let result = client.get_entity_by_slug("zz999999").await;
     assert!(result.is_err());
 
     cancel.cancel();
@@ -625,7 +625,7 @@ async fn get_entity_by_name_via_socket() {
 async fn update_entity_summary_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
-    let id = client
+    let (id, _) = client
         .create_entity(serde_json::json!({
             "name": "summary-test",
             "entity_type": "task",
@@ -642,7 +642,7 @@ async fn update_entity_summary_via_socket() {
 
     // Verify
     let entity = client.get_entity(id.as_str()).await.expect("get entity");
-    assert_eq!(entity.summary, "Updated summary text");
+    assert_eq!(entity.summary(), "Updated summary text");
 
     // Update summary of nonexistent entity should error
     let result = client.update_entity_summary("nonexistent-id", "nope").await;
@@ -733,7 +733,7 @@ async fn multi_agent_task_scheduling() {
     // Setup: create task graph
     let mut setup = DaemonClient::connect(&socket_path).await.expect("connect");
 
-    let core_refactor = setup
+    let (core_refactor, _) = setup
         .create_entity(serde_json::json!({
             "name": "core-refactor",
             "entity_type": "task",
@@ -743,7 +743,7 @@ async fn multi_agent_task_scheduling() {
         .await
         .expect("create core-refactor");
 
-    let write_tests = setup
+    let (write_tests, _) = setup
         .create_entity(serde_json::json!({
             "name": "write-tests",
             "entity_type": "task",
@@ -753,7 +753,7 @@ async fn multi_agent_task_scheduling() {
         .await
         .expect("create write-tests");
 
-    let code_review = setup
+    let (code_review, _) = setup
         .create_entity(serde_json::json!({
             "name": "code-review",
             "entity_type": "task",
@@ -786,7 +786,7 @@ async fn multi_agent_task_scheduling() {
     // Verify: only core-refactor is ready
     let ready = setup.ready_tasks().await.expect("ready tasks initial");
     assert_eq!(ready.len(), 1, "only core-refactor should be ready");
-    assert_eq!(ready[0].name, "core-refactor");
+    assert_eq!(ready[0].name(), "core-refactor");
 
     // Agent A: claims core-refactor, marks in_progress, then closed
     let sp = socket_path.clone();
@@ -817,7 +817,7 @@ async fn multi_agent_task_scheduling() {
         2,
         "both write-tests and code-review should be ready"
     );
-    let ready_names: Vec<&str> = ready.iter().map(|e| e.name.as_str()).collect();
+    let ready_names: Vec<&str> = ready.iter().map(|e| e.name().as_str()).collect();
     assert!(
         ready_names.contains(&"write-tests"),
         "write-tests should be ready"
@@ -964,7 +964,7 @@ async fn multi_agent_messaging_workflow() {
     let mut setup = DaemonClient::connect(&socket_path)
         .await
         .expect("setup connect");
-    let task_id = setup
+    let (task_id, _) = setup
         .create_entity(serde_json::json!({
             "name": "review-task",
             "entity_type": "task",
@@ -1077,7 +1077,7 @@ async fn multi_agent_full_workflow() {
         .await
         .expect("setup connect");
 
-    let design = setup
+    let (design, _) = setup
         .create_entity(serde_json::json!({
             "name": "design",
             "entity_type": "task",
@@ -1087,7 +1087,7 @@ async fn multi_agent_full_workflow() {
         .await
         .expect("create design");
 
-    let implement = setup
+    let (implement, _) = setup
         .create_entity(serde_json::json!({
             "name": "implement",
             "entity_type": "task",
@@ -1097,7 +1097,7 @@ async fn multi_agent_full_workflow() {
         .await
         .expect("create implement");
 
-    let test = setup
+    let (test, _) = setup
         .create_entity(serde_json::json!({
             "name": "test",
             "entity_type": "task",
@@ -1107,7 +1107,7 @@ async fn multi_agent_full_workflow() {
         .await
         .expect("create test");
 
-    let review = setup
+    let (review, _) = setup
         .create_entity(serde_json::json!({
             "name": "review",
             "entity_type": "task",
@@ -1150,7 +1150,7 @@ async fn multi_agent_full_workflow() {
     // Phase 1: Only design is ready. Agent A claims it.
     let ready = setup.ready_tasks().await.expect("ready tasks phase 1");
     assert_eq!(ready.len(), 1, "only design should be ready");
-    assert_eq!(ready[0].name, "design");
+    assert_eq!(ready[0].name(), "design");
 
     let sp = socket_path.clone();
     let design_id = design.clone();
@@ -1219,7 +1219,7 @@ async fn multi_agent_full_workflow() {
         // Check ready tasks
         let ready = c.ready_tasks().await.expect("ready tasks phase 2");
         assert_eq!(ready.len(), 1, "only implement should be ready");
-        assert_eq!(ready[0].name, "implement");
+        assert_eq!(ready[0].name(), "implement");
 
         // Create run, claim task, acquire reservation
         let run_id = c
@@ -1268,7 +1268,7 @@ async fn multi_agent_full_workflow() {
         // Test task
         let ready = c.ready_tasks().await.expect("ready tasks phase 3a");
         assert_eq!(ready.len(), 1, "only test should be ready");
-        assert_eq!(ready[0].name, "test");
+        assert_eq!(ready[0].name(), "test");
 
         let run_id = c
             .create_agent_run(tst_id.as_str(), "tester", Some(1003))
@@ -1287,7 +1287,7 @@ async fn multi_agent_full_workflow() {
         // Review task
         let ready = c.ready_tasks().await.expect("ready tasks phase 3b");
         assert_eq!(ready.len(), 1, "only review should be ready");
-        assert_eq!(ready[0].name, "review");
+        assert_eq!(ready[0].name(), "review");
 
         let run_id = c
             .create_agent_run(rev_id.as_str(), "reviewer", Some(1004))

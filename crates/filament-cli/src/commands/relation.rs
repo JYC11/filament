@@ -7,11 +7,11 @@ use crate::Cli;
 
 #[derive(Args, Debug)]
 pub struct RelateArgs {
-    /// Source entity name.
+    /// Source entity slug or ID.
     source: String,
     /// Relation type (blocks, `depends_on`, produces, owns, `relates_to`, `assigned_to`).
     relation_type: String,
-    /// Target entity name.
+    /// Target entity slug or ID.
     target: String,
     /// Optional summary.
     #[arg(long, default_value = "")]
@@ -23,11 +23,11 @@ pub struct RelateArgs {
 
 #[derive(Args, Debug)]
 pub struct UnrelateArgs {
-    /// Source entity name.
+    /// Source entity slug or ID.
     source: String,
     /// Relation type.
     relation_type: String,
-    /// Target entity name.
+    /// Target entity slug or ID.
     target: String,
 }
 

@@ -20,3 +20,56 @@ pub fn init_project() -> TempDir {
         .stdout(predicate::str::contains("Initialized filament project"));
     dir
 }
+
+/// Run `filament add` and return the generated slug.
+/// Parses the slug from output format: "Created entity: {slug} ({id})"
+pub fn add_entity(dir: &TempDir, name: &str, entity_type: &str, extra_args: &[&str]) -> String {
+    let mut cmd = filament(dir);
+    cmd.args(["add", name, "--type", entity_type]);
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    extract_slug_from_output(&stdout)
+}
+
+/// Run `filament task add` and return the generated slug.
+/// Parses the slug from output format: "Created task: {slug} ({id})"
+pub fn add_task(dir: &TempDir, title: &str, extra_args: &[&str]) -> String {
+    let mut cmd = filament(dir);
+    cmd.args(["task", "add", title]);
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "task add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    extract_slug_from_output(&stdout)
+}
+
+/// Extract slug from CLI output.
+/// Matches "Created entity: {slug} ({id})" or "Created task: {slug} ({id})"
+fn extract_slug_from_output(output: &str) -> String {
+    // Find the line with "Created" and extract the slug (first word after ": ")
+    for line in output.lines() {
+        if let Some(rest) = line
+            .strip_prefix("Created entity: ")
+            .or_else(|| line.strip_prefix("Created task: "))
+        {
+            if let Some(slug) = rest.split_whitespace().next() {
+                return slug.to_string();
+            }
+        }
+    }
+    panic!("Could not extract slug from output: {output}");
+}

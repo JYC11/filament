@@ -27,7 +27,7 @@ filament/
 
 ## Architecture Decisions
 
-Full ADRs with rationale: `.plan/adr/` (001–018). Key choices:
+Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
 
 - **Hybrid daemon** — direct SQLite single-user, daemon for multi-agent (ADR-001)
 - **Unified graph** — all data as Entity nodes + Relation edges (ADR-003)
@@ -37,6 +37,8 @@ Full ADRs with rationale: `.plan/adr/` (001–018). Key choices:
 - **MCP agent interface** — ecosystem standard (ADR-011)
 - **Structured errors** — machine-readable codes, hints, retryable (ADR-007)
 - **Value types** — Priority, Weight, NonEmptyString etc. make invalid states unrepresentable (ADR-018)
+- **Slug identity** — 8-char base36 slugs replace name-based lookup (ADR-019)
+- **Entity ADT** — tagged enum replaces flat struct, compile-time type safety (ADR-020)
 
 ## Stack
 
@@ -55,6 +57,7 @@ Full ADRs with rationale: `.plan/adr/` (001–018). Key choices:
 
 ## Key Concepts
 
+- **Entity model**: `Entity` is a tagged enum (`Task | Module | Service | Agent | Plan | Doc`) wrapping `EntityCommon`. Each entity has a unique 8-char slug (`[a-z0-9]`) for human-facing identity, plus a UUID for internal use. Resolution: slug first, UUID fallback.
 - **Three-tier content**: summary (cheap traversal) → key_facts (LLM reasoning) → content_path (full reference material on disk)
 - **AgentResult protocol**: subprocesses (`claude -p`) emit JSON with status, artifacts, messages, blockers, questions. Filament parses and routes.
 - **Per-project storage**: `filament init` creates `.filament/` with SQLite DB, Unix socket, PID file, content dir.
@@ -98,22 +101,13 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**Phase 3 complete** (2026-03-03). Daemon server with NDJSON Unix socket protocol + MCP server:
-- `filament serve [--foreground]` — start daemon (background or foreground)
-- `filament stop` — stop daemon via PID file + SIGTERM
-- `filament mcp` — start MCP stdio server (for AI agent integration via Claude Code)
-- `SharedState` = `FilamentStore` + `RwLock<KnowledgeGraph>` (thread-safe shared state)
-- NDJSON protocol: all 23 `Method` variants dispatched over Unix socket
-- `DaemonClient` in filament-core: typed async methods for all operations
-- `CancellationToken`-based graceful shutdown + periodic stale reservation cleanup
-- `remove_edge()` added to `KnowledgeGraph`
+**Phase 3 complete + slug/ADT refactor** (2026-03-03):
+- Daemon server: NDJSON Unix socket protocol + MCP server (16 tools via `rmcp`)
+- `filament serve [--foreground]` / `filament stop` / `filament mcp`
 - CLI routes through daemon when running (falls back to direct DB access)
-- All 12 mutating store functions record events
-- Handler refactored: `handler/` module directory (entity, relation, message, reservation, agent_run, graph, event)
-- `store::get_relation()` added — direct lookup by ID
-- MCP server: 16 tools via `rmcp` crate (stdio transport, `FilamentConnection::auto_detect()`)
-- 170 tests (84 core + 54 CLI + 22 daemon + 10 MCP), zero clippy warnings
-- Multi-agent integration tests: task scheduling, reservation conflicts, messaging, full workflow
+- **Slug-based identity** (ADR-019): 8-char `[a-z0-9]` slugs replace name-based lookup
+- **Entity ADT** (ADR-020): `Entity` enum with typed variants, `TypeMismatch` error, compile-time type safety
+- 184 tests (97 core + 54 CLI + 22 daemon + 10 MCP + 1 TUI), zero clippy warnings
 
 ## References
 

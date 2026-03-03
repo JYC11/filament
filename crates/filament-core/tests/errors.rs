@@ -1,4 +1,5 @@
 use filament_core::error::{FilamentError, StructuredError};
+use filament_core::models::{EntityType, Slug};
 
 #[test]
 fn error_codes_are_stable() {
@@ -46,6 +47,14 @@ fn error_codes_are_stable() {
             "VALIDATION_ERROR",
         ),
         (FilamentError::Protocol("bad".to_string()), "PROTOCOL_ERROR"),
+        (
+            FilamentError::TypeMismatch {
+                expected: EntityType::Task,
+                actual: EntityType::Module,
+                slug: Slug::new(),
+            },
+            "TYPE_MISMATCH",
+        ),
     ];
 
     for (err, expected_code) in &cases {
@@ -88,6 +97,14 @@ fn hints_populated_for_key_errors() {
     };
     assert!(err.hint().is_some());
 
+    let err = FilamentError::TypeMismatch {
+        expected: EntityType::Task,
+        actual: EntityType::Module,
+        slug: Slug::new(),
+    };
+    assert!(err.hint().is_some());
+    assert!(err.hint().unwrap().contains("not a task"));
+
     let err = FilamentError::Protocol("x".to_string());
     assert!(err.hint().is_none());
 }
@@ -110,6 +127,15 @@ fn exit_codes_categorized() {
         5
     );
     assert_eq!(FilamentError::ReservationExpired.exit_code(), 6);
+    assert_eq!(
+        FilamentError::TypeMismatch {
+            expected: EntityType::Task,
+            actual: EntityType::Module,
+            slug: Slug::new(),
+        }
+        .exit_code(),
+        4
+    );
 }
 
 #[test]

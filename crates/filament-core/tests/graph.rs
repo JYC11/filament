@@ -16,8 +16,8 @@ async fn hydrate_matches_store_counts() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let b = create_entity(conn, &task_req("B", 2)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 2)).await?;
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 Ok(())
             })
@@ -43,9 +43,9 @@ async fn ready_tasks_excludes_blocked_nodes() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let b = create_entity(conn, &task_req("B", 2)).await?;
-                let _c = create_entity(conn, &task_req("C", 0)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 2)).await?;
+                let (_c, _) = create_entity(conn, &task_req("C", 0)).await?;
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 Ok(())
             })
@@ -77,9 +77,9 @@ async fn critical_path_follows_dependencies() {
     let a_id = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let b = create_entity(conn, &task_req("B", 1)).await?;
-                let c = create_entity(conn, &task_req("C", 1)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 create_relation(conn, &blocks_req(b.as_str(), c.as_str())).await?;
                 Ok(a)
@@ -106,9 +106,9 @@ async fn impact_score_counts_transitive_dependents() {
     let a_id = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let b = create_entity(conn, &task_req("B", 1)).await?;
-                let c = create_entity(conn, &task_req("C", 1)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
                 // B blocks A, C blocks A (so A has 2 incoming blockers)
                 create_relation(conn, &blocks_req(b.as_str(), a.as_str())).await?;
                 create_relation(conn, &blocks_req(c.as_str(), a.as_str())).await?;
@@ -135,8 +135,8 @@ async fn no_cycle_in_dag() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let b = create_entity(conn, &task_req("B", 1)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 Ok(())
             })
@@ -160,8 +160,8 @@ async fn cycle_detected_returns_error() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let b = create_entity(conn, &task_req("B", 1)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
                 // A blocks B
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 // B blocks A (creates cycle via raw SQL to bypass app validation)
@@ -198,9 +198,9 @@ async fn context_summaries_within_hops() {
     let a_id = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let b = create_entity(conn, &task_req("B", 1)).await?;
-                let c = create_entity(conn, &task_req("C", 1)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 create_relation(conn, &blocks_req(b.as_str(), c.as_str())).await?;
                 Ok(a)
@@ -228,8 +228,8 @@ async fn context_traverses_incoming_edges() {
     let (a_id, b_id) = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("Upstream", 1)).await?;
-                let b = create_entity(conn, &task_req("Downstream", 1)).await?;
+                let (a, _) = create_entity(conn, &task_req("Upstream", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("Downstream", 1)).await?;
                 // Upstream blocks Downstream (edge from A to B)
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 Ok((a, b))
@@ -263,8 +263,8 @@ async fn critical_path_safe_with_cycle() {
     let a_id = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let b = create_entity(conn, &task_req("B", 1)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
                 // A blocks B
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 // B blocks A (cycle via raw SQL)
@@ -303,8 +303,8 @@ async fn remove_node_updates_counts() {
     let a_id = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let a = create_entity(conn, &task_req("A", 1)).await?;
-                let _b = create_entity(conn, &task_req("B", 1)).await?;
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (_b, _) = create_entity(conn, &task_req("B", 1)).await?;
                 Ok(a)
             })
         })

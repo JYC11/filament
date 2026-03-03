@@ -7,7 +7,7 @@ use crate::error::{FilamentError, Result};
 use crate::graph::KnowledgeGraph;
 use crate::models::{
     CreateEntityRequest, CreateRelationRequest, Entity, EntityId, Event, Message, MessageId,
-    Relation, RelationId, Reservation, ReservationId, SendMessageRequest, TtlSeconds,
+    Relation, RelationId, Reservation, ReservationId, SendMessageRequest, Slug, TtlSeconds,
     ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
 };
 use crate::schema::init_pool;
@@ -72,7 +72,7 @@ impl FilamentConnection {
     // Dispatch methods — route through Direct (SQLite) or Socket (daemon)
     // -----------------------------------------------------------------------
 
-    pub async fn create_entity(&mut self, req: CreateEntityRequest) -> Result<EntityId> {
+    pub async fn create_entity(&mut self, req: CreateEntityRequest) -> Result<(EntityId, Slug)> {
         match self {
             Self::Direct(s) => {
                 let valid = ValidCreateEntityRequest::try_from(req)?;
@@ -97,10 +97,27 @@ impl FilamentConnection {
         }
     }
 
-    pub async fn get_entity_by_name(&mut self, name: &str) -> Result<Entity> {
+    pub async fn get_entity_by_slug(&mut self, slug: &str) -> Result<Entity> {
         match self {
-            Self::Direct(s) => store::get_entity_by_name(s.pool(), name).await,
-            Self::Socket(c) => c.get_entity_by_name(name).await,
+            Self::Direct(s) => store::get_entity_by_slug(s.pool(), slug).await,
+            Self::Socket(c) => c.get_entity_by_slug(slug).await,
+        }
+    }
+
+    /// Resolve entity by slug (first) or UUID fallback.
+    pub async fn resolve_entity(&mut self, slug_or_id: &str) -> Result<Entity> {
+        match self {
+            Self::Direct(s) => store::resolve_entity(s.pool(), slug_or_id).await,
+            Self::Socket(c) => {
+                // Try slug first, then ID
+                match c.get_entity_by_slug(slug_or_id).await {
+                    Ok(entity) => Ok(entity),
+                    Err(FilamentError::Protocol(_) | FilamentError::EntityNotFound { .. }) => {
+                        c.get_entity(slug_or_id).await
+                    }
+                    Err(e) => Err(e),
+                }
+            }
         }
     }
 

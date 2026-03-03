@@ -52,6 +52,14 @@ fn extract_text(result: &rmcp::model::CallToolResult) -> String {
         .join("")
 }
 
+/// Extract slug from an add tool response: "Created: {slug} ({id})"
+fn extract_slug(text: &str) -> String {
+    text.strip_prefix("Created: ")
+        .and_then(|s| s.split_whitespace().next())
+        .unwrap_or_default()
+        .to_string()
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -153,21 +161,24 @@ async fn tool_inspect_entity() {
     let client = start_mcp_client(conn).await;
     let peer = client.peer();
 
-    peer.call_tool(call(
-        "filament_add",
-        serde_json::json!({
-            "name": "inspect-me",
-            "entity_type": "doc",
-            "summary": "A doc to inspect",
-        }),
-    ))
-    .await
-    .expect("add");
+    let add_result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({
+                "name": "inspect-me",
+                "entity_type": "doc",
+                "summary": "A doc to inspect",
+            }),
+        ))
+        .await
+        .expect("add");
+
+    let slug = extract_slug(&extract_text(&add_result));
 
     let result = peer
         .call_tool(call(
             "filament_inspect",
-            serde_json::json!({ "name": "inspect-me" }),
+            serde_json::json!({ "slug": slug }),
         ))
         .await
         .expect("inspect");
@@ -187,21 +198,24 @@ async fn tool_task_close() {
     let client = start_mcp_client(conn).await;
     let peer = client.peer();
 
-    peer.call_tool(call(
-        "filament_add",
-        serde_json::json!({
-            "name": "closeable-task",
-            "entity_type": "task",
-            "summary": "Will be closed",
-        }),
-    ))
-    .await
-    .expect("add");
+    let add_result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({
+                "name": "closeable-task",
+                "entity_type": "task",
+                "summary": "Will be closed",
+            }),
+        ))
+        .await
+        .expect("add");
+
+    let slug = extract_slug(&extract_text(&add_result));
 
     let result = peer
         .call_tool(call(
             "filament_task_close",
-            serde_json::json!({ "name": "closeable-task" }),
+            serde_json::json!({ "slug": slug }),
         ))
         .await
         .expect("close");
@@ -214,7 +228,7 @@ async fn tool_task_close() {
     let result = peer
         .call_tool(call(
             "filament_inspect",
-            serde_json::json!({ "name": "closeable-task" }),
+            serde_json::json!({ "slug": slug }),
         ))
         .await
         .expect("inspect");
@@ -232,22 +246,25 @@ async fn tool_update_entity() {
     let client = start_mcp_client(conn).await;
     let peer = client.peer();
 
-    peer.call_tool(call(
-        "filament_add",
-        serde_json::json!({
-            "name": "updatable",
-            "entity_type": "task",
-            "summary": "Before update",
-        }),
-    ))
-    .await
-    .expect("add");
+    let add_result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({
+                "name": "updatable",
+                "entity_type": "task",
+                "summary": "Before update",
+            }),
+        ))
+        .await
+        .expect("add");
+
+    let slug = extract_slug(&extract_text(&add_result));
 
     let result = peer
         .call_tool(call(
             "filament_update",
             serde_json::json!({
-                "name": "updatable",
+                "slug": slug,
                 "summary": "After update",
                 "status": "in_progress",
             }),
@@ -269,30 +286,32 @@ async fn tool_messaging() {
     let peer = client.peer();
 
     // Create agent entities first (message_send validates recipient exists)
-    let result = peer
+    let add_a = peer
         .call_tool(call(
             "filament_add",
             serde_json::json!({"name": "agent-a", "entity_type": "agent", "summary": "Agent A"}),
         ))
         .await
         .expect("add agent-a");
-    assert!(!result.is_error.unwrap_or(false));
+    assert!(!add_a.is_error.unwrap_or(false));
+    let slug_a = extract_slug(&extract_text(&add_a));
 
-    let result = peer
+    let add_b = peer
         .call_tool(call(
             "filament_add",
             serde_json::json!({"name": "agent-b", "entity_type": "agent", "summary": "Agent B"}),
         ))
         .await
         .expect("add agent-b");
-    assert!(!result.is_error.unwrap_or(false));
+    assert!(!add_b.is_error.unwrap_or(false));
+    let slug_b = extract_slug(&extract_text(&add_b));
 
     let result = peer
         .call_tool(call(
             "filament_message_send",
             serde_json::json!({
-                "from_agent": "agent-a",
-                "to_agent": "agent-b",
+                "from_agent": slug_a,
+                "to_agent": slug_b,
                 "body": "Hello from MCP",
             }),
         ))
@@ -306,7 +325,7 @@ async fn tool_messaging() {
     let result = peer
         .call_tool(call(
             "filament_message_inbox",
-            serde_json::json!({ "agent": "agent-b" }),
+            serde_json::json!({ "agent": slug_b }),
         ))
         .await
         .expect("inbox");
@@ -421,7 +440,7 @@ async fn tool_error_nonexistent_entity() {
     let result = peer
         .call_tool(call(
             "filament_inspect",
-            serde_json::json!({ "name": "does-not-exist" }),
+            serde_json::json!({ "slug": "does-not-exist" }),
         ))
         .await
         .expect("inspect");
@@ -445,23 +464,23 @@ async fn tool_update_validation_error() {
     let client = start_mcp_client(conn).await;
     let peer = client.peer();
 
-    peer.call_tool(call(
-        "filament_add",
-        serde_json::json!({
-            "name": "needs-update",
-            "entity_type": "task",
-            "summary": "Test",
-        }),
-    ))
-    .await
-    .expect("add");
+    let add_result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({
+                "name": "needs-update",
+                "entity_type": "task",
+                "summary": "Test",
+            }),
+        ))
+        .await
+        .expect("add");
+
+    let slug = extract_slug(&extract_text(&add_result));
 
     // Update with neither summary nor status — should error
     let result = peer
-        .call_tool(call(
-            "filament_update",
-            serde_json::json!({ "name": "needs-update" }),
-        ))
+        .call_tool(call("filament_update", serde_json::json!({ "slug": slug })))
         .await
         .expect("update");
 

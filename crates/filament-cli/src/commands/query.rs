@@ -6,7 +6,7 @@ use crate::Cli;
 
 #[derive(Args, Debug)]
 pub struct ContextArgs {
-    /// Entity name to explore around.
+    /// Entity slug or ID to explore around.
     #[arg(long)]
     around: String,
     /// Maximum hops from the entity.
@@ -22,16 +22,16 @@ pub async fn context(cli: &Cli, args: &ContextArgs) -> Result<()> {
     let entity = resolve_entity(&mut conn, &args.around).await?;
 
     let summaries = conn
-        .context_summaries(entity.id.as_str(), args.depth)
+        .context_summaries(entity.id().as_str(), args.depth)
         .await?;
     let limited: Vec<_> = summaries.into_iter().take(args.limit).collect();
 
     if cli.json {
         output_json(&limited);
     } else if limited.is_empty() {
-        println!("No context found around: {}", entity.name);
+        println!("No context found around: {}", entity.name());
     } else {
-        println!("Context around {} (depth {}):", entity.name, args.depth);
+        println!("Context around {} (depth {}):", entity.name(), args.depth);
         for s in &limited {
             println!("  {s}");
         }

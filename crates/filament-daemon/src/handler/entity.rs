@@ -14,7 +14,7 @@ pub async fn create(
 ) -> Result<serde_json::Value> {
     let req: CreateEntityRequest = parse_params(params)?;
     let valid = ValidCreateEntityRequest::try_from(req)?;
-    let entity_id = state
+    let (entity_id, slug) = state
         .store
         .with_transaction(|conn| {
             let valid = valid.clone();
@@ -26,7 +26,7 @@ pub async fn create(
     let entity = store::get_entity(state.store.pool(), entity_id.as_str()).await?;
     state.graph_write().await.add_node_from_entity(&entity);
 
-    Ok(serde_json::json!({ "id": entity_id }))
+    Ok(serde_json::json!({ "id": entity_id, "slug": slug.as_str() }))
 }
 
 pub async fn get(params: serde_json::Value, state: &Arc<SharedState>) -> Result<serde_json::Value> {
@@ -35,12 +35,12 @@ pub async fn get(params: serde_json::Value, state: &Arc<SharedState>) -> Result<
     Ok(serde_json::to_value(&entity).expect("infallible"))
 }
 
-pub async fn get_by_name(
+pub async fn get_by_slug(
     params: serde_json::Value,
     state: &Arc<SharedState>,
 ) -> Result<serde_json::Value> {
-    let p: NameParam = parse_params(params)?;
-    let entity = store::get_entity_by_name(state.store.pool(), &p.name).await?;
+    let p: SlugParam = parse_params(params)?;
+    let entity = store::get_entity_by_slug(state.store.pool(), &p.slug).await?;
     Ok(serde_json::to_value(&entity).expect("infallible"))
 }
 
@@ -127,8 +127,8 @@ pub async fn delete(
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-struct NameParam {
-    name: String,
+struct SlugParam {
+    slug: String,
 }
 
 #[derive(Deserialize)]

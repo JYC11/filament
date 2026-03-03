@@ -3,10 +3,58 @@ use sqlx::{Pool, Sqlite, SqliteConnection};
 
 use crate::error::{FilamentError, Result};
 use crate::models::{
-    AgentRun, AgentRunId, AgentStatus, Entity, EntityId, EntityStatus, Event, EventId, EventType,
-    Message, MessageId, Relation, RelationId, Reservation, ReservationId, TtlSeconds,
-    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
+    AgentRun, AgentRunId, AgentStatus, Entity, EntityCommon, EntityId, EntityStatus, EntityType,
+    Event, EventId, EventType, Message, MessageId, NonEmptyString, Priority, Relation, RelationId,
+    Reservation, ReservationId, Slug, TtlSeconds, ValidCreateEntityRequest,
+    ValidCreateRelationRequest, ValidSendMessageRequest,
 };
+
+// ---------------------------------------------------------------------------
+// Internal DB row struct (not part of public API)
+// ---------------------------------------------------------------------------
+
+/// Flat row struct for sqlx queries — converted to `Entity` ADT via `From`.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub(crate) struct EntityRow {
+    pub id: EntityId,
+    pub slug: Slug,
+    pub name: NonEmptyString,
+    pub entity_type: EntityType,
+    pub summary: String,
+    pub key_facts: serde_json::Value,
+    pub content_path: Option<String>,
+    pub content_hash: Option<String>,
+    pub status: EntityStatus,
+    pub priority: Priority,
+    pub created_at: chrono::DateTime<Utc>,
+    pub updated_at: chrono::DateTime<Utc>,
+}
+
+impl From<EntityRow> for Entity {
+    fn from(row: EntityRow) -> Self {
+        let common = EntityCommon {
+            id: row.id,
+            slug: row.slug,
+            name: row.name,
+            summary: row.summary,
+            key_facts: row.key_facts,
+            content_path: row.content_path,
+            content_hash: row.content_hash,
+            status: row.status,
+            priority: row.priority,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        };
+        match row.entity_type {
+            EntityType::Task => Self::Task(common),
+            EntityType::Module => Self::Module(common),
+            EntityType::Service => Self::Service(common),
+            EntityType::Agent => Self::Agent(common),
+            EntityType::Plan => Self::Plan(common),
+            EntityType::Doc => Self::Doc(common),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Executor abstraction (from workout-util pattern)
@@ -61,7 +109,7 @@ impl FilamentStore {
 // Entity repo functions
 // ---------------------------------------------------------------------------
 
-/// Create an entity. Returns the new ID.
+/// Create an entity. Returns the new `(ID, Slug)`.
 ///
 /// # Errors
 ///
@@ -73,17 +121,19 @@ impl FilamentStore {
 pub async fn create_entity(
     conn: &mut SqliteConnection,
     req: &ValidCreateEntityRequest,
-) -> Result<EntityId> {
+) -> Result<(EntityId, Slug)> {
     let id = EntityId::new();
+    let slug = Slug::new();
     let now = Utc::now();
     let key_facts =
         serde_json::to_string(&req.key_facts).expect("Value serialization is infallible");
 
     sqlx::query(
-        "INSERT INTO entities (id, name, entity_type, summary, key_facts, content_path, status, priority, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)",
+        "INSERT INTO entities (id, slug, name, entity_type, summary, key_facts, content_path, status, priority, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)",
     )
     .bind(id.as_str())
+    .bind(slug.as_str())
     .bind(req.name.as_str())
     .bind(req.entity_type.as_str())
     .bind(&req.summary)
@@ -105,7 +155,7 @@ pub async fn create_entity(
     )
     .await?;
 
-    Ok(id)
+    Ok((id, slug))
 }
 
 /// Get an entity by ID.
@@ -114,26 +164,78 @@ pub async fn create_entity(
 ///
 /// Returns `FilamentError::EntityNotFound` if no entity with that ID exists.
 pub async fn get_entity(pool: &Pool<Sqlite>, id: &str) -> Result<Entity> {
-    sqlx::query_as::<_, Entity>("SELECT * FROM entities WHERE id = ?")
+    sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await?
+        .map(Entity::from)
         .ok_or_else(|| FilamentError::EntityNotFound { id: id.to_string() })
 }
 
-/// Get an entity by name.
+/// Get an entity by slug.
 ///
 /// # Errors
 ///
-/// Returns `FilamentError::EntityNotFound` if no entity with that name exists.
-pub async fn get_entity_by_name(pool: &Pool<Sqlite>, name: &str) -> Result<Entity> {
-    sqlx::query_as::<_, Entity>("SELECT * FROM entities WHERE name = ?")
-        .bind(name)
+/// Returns `FilamentError::EntityNotFound` if no entity with that slug exists.
+pub async fn get_entity_by_slug(pool: &Pool<Sqlite>, slug: &str) -> Result<Entity> {
+    sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE slug = ?")
+        .bind(slug)
         .fetch_optional(pool)
         .await?
+        .map(Entity::from)
         .ok_or_else(|| FilamentError::EntityNotFound {
-            id: format!("name:{name}"),
+            id: format!("slug:{slug}"),
         })
+}
+
+/// Resolve an entity by slug (first) or UUID fallback.
+///
+/// # Errors
+///
+/// Returns `FilamentError::EntityNotFound` if neither slug nor ID matches.
+pub async fn resolve_entity(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<Entity> {
+    // Try slug first (most common usage)
+    match get_entity_by_slug(pool, slug_or_id).await {
+        Ok(entity) => return Ok(entity),
+        Err(FilamentError::EntityNotFound { .. }) => {}
+        Err(e) => return Err(e),
+    }
+    // Fall back to UUID lookup
+    get_entity(pool, slug_or_id).await
+}
+
+/// Resolve an entity and verify it is a task.
+///
+/// # Errors
+///
+/// Returns `TypeMismatch` if the entity is not a task.
+pub async fn resolve_task(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<EntityCommon> {
+    let entity = resolve_entity(pool, slug_or_id).await?;
+    match entity {
+        Entity::Task(c) => Ok(c),
+        other => Err(FilamentError::TypeMismatch {
+            expected: EntityType::Task,
+            actual: other.entity_type(),
+            slug: other.slug().clone(),
+        }),
+    }
+}
+
+/// Resolve an entity and verify it is an agent.
+///
+/// # Errors
+///
+/// Returns `TypeMismatch` if the entity is not an agent.
+pub async fn resolve_agent(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<EntityCommon> {
+    let entity = resolve_entity(pool, slug_or_id).await?;
+    match entity {
+        Entity::Agent(c) => Ok(c),
+        other => Err(FilamentError::TypeMismatch {
+            expected: EntityType::Agent,
+            actual: other.entity_type(),
+            slug: other.slug().clone(),
+        }),
+    }
 }
 
 /// List entities, optionally filtered by type and/or status.
@@ -155,7 +257,7 @@ pub async fn list_entities(
     }
     query.push_str(" ORDER BY priority ASC, created_at ASC");
 
-    let mut q = sqlx::query_as::<_, Entity>(&query);
+    let mut q = sqlx::query_as::<_, EntityRow>(&query);
     if let Some(et) = entity_type {
         q = q.bind(et);
     }
@@ -163,7 +265,11 @@ pub async fn list_entities(
         q = q.bind(s);
     }
 
-    Ok(q.fetch_all(pool).await?)
+    Ok(q.fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(Entity::from)
+        .collect())
 }
 
 /// Update entity summary.
@@ -554,9 +660,7 @@ pub async fn release_reservation(conn: &mut SqliteConnection, id: &str) -> Resul
         .await?;
 
     if result.rows_affected() == 0 {
-        return Err(FilamentError::ReservationNotFound {
-            id: id.to_string(),
-        });
+        return Err(FilamentError::ReservationNotFound { id: id.to_string() });
     }
 
     record_event(
@@ -839,7 +943,7 @@ pub async fn rebuild_blocked_cache(conn: &mut SqliteConnection) -> Result<()> {
 pub async fn ready_tasks(conn: &mut SqliteConnection) -> Result<Vec<Entity>> {
     rebuild_blocked_cache(conn).await?;
 
-    Ok(sqlx::query_as::<_, Entity>(
+    let rows = sqlx::query_as::<_, EntityRow>(
         "SELECT e.* FROM entities e
          WHERE e.entity_type = 'task'
            AND e.status IN ('open', 'in_progress')
@@ -847,5 +951,7 @@ pub async fn ready_tasks(conn: &mut SqliteConnection) -> Result<Vec<Entity>> {
          ORDER BY e.priority ASC, e.created_at ASC",
     )
     .fetch_all(&mut *conn)
-    .await?)
+    .await?;
+
+    Ok(rows.into_iter().map(Entity::from).collect())
 }

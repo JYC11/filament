@@ -29,24 +29,17 @@ pub async fn connect() -> Result<FilamentConnection> {
     FilamentConnection::auto_detect(&root).await
 }
 
-/// Resolve an entity name or ID to an `Entity`.
-pub async fn resolve_entity(conn: &mut FilamentConnection, name_or_id: &str) -> Result<Entity> {
-    // Try by name first (most common CLI usage)
-    match conn.get_entity_by_name(name_or_id).await {
-        Ok(entity) => return Ok(entity),
-        Err(FilamentError::EntityNotFound { .. }) => {}
-        Err(e) => return Err(e),
-    }
-    // Fall back to ID lookup
-    conn.get_entity(name_or_id).await
+/// Resolve an entity by slug (first) or UUID fallback.
+pub async fn resolve_entity(conn: &mut FilamentConnection, slug_or_id: &str) -> Result<Entity> {
+    conn.resolve_entity(slug_or_id).await
 }
 
-/// Resolve an entity name to just the ID.
+/// Resolve an entity slug/ID to just the ID.
 pub async fn resolve_entity_id(
     conn: &mut FilamentConnection,
-    name_or_id: &str,
+    slug_or_id: &str,
 ) -> Result<EntityId> {
-    Ok(resolve_entity(conn, name_or_id).await?.id)
+    Ok(resolve_entity(conn, slug_or_id).await?.id().clone())
 }
 
 /// Print a value as JSON.
@@ -82,10 +75,15 @@ pub fn print_entity_list(cli: &Cli, entities: &[Entity], empty_msg: &str) {
         println!("{empty_msg}");
     } else {
         for e in entities {
-            let summary_preview = truncate_with_ellipsis(&e.summary, 60);
+            let summary_preview = truncate_with_ellipsis(e.summary(), 60);
             println!(
-                "[P{}] {} ({}) [{}] {}",
-                e.priority, e.name, e.entity_type, e.status, summary_preview
+                "[{}] {} ({}, {}) [P{}] {}",
+                e.slug(),
+                e.name(),
+                e.entity_type(),
+                e.status(),
+                e.priority(),
+                summary_preview
             );
         }
     }

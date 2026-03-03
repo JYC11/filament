@@ -30,14 +30,14 @@ pub struct AddArgs {
 
 #[derive(Args, Debug)]
 pub struct RemoveArgs {
-    /// Entity name or ID.
-    name: String,
+    /// Entity slug or ID.
+    slug: String,
 }
 
 #[derive(Args, Debug)]
 pub struct UpdateArgs {
-    /// Entity name or ID.
-    name: String,
+    /// Entity slug or ID.
+    slug: String,
     /// New summary.
     #[arg(long)]
     summary: Option<String>,
@@ -48,14 +48,14 @@ pub struct UpdateArgs {
 
 #[derive(Args, Debug)]
 pub struct InspectArgs {
-    /// Entity name or ID.
-    name: String,
+    /// Entity slug or ID.
+    slug: String,
 }
 
 #[derive(Args, Debug)]
 pub struct ReadArgs {
-    /// Entity name or ID.
-    name: String,
+    /// Entity slug or ID.
+    slug: String,
 }
 
 #[derive(Args, Debug)]
@@ -99,26 +99,26 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         priority: args.priority,
     };
 
-    let id = conn.create_entity(req).await?;
+    let (id, slug) = conn.create_entity(req).await?;
 
     if cli.json {
-        output_json(&serde_json::json!({"id": id.as_str()}));
+        output_json(&serde_json::json!({"id": id.as_str(), "slug": slug.as_str()}));
     } else {
-        println!("Created entity: {id}");
+        println!("Created entity: {slug} ({id})");
     }
     Ok(())
 }
 
 pub async fn remove(cli: &Cli, args: &RemoveArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.name).await?;
+    let entity = resolve_entity(&mut conn, &args.slug).await?;
 
-    conn.delete_entity(entity.id.as_str()).await?;
+    conn.delete_entity(entity.id().as_str()).await?;
 
     if cli.json {
-        output_json(&serde_json::json!({"deleted": entity.id.as_str()}));
+        output_json(&serde_json::json!({"deleted": entity.id().as_str()}));
     } else {
-        println!("Removed entity: {} ({})", entity.name, entity.id);
+        println!("Removed entity: {} ({})", entity.name(), entity.slug());
     }
     Ok(())
 }
@@ -131,8 +131,8 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     }
 
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.name).await?;
-    let id = entity.id.clone();
+    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let id = entity.id().clone();
 
     if let Some(summary) = &args.summary {
         conn.update_entity_summary(id.as_str(), summary).await?;
@@ -144,16 +144,17 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     if cli.json {
         output_json(&serde_json::json!({"updated": id.as_str()}));
     } else {
-        println!("Updated entity: {} ({})", entity.name, id);
+        println!("Updated entity: {} ({})", entity.name(), entity.slug());
     }
     Ok(())
 }
 
 pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.name).await?;
+    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let c = entity.common();
 
-    let relations = conn.list_relations(entity.id.as_str()).await?;
+    let relations = conn.list_relations(c.id.as_str()).await?;
 
     if cli.json {
         let out = serde_json::json!({
@@ -162,27 +163,28 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
         });
         output_json(&out);
     } else {
-        println!("Name:     {}", entity.name);
-        println!("ID:       {}", entity.id);
-        println!("Type:     {}", entity.entity_type);
-        println!("Status:   {}", entity.status);
-        println!("Priority: {}", entity.priority);
-        if !entity.summary.is_empty() {
-            println!("Summary:  {}", entity.summary);
+        println!("Name:     {}", c.name);
+        println!("Slug:     {}", c.slug);
+        println!("ID:       {}", c.id);
+        println!("Type:     {}", entity.entity_type());
+        println!("Status:   {}", c.status);
+        println!("Priority: {}", c.priority);
+        if !c.summary.is_empty() {
+            println!("Summary:  {}", c.summary);
         }
-        if entity.key_facts != serde_json::json!({}) {
+        if c.key_facts != serde_json::json!({}) {
             println!(
                 "Facts:    {}",
-                serde_json::to_string_pretty(&entity.key_facts).expect("JSON")
+                serde_json::to_string_pretty(&c.key_facts).expect("JSON")
             );
         }
-        if let Some(ref path) = entity.content_path {
+        if let Some(ref path) = c.content_path {
             println!("Content:  {path}");
         }
         if !relations.is_empty() {
             println!("Relations:");
             for r in &relations {
-                let other_id = if r.source_id == entity.id {
+                let other_id = if r.source_id == c.id {
                     &r.target_id
                 } else {
                     &r.source_id
@@ -190,29 +192,30 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
                 let other_name = conn
                     .get_entity(other_id.as_str())
                     .await
-                    .map_or_else(|_| other_id.to_string(), |e| e.name.to_string());
-                if r.source_id == entity.id {
-                    println!("  {} -> {} ({})", entity.name, other_name, r.relation_type);
+                    .map_or_else(|_| other_id.to_string(), |e| e.name().to_string());
+                if r.source_id == c.id {
+                    println!("  {} -> {} ({})", c.name, other_name, r.relation_type);
                 } else {
-                    println!("  {} -> {} ({})", other_name, entity.name, r.relation_type);
+                    println!("  {} -> {} ({})", other_name, c.name, r.relation_type);
                 }
             }
         }
-        println!("Created:  {}", entity.created_at);
-        println!("Updated:  {}", entity.updated_at);
+        println!("Created:  {}", c.created_at);
+        println!("Updated:  {}", c.updated_at);
     }
     Ok(())
 }
 
 pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.name).await?;
+    let entity = resolve_entity(&mut conn, &args.slug).await?;
+    let c = entity.common();
 
-    let Some(ref content_path) = entity.content_path else {
+    let Some(ref content_path) = c.content_path else {
         if cli.json {
-            output_json(&serde_json::json!({"name": entity.name.as_str(), "content": null}));
+            output_json(&serde_json::json!({"name": c.name.as_str(), "content": null}));
         } else {
-            println!("No content file for entity: {}", entity.name);
+            println!("No content file for entity: {}", c.name);
         }
         return Ok(());
     };
@@ -221,7 +224,7 @@ pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
 
     if cli.json {
         let out = serde_json::json!({
-            "name": entity.name.as_str(),
+            "name": c.name.as_str(),
             "content_path": content_path,
             "content": content,
         });

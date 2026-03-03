@@ -1,6 +1,6 @@
 mod common;
 
-use common::{filament, init_project};
+use common::{add_entity, filament, init_project};
 use predicates::prelude::*;
 use std::io::Write;
 
@@ -44,27 +44,22 @@ fn entity_add_json() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains(r#""id":"#));
+        .stdout(predicate::str::contains(r#""id":"#).and(predicate::str::contains(r#""slug":"#)));
 }
 
 #[test]
 fn entity_inspect() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "add",
-            "my-service",
-            "--type",
-            "service",
-            "--summary",
-            "Main API service",
-        ])
-        .assert()
-        .success();
+    let slug = add_entity(
+        &dir,
+        "my-service",
+        "service",
+        &["--summary", "Main API service"],
+    );
 
     filament(&dir)
-        .args(["inspect", "my-service"])
+        .args(["inspect", &slug])
         .assert()
         .success()
         .stdout(
@@ -78,22 +73,12 @@ fn entity_inspect() {
 fn entity_update_summary_and_status() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "add",
-            "updatable",
-            "--type",
-            "module",
-            "--summary",
-            "original",
-        ])
-        .assert()
-        .success();
+    let slug = add_entity(&dir, "updatable", "module", &["--summary", "original"]);
 
     filament(&dir)
         .args([
             "update",
-            "updatable",
+            &slug,
             "--summary",
             "updated summary",
             "--status",
@@ -103,7 +88,7 @@ fn entity_update_summary_and_status() {
         .success();
 
     filament(&dir)
-        .args(["inspect", "updatable"])
+        .args(["inspect", &slug])
         .assert()
         .success()
         .stdout(
@@ -116,18 +101,15 @@ fn entity_update_summary_and_status() {
 fn entity_update_summary_only() {
     let dir = init_project();
 
+    let slug = add_entity(&dir, "sum-only", "module", &["--summary", "old"]);
+
     filament(&dir)
-        .args(["add", "sum-only", "--type", "module", "--summary", "old"])
+        .args(["update", &slug, "--summary", "new summary"])
         .assert()
         .success();
 
     filament(&dir)
-        .args(["update", "sum-only", "--summary", "new summary"])
-        .assert()
-        .success();
-
-    filament(&dir)
-        .args(["inspect", "sum-only"])
+        .args(["inspect", &slug])
         .assert()
         .success()
         .stdout(
@@ -140,25 +122,15 @@ fn entity_update_summary_only() {
 fn entity_update_status_only() {
     let dir = init_project();
 
+    let slug = add_entity(&dir, "stat-only", "module", &["--summary", "keep me"]);
+
     filament(&dir)
-        .args([
-            "add",
-            "stat-only",
-            "--type",
-            "module",
-            "--summary",
-            "keep me",
-        ])
+        .args(["update", &slug, "--status", "blocked"])
         .assert()
         .success();
 
     filament(&dir)
-        .args(["update", "stat-only", "--status", "blocked"])
-        .assert()
-        .success();
-
-    filament(&dir)
-        .args(["inspect", "stat-only"])
+        .args(["inspect", &slug])
         .assert()
         .success()
         .stdout(
@@ -171,13 +143,10 @@ fn entity_update_status_only() {
 fn entity_update_invalid_status() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["add", "bad-stat", "--type", "module"])
-        .assert()
-        .success();
+    let slug = add_entity(&dir, "bad-stat", "module", &[]);
 
     filament(&dir)
-        .args(["update", "bad-stat", "--status", "nonexistent"])
+        .args(["update", &slug, "--status", "nonexistent"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("invalid status"));
@@ -187,21 +156,15 @@ fn entity_update_invalid_status() {
 fn entity_remove() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["add", "to-remove", "--type", "module"])
-        .assert()
-        .success();
+    let slug = add_entity(&dir, "to-remove", "module", &[]);
 
     filament(&dir)
-        .args(["remove", "to-remove"])
+        .args(["remove", &slug])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Removed entity: to-remove"));
+        .stdout(predicate::str::contains("Removed entity:"));
 
-    filament(&dir)
-        .args(["inspect", "to-remove"])
-        .assert()
-        .failure();
+    filament(&dir).args(["inspect", &slug]).assert().failure();
 }
 
 #[test]
@@ -230,15 +193,8 @@ fn entity_not_found_json_error() {
 fn entity_list_with_filters() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["add", "mod-a", "--type", "module", "--summary", "Module A"])
-        .assert()
-        .success();
-
-    filament(&dir)
-        .args(["add", "task-a", "--type", "task", "--summary", "Task A"])
-        .assert()
-        .success();
+    add_entity(&dir, "mod-a", "module", &["--summary", "Module A"]);
+    add_entity(&dir, "task-a", "task", &["--summary", "Task A"]);
 
     // Filter by type
     filament(&dir)
@@ -259,22 +215,15 @@ fn entity_list_with_filters() {
 fn entity_with_priority() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "add",
-            "urgent",
-            "--type",
-            "task",
-            "--summary",
-            "Urgent task",
-            "--priority",
-            "0",
-        ])
-        .assert()
-        .success();
+    let slug = add_entity(
+        &dir,
+        "urgent",
+        "task",
+        &["--summary", "Urgent task", "--priority", "0"],
+    );
 
     filament(&dir)
-        .args(["inspect", "urgent"])
+        .args(["inspect", &slug])
         .assert()
         .success()
         .stdout(predicate::str::contains("Priority: 0"));
@@ -284,22 +233,20 @@ fn entity_with_priority() {
 fn entity_add_with_facts() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "add",
-            "factual",
-            "--type",
-            "module",
+    let slug = add_entity(
+        &dir,
+        "factual",
+        "module",
+        &[
             "--summary",
             "Has facts",
             "--facts",
             r#"{"lang": "rust", "version": "1.75"}"#,
-        ])
-        .assert()
-        .success();
+        ],
+    );
 
     filament(&dir)
-        .args(["inspect", "factual"])
+        .args(["inspect", &slug])
         .assert()
         .success()
         .stdout(
@@ -318,22 +265,20 @@ fn entity_read_with_content_file() {
     let mut f = std::fs::File::create(&content_path).unwrap();
     writeln!(f, "This is the full content.").unwrap();
 
-    filament(&dir)
-        .args([
-            "add",
-            "readable",
-            "--type",
-            "doc",
+    let slug = add_entity(
+        &dir,
+        "readable",
+        "doc",
+        &[
             "--summary",
             "Has content",
             "--content",
             content_path.to_str().unwrap(),
-        ])
-        .assert()
-        .success();
+        ],
+    );
 
     filament(&dir)
-        .args(["read", "readable"])
+        .args(["read", &slug])
         .assert()
         .success()
         .stdout(predicate::str::contains("This is the full content."));
@@ -343,13 +288,10 @@ fn entity_read_with_content_file() {
 fn entity_read_no_content() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["add", "no-content", "--type", "module"])
-        .assert()
-        .success();
+    let slug = add_entity(&dir, "no-content", "module", &[]);
 
     filament(&dir)
-        .args(["read", "no-content"])
+        .args(["read", &slug])
         .assert()
         .success()
         .stdout(predicate::str::contains("No content file"));
@@ -359,20 +301,22 @@ fn entity_read_no_content() {
 fn entity_duplicate_name_allowed() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["add", "dup-name", "--type", "module", "--summary", "first"])
-        .assert()
-        .success();
+    let slug1 = add_entity(&dir, "dup-name", "module", &["--summary", "first"]);
 
-    // Names are not UNIQUE at DB level — second add succeeds
-    filament(&dir)
-        .args(["add", "dup-name", "--type", "module", "--summary", "second"])
-        .assert()
-        .success();
+    // Names are not UNIQUE at DB level — second add succeeds with different slug
+    let slug2 = add_entity(&dir, "dup-name", "module", &["--summary", "second"]);
 
-    // resolve_entity returns the first match by name
+    assert_ne!(slug1, slug2, "slugs should be unique even with same name");
+
+    // Both are inspectable by their own slug
     filament(&dir)
-        .args(["inspect", "dup-name"])
+        .args(["inspect", &slug1])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dup-name"));
+
+    filament(&dir)
+        .args(["inspect", &slug2])
         .assert()
         .success()
         .stdout(predicate::str::contains("dup-name"));
@@ -382,13 +326,10 @@ fn entity_duplicate_name_allowed() {
 fn entity_update_no_args_error() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["add", "no-change", "--type", "module", "--summary", "test"])
-        .assert()
-        .success();
+    let slug = add_entity(&dir, "no-change", "module", &["--summary", "test"]);
 
     filament(&dir)
-        .args(["update", "no-change"])
+        .args(["update", &slug])
         .assert()
         .failure()
         .stderr(predicate::str::contains("--summary or --status"));
@@ -398,29 +339,16 @@ fn entity_update_no_args_error() {
 fn entity_inspect_shows_relations() {
     let dir = init_project();
 
+    let slug_a = add_entity(&dir, "svc-a", "service", &["--summary", "Service A"]);
+    let slug_b = add_entity(&dir, "mod-b", "module", &["--summary", "Module B"]);
+
     filament(&dir)
-        .args([
-            "add",
-            "svc-a",
-            "--type",
-            "service",
-            "--summary",
-            "Service A",
-        ])
-        .assert()
-        .success();
-    filament(&dir)
-        .args(["add", "mod-b", "--type", "module", "--summary", "Module B"])
+        .args(["relate", &slug_a, "depends_on", &slug_b])
         .assert()
         .success();
 
     filament(&dir)
-        .args(["relate", "svc-a", "depends_on", "mod-b"])
-        .assert()
-        .success();
-
-    filament(&dir)
-        .args(["inspect", "svc-a"])
+        .args(["inspect", &slug_a])
         .assert()
         .success()
         .stdout(

@@ -1,5 +1,5 @@
 use clap::{Args, Subcommand};
-use filament_core::error::Result;
+use filament_core::error::{FilamentError, Result};
 use filament_core::models::{CreateEntityRequest, CreateRelationRequest, EntityId};
 
 use super::helpers::{
@@ -56,10 +56,10 @@ struct TaskAddArgs {
     /// Priority (0=highest, 4=lowest).
     #[arg(long)]
     priority: Option<u8>,
-    /// Name of entity this task blocks.
+    /// Slug or ID of entity this task blocks.
     #[arg(long)]
     blocks: Option<String>,
-    /// Name of entity this task depends on.
+    /// Slug or ID of entity this task depends on.
     #[arg(long)]
     depends_on: Option<String>,
 }
@@ -83,29 +83,29 @@ struct TaskReadyArgs {
 
 #[derive(Args, Debug)]
 struct TaskShowArgs {
-    /// Task name or ID.
-    name: String,
+    /// Task slug or ID.
+    slug: String,
 }
 
 #[derive(Args, Debug)]
 struct TaskCloseArgs {
-    /// Task name or ID.
-    name: String,
+    /// Task slug or ID.
+    slug: String,
 }
 
 #[derive(Args, Debug)]
 struct TaskAssignArgs {
-    /// Task name or ID.
-    name: String,
-    /// Agent name to assign to.
+    /// Task slug or ID.
+    slug: String,
+    /// Agent slug or ID to assign to.
     #[arg(long)]
     to: String,
 }
 
 #[derive(Args, Debug)]
 struct TaskCriticalPathArgs {
-    /// Task name or ID.
-    name: String,
+    /// Task slug or ID.
+    slug: String,
 }
 
 async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
@@ -121,18 +121,18 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
     };
 
     // Resolve relation targets before creating the entity
-    let blocks_id = if let Some(blocks_name) = &args.blocks {
-        Some(resolve_entity_id(&mut conn, blocks_name).await?)
+    let blocks_id = if let Some(blocks_slug) = &args.blocks {
+        Some(resolve_entity_id(&mut conn, blocks_slug).await?)
     } else {
         None
     };
-    let depends_on_id = if let Some(dep_name) = &args.depends_on {
-        Some(resolve_entity_id(&mut conn, dep_name).await?)
+    let depends_on_id = if let Some(dep_slug) = &args.depends_on {
+        Some(resolve_entity_id(&mut conn, dep_slug).await?)
     } else {
         None
     };
 
-    let id = conn.create_entity(req).await?;
+    let (id, slug) = conn.create_entity(req).await?;
 
     if let Some(target_id) = blocks_id {
         let rel_req = CreateRelationRequest {
@@ -159,9 +159,9 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
     }
 
     if cli.json {
-        output_json(&serde_json::json!({"id": id.as_str()}));
+        output_json(&serde_json::json!({"id": id.as_str(), "slug": slug.as_str()}));
     } else {
-        println!("Created task: {id}");
+        println!("Created task: {slug} ({id})");
     }
     Ok(())
 }
@@ -196,11 +196,12 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
             .iter()
             .map(|t| {
                 serde_json::json!({
-                    "name": t.name.as_str(),
-                    "entity_id": t.id.as_str(),
-                    "priority": t.priority.value(),
-                    "status": t.status.as_str(),
-                    "summary": t.summary.as_str(),
+                    "slug": t.slug().as_str(),
+                    "name": t.name().as_str(),
+                    "entity_id": t.id().as_str(),
+                    "priority": t.priority().value(),
+                    "status": t.status().as_str(),
+                    "summary": t.summary(),
                 })
             })
             .collect();
@@ -209,10 +210,14 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
         println!("No ready tasks.");
     } else {
         for t in &limited {
-            let summary_preview = truncate_with_ellipsis(&t.summary, 60);
+            let summary_preview = truncate_with_ellipsis(t.summary(), 60);
             println!(
-                "[P{}] {} [{}] {}",
-                t.priority, t.name, t.status, summary_preview
+                "[{}] [P{}] {} [{}] {}",
+                t.slug(),
+                t.priority(),
+                t.name(),
+                t.status(),
+                summary_preview
             );
         }
     }
@@ -221,16 +226,18 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
 
 async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.name).await?;
+    let entity = resolve_entity(&mut conn, &args.slug).await?;
 
-    if entity.entity_type.as_str() != "task" {
-        return Err(filament_core::error::FilamentError::Validation(format!(
-            "'{}' is a {}, not a task",
-            entity.name, entity.entity_type
-        )));
+    if !entity.is_task() {
+        return Err(FilamentError::TypeMismatch {
+            expected: filament_core::models::EntityType::Task,
+            actual: entity.entity_type(),
+            slug: entity.slug().clone(),
+        });
     }
 
-    let relations = conn.list_relations(entity.id.as_str()).await?;
+    let c = entity.common();
+    let relations = conn.list_relations(c.id.as_str()).await?;
 
     if cli.json {
         let out = serde_json::json!({
@@ -239,23 +246,24 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
         });
         output_json(&out);
     } else {
-        println!("Task:     {}", entity.name);
-        println!("ID:       {}", entity.id);
-        println!("Status:   {}", entity.status);
-        println!("Priority: {}", entity.priority);
-        if !entity.summary.is_empty() {
-            println!("Summary:  {}", entity.summary);
+        println!("Task:     {}", c.name);
+        println!("Slug:     {}", c.slug);
+        println!("ID:       {}", c.id);
+        println!("Status:   {}", c.status);
+        println!("Priority: {}", c.priority);
+        if !c.summary.is_empty() {
+            println!("Summary:  {}", c.summary);
         }
-        if entity.key_facts != serde_json::json!({}) {
+        if c.key_facts != serde_json::json!({}) {
             println!(
                 "Facts:    {}",
-                serde_json::to_string_pretty(&entity.key_facts).expect("JSON")
+                serde_json::to_string_pretty(&c.key_facts).expect("JSON")
             );
         }
         if !relations.is_empty() {
             println!("Relations:");
             for r in &relations {
-                let other_id = if r.source_id == entity.id {
+                let other_id = if r.source_id == c.id {
                     &r.target_id
                 } else {
                     &r.source_id
@@ -263,65 +271,68 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
                 let other_name = conn
                     .get_entity(other_id.as_str())
                     .await
-                    .map_or_else(|_| other_id.to_string(), |e| e.name.to_string());
-                if r.source_id == entity.id {
-                    println!("  {} -> {} ({})", entity.name, other_name, r.relation_type);
+                    .map_or_else(|_| other_id.to_string(), |e| e.name().to_string());
+                if r.source_id == c.id {
+                    println!("  {} -> {} ({})", c.name, other_name, r.relation_type);
                 } else {
-                    println!("  {} -> {} ({})", other_name, entity.name, r.relation_type);
+                    println!("  {} -> {} ({})", other_name, c.name, r.relation_type);
                 }
             }
         }
-        println!("Created:  {}", entity.created_at);
-        println!("Updated:  {}", entity.updated_at);
+        println!("Created:  {}", c.created_at);
+        println!("Updated:  {}", c.updated_at);
     }
     Ok(())
 }
 
 async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.name).await?;
+    let entity = resolve_entity(&mut conn, &args.slug).await?;
 
-    if entity.entity_type.as_str() != "task" {
-        return Err(filament_core::error::FilamentError::Validation(format!(
-            "'{}' is a {}, not a task",
-            entity.name, entity.entity_type
-        )));
+    if !entity.is_task() {
+        return Err(FilamentError::TypeMismatch {
+            expected: filament_core::models::EntityType::Task,
+            actual: entity.entity_type(),
+            slug: entity.slug().clone(),
+        });
     }
 
-    conn.update_entity_status(entity.id.as_str(), "closed")
+    conn.update_entity_status(entity.id().as_str(), "closed")
         .await?;
 
     if cli.json {
-        output_json(&serde_json::json!({"closed": entity.id.as_str()}));
+        output_json(&serde_json::json!({"closed": entity.id().as_str()}));
     } else {
-        println!("Closed task: {} ({})", entity.name, entity.id);
+        println!("Closed task: {} ({})", entity.name(), entity.slug());
     }
     Ok(())
 }
 
 async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let task = resolve_entity(&mut conn, &args.name).await?;
+    let task = resolve_entity(&mut conn, &args.slug).await?;
 
-    if task.entity_type.as_str() != "task" {
-        return Err(filament_core::error::FilamentError::Validation(format!(
-            "'{}' is a {}, not a task",
-            task.name, task.entity_type
-        )));
+    if !task.is_task() {
+        return Err(FilamentError::TypeMismatch {
+            expected: filament_core::models::EntityType::Task,
+            actual: task.entity_type(),
+            slug: task.slug().clone(),
+        });
     }
 
     let agent = resolve_entity(&mut conn, &args.to).await?;
 
-    if agent.entity_type.as_str() != "agent" {
-        return Err(filament_core::error::FilamentError::Validation(format!(
-            "'{}' is a {}, not an agent",
-            agent.name, agent.entity_type
-        )));
+    if !agent.is_agent() {
+        return Err(FilamentError::TypeMismatch {
+            expected: filament_core::models::EntityType::Agent,
+            actual: agent.entity_type(),
+            slug: agent.slug().clone(),
+        });
     }
 
     let rel_req = CreateRelationRequest {
-        source_id: agent.id.to_string(),
-        target_id: task.id.to_string(),
+        source_id: agent.id().to_string(),
+        target_id: task.id().to_string(),
         relation_type: "assigned_to".to_string(),
         weight: None,
         summary: None,
@@ -331,24 +342,24 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
     conn.create_relation(rel_req).await?;
 
     if cli.json {
-        output_json(&serde_json::json!({"assigned": task.name.as_str(), "to": args.to}));
+        output_json(&serde_json::json!({"assigned": task.name().as_str(), "to": args.to}));
     } else {
-        println!("Assigned {} to {}", task.name, args.to);
+        println!("Assigned {} to {}", task.name(), args.to);
     }
     Ok(())
 }
 
 async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
     let mut conn = connect().await?;
-    let entity = resolve_entity(&mut conn, &args.name).await?;
+    let entity = resolve_entity(&mut conn, &args.slug).await?;
 
-    let path = conn.critical_path(entity.id.as_str()).await?;
+    let path = conn.critical_path(entity.id().as_str()).await?;
 
     if cli.json {
         let items: Vec<_> = path.iter().map(EntityId::as_str).collect();
         output_json(&items);
     } else if path.is_empty() {
-        println!("No dependency chain found for: {}", entity.name);
+        println!("No dependency chain found for: {}", entity.name());
     } else {
         let label = if path.len() == 1 { "step" } else { "steps" };
         println!("Critical path ({} {label}):", path.len());
@@ -356,7 +367,7 @@ async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
             let name = conn
                 .get_entity(id.as_str())
                 .await
-                .map_or_else(|_| id.to_string(), |e| e.name.to_string());
+                .map_or_else(|_| id.to_string(), |e| e.name().to_string());
             println!("  {}. {}", i + 1, name);
         }
     }

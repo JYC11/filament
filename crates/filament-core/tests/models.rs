@@ -40,6 +40,69 @@ fn relation_id_uniqueness() {
 }
 
 // ---------------------------------------------------------------------------
+// Slug tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn slug_new_generates_valid_8char() {
+    let s = Slug::new();
+    assert_eq!(s.as_str().len(), 8);
+    assert!(s
+        .as_str()
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+}
+
+#[test]
+fn slug_uniqueness() {
+    let a = Slug::new();
+    let b = Slug::new();
+    assert_ne!(a, b);
+}
+
+#[test]
+fn slug_try_from_valid() {
+    let s = Slug::try_from("ab12cd34".to_string()).unwrap();
+    assert_eq!(s.as_str(), "ab12cd34");
+}
+
+#[test]
+fn slug_try_from_rejects_too_short() {
+    assert!(Slug::try_from("abc".to_string()).is_err());
+}
+
+#[test]
+fn slug_try_from_rejects_too_long() {
+    assert!(Slug::try_from("abcdefghi".to_string()).is_err());
+}
+
+#[test]
+fn slug_try_from_rejects_uppercase() {
+    assert!(Slug::try_from("ABCDEFGH".to_string()).is_err());
+}
+
+#[test]
+fn slug_try_from_rejects_special_chars() {
+    assert!(Slug::try_from("ab-cd_ef".to_string()).is_err());
+}
+
+#[test]
+fn slug_display_roundtrip() {
+    let s = Slug::new();
+    let displayed = s.to_string();
+    let parsed: Slug = displayed.parse().unwrap();
+    assert_eq!(s, parsed);
+}
+
+#[test]
+fn slug_serde_roundtrip() {
+    let s = Slug::new();
+    let json = serde_json::to_string(&s).unwrap();
+    let parsed: Slug = serde_json::from_str(&json).unwrap();
+    assert_eq!(s, parsed);
+}
+
+// ---------------------------------------------------------------------------
 // Value type tests
 // ---------------------------------------------------------------------------
 
@@ -407,4 +470,78 @@ fn agent_message_rejects_empty_body() {
     let json = r#"{"to_agent": "orchestrator", "body": "   ", "msg_type": "text"}"#;
     let result: Result<AgentMessage, _> = serde_json::from_str(json);
     assert!(result.is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Entity ADT tests
+// ---------------------------------------------------------------------------
+
+fn sample_common() -> EntityCommon {
+    EntityCommon {
+        id: EntityId::new(),
+        slug: Slug::new(),
+        name: NonEmptyString::new("test-entity").unwrap(),
+        summary: "A test entity".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        content_hash: None,
+        status: EntityStatus::Open,
+        priority: Priority::DEFAULT,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    }
+}
+
+#[test]
+fn entity_adt_task_variant() {
+    let e = Entity::Task(sample_common());
+    assert_eq!(e.entity_type(), EntityType::Task);
+    assert!(e.is_task());
+    assert!(!e.is_agent());
+}
+
+#[test]
+fn entity_adt_agent_variant() {
+    let e = Entity::Agent(sample_common());
+    assert_eq!(e.entity_type(), EntityType::Agent);
+    assert!(e.is_agent());
+    assert!(!e.is_task());
+}
+
+#[test]
+fn entity_adt_accessors() {
+    let common = sample_common();
+    let expected_name = common.name.clone();
+    let expected_slug = common.slug.clone();
+    let e = Entity::Module(common);
+    assert_eq!(e.name(), &expected_name);
+    assert_eq!(e.slug(), &expected_slug);
+    assert_eq!(*e.status(), EntityStatus::Open);
+    assert_eq!(e.priority(), Priority::DEFAULT);
+    assert_eq!(e.summary(), "A test entity");
+}
+
+#[test]
+fn entity_adt_serde_roundtrip() {
+    let e = Entity::Service(sample_common());
+    let json = serde_json::to_string(&e).unwrap();
+    assert!(json.contains("\"entity_type\":\"service\""));
+    let parsed: Entity = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.entity_type(), EntityType::Service);
+    assert_eq!(parsed.name(), e.name());
+}
+
+#[test]
+fn entity_adt_all_variants_type_check() {
+    let variants = vec![
+        (Entity::Task(sample_common()), EntityType::Task),
+        (Entity::Module(sample_common()), EntityType::Module),
+        (Entity::Service(sample_common()), EntityType::Service),
+        (Entity::Agent(sample_common()), EntityType::Agent),
+        (Entity::Plan(sample_common()), EntityType::Plan),
+        (Entity::Doc(sample_common()), EntityType::Doc),
+    ];
+    for (entity, expected_type) in variants {
+        assert_eq!(entity.entity_type(), expected_type);
+    }
 }

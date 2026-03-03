@@ -6,7 +6,7 @@ use tokio::net::UnixStream;
 use crate::error::{FilamentError, Result};
 use crate::models::{
     AgentRun, AgentRunId, Entity, EntityId, Event, Message, MessageId, Relation, RelationId,
-    Reservation, ReservationId,
+    Reservation, ReservationId, Slug,
 };
 use crate::protocol::{Method, Request, Response};
 
@@ -95,11 +95,14 @@ impl DaemonClient {
 
     // -- Entity operations --
 
-    pub async fn create_entity(&mut self, params: serde_json::Value) -> Result<EntityId> {
+    pub async fn create_entity(&mut self, params: serde_json::Value) -> Result<(EntityId, Slug)> {
         let result = self.call(Method::CreateEntity, params).await?;
         let id: String = serde_json::from_value(result["id"].clone())
             .map_err(|e| FilamentError::Protocol(e.to_string()))?;
-        Ok(EntityId::from(id))
+        let slug: String = serde_json::from_value(result["slug"].clone())
+            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+        let slug = Slug::try_from(slug).map_err(FilamentError::Protocol)?;
+        Ok((EntityId::from(id), slug))
     }
 
     pub async fn get_entity(&mut self, id: &str) -> Result<Entity> {
@@ -109,9 +112,9 @@ impl DaemonClient {
         serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
     }
 
-    pub async fn get_entity_by_name(&mut self, name: &str) -> Result<Entity> {
+    pub async fn get_entity_by_slug(&mut self, slug: &str) -> Result<Entity> {
         let result = self
-            .call(Method::GetEntityByName, serde_json::json!({ "name": name }))
+            .call(Method::GetEntityBySlug, serde_json::json!({ "slug": slug }))
             .await?;
         serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
     }

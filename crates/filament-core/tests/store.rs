@@ -16,7 +16,7 @@ async fn transaction_commits_on_ok() {
     let store = test_db().await;
     let req = sample_entity_req();
 
-    let id = store
+    let (id, _) = store
         .with_transaction(|conn| {
             let req = req.clone();
             Box::pin(async move { create_entity(conn, &req).await })
@@ -25,7 +25,7 @@ async fn transaction_commits_on_ok() {
         .unwrap();
 
     let entity = get_entity(store.pool(), id.as_str()).await.unwrap();
-    assert_eq!(entity.name, "Test task");
+    assert_eq!(entity.name(), "Test task");
 }
 
 #[tokio::test]
@@ -133,7 +133,7 @@ async fn check_constraint_rejects_self_referencing_relation() {
         .unwrap();
 
     let entities = list_entities(store.pool(), None, None).await.unwrap();
-    let id = entities[0].id.as_str();
+    let id = entities[0].id().as_str();
 
     let result = store
         .with_transaction(|conn| {
@@ -178,8 +178,8 @@ async fn delete_entity_cascades_relations() {
             let req1 = req1.clone();
             let req2 = req2.clone();
             Box::pin(async move {
-                let id1 = create_entity(conn, &req1).await?;
-                let id2 = create_entity(conn, &req2).await?;
+                let (id1, _) = create_entity(conn, &req1).await?;
+                let (id2, _) = create_entity(conn, &req2).await?;
                 let rel_req = blocks_req(id1.as_str(), id2.as_str());
                 create_relation(conn, &rel_req).await?;
                 Ok((id1, id2))
@@ -209,7 +209,7 @@ async fn update_entity_status_works() {
     let store = test_db().await;
     let req = sample_entity_req();
 
-    let id = store
+    let (id, _) = store
         .with_transaction(|conn| {
             let req = req.clone();
             Box::pin(async move { create_entity(conn, &req).await })
@@ -228,7 +228,7 @@ async fn update_entity_status_works() {
         .unwrap();
 
     let entity = get_entity(store.pool(), id.as_str()).await.unwrap();
-    assert_eq!(entity.status, EntityStatus::InProgress);
+    assert_eq!(*entity.status(), EntityStatus::InProgress);
 }
 
 // ---------------------------------------------------------------------------
@@ -435,9 +435,9 @@ async fn ready_tasks_excludes_blocked() {
             let req_blocked = req_blocked.clone();
             let req_free = req_free.clone();
             Box::pin(async move {
-                let blocker_id = create_entity(conn, &req_blocker).await?;
-                let blocked_id = create_entity(conn, &req_blocked).await?;
-                let _free_id = create_entity(conn, &req_free).await?;
+                let (blocker_id, _) = create_entity(conn, &req_blocker).await?;
+                let (blocked_id, _) = create_entity(conn, &req_blocked).await?;
+                let (_free_id, _) = create_entity(conn, &req_free).await?;
 
                 let rel = blocks_req(blocker_id.as_str(), blocked_id.as_str());
                 create_relation(conn, &rel).await?;
@@ -448,7 +448,7 @@ async fn ready_tasks_excludes_blocked() {
         .await
         .unwrap();
     assert_eq!(ready.len(), 2); // Blocker + Free
-    assert!(ready.iter().all(|e| e.name != "Blocked"));
+    assert!(ready.iter().all(|e| e.name() != "Blocked"));
 }
 
 #[tokio::test]
@@ -474,9 +474,9 @@ async fn ready_tasks_excludes_depends_on() {
             let req_dependent = req_dependent.clone();
             let req_free = req_free.clone();
             Box::pin(async move {
-                let dep_id = create_entity(conn, &req_dependency).await?;
-                let dependent_id = create_entity(conn, &req_dependent).await?;
-                let _free_id = create_entity(conn, &req_free).await?;
+                let (dep_id, _) = create_entity(conn, &req_dependency).await?;
+                let (dependent_id, _) = create_entity(conn, &req_dependent).await?;
+                let (_free_id, _) = create_entity(conn, &req_free).await?;
 
                 // Dependent depends_on Dependency (Dependent is blocked until Dependency closes)
                 let rel = depends_on_req(dependent_id.as_str(), dep_id.as_str());
@@ -488,7 +488,7 @@ async fn ready_tasks_excludes_depends_on() {
         .await
         .unwrap();
     assert_eq!(ready.len(), 2); // Dependency + FreeTask
-    assert!(ready.iter().all(|e| e.name != "Dependent"));
+    assert!(ready.iter().all(|e| e.name() != "Dependent"));
 }
 
 // ---------------------------------------------------------------------------
@@ -558,7 +558,7 @@ async fn agent_run_create_and_finish() {
     let store = test_db().await;
 
     // Create an entity for the task_id reference
-    let task_id = store
+    let (task_id, _) = store
         .with_transaction(|conn| {
             let req = sample_entity_req();
             Box::pin(async move { create_entity(conn, &req).await })
@@ -633,9 +633,9 @@ async fn list_relations_returns_both_directions() {
     let (id1, id2, id3) = store
         .with_transaction(|conn| {
             Box::pin(async move {
-                let id1 = create_entity(conn, &task_req("A", 1)).await?;
-                let id2 = create_entity(conn, &task_req("B", 1)).await?;
-                let id3 = create_entity(conn, &task_req("C", 1)).await?;
+                let (id1, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (id2, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (id3, _) = create_entity(conn, &task_req("C", 1)).await?;
                 // A blocks B, C blocks A
                 create_relation(conn, &blocks_req(id1.as_str(), id2.as_str())).await?;
                 create_relation(conn, &blocks_req(id3.as_str(), id1.as_str())).await?;
@@ -696,7 +696,10 @@ async fn release_nonexistent_reservation_returns_error() {
         .unwrap_err();
 
     assert!(
-        matches!(err, filament_core::error::FilamentError::ReservationNotFound { .. }),
+        matches!(
+            err,
+            filament_core::error::FilamentError::ReservationNotFound { .. }
+        ),
         "expected ReservationNotFound, got: {err:?}"
     );
 }

@@ -1,6 +1,6 @@
 mod common;
 
-use common::{filament, init_project};
+use common::{add_entity, add_task, filament, init_project};
 use predicates::prelude::*;
 
 #[test]
@@ -32,13 +32,10 @@ fn task_add_and_list() {
 fn task_show() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["task", "add", "show-me", "--summary", "A showable task"])
-        .assert()
-        .success();
+    let slug = add_task(&dir, "show-me", &["--summary", "A showable task"]);
 
     filament(&dir)
-        .args(["task", "show", "show-me"])
+        .args(["task", "show", &slug])
         .assert()
         .success()
         .stdout(
@@ -51,16 +48,13 @@ fn task_show() {
 fn task_close() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["task", "add", "closeable", "--summary", "Will be closed"])
-        .assert()
-        .success();
+    let slug = add_task(&dir, "closeable", &["--summary", "Will be closed"]);
 
     filament(&dir)
-        .args(["task", "close", "closeable"])
+        .args(["task", "close", &slug])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Closed task: closeable"));
+        .stdout(predicate::str::contains("Closed task:"));
 
     // Should no longer appear in default (open) task list
     filament(&dir)
@@ -81,16 +75,7 @@ fn task_close() {
 fn task_ready() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "task",
-            "add",
-            "unblocked-task",
-            "--summary",
-            "Should be ready",
-        ])
-        .assert()
-        .success();
+    add_task(&dir, "unblocked-task", &["--summary", "Should be ready"]);
 
     filament(&dir)
         .args(["task", "ready"])
@@ -104,29 +89,18 @@ fn task_with_blocks() {
     let dir = init_project();
 
     // Create a target task first, then create a blocker
-    filament(&dir)
-        .args([
-            "task",
-            "add",
-            "blocked-task",
-            "--summary",
-            "This will be blocked",
-        ])
-        .assert()
-        .success();
+    let blocked_slug = add_task(&dir, "blocked-task", &["--summary", "This will be blocked"]);
 
-    filament(&dir)
-        .args([
-            "task",
-            "add",
-            "blocker-task",
+    add_task(
+        &dir,
+        "blocker-task",
+        &[
             "--summary",
             "This blocks another",
             "--blocks",
-            "blocked-task",
-        ])
-        .assert()
-        .success();
+            &blocked_slug,
+        ],
+    );
 
     // blocked-task should not be ready (blocker-task blocks it)
     filament(&dir)
@@ -138,9 +112,21 @@ fn task_with_blocks() {
                 .and(predicate::str::contains("blocked-task").not()),
         );
 
-    // Close the blocker, now blocked-task becomes ready
+    // Close the blocker
+    let blocker_slug = {
+        // Find the blocker slug from the task list
+        let output = filament(&dir)
+            .args(["--json", "task", "list"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let tasks: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+        let blocker = tasks.iter().find(|t| t["name"] == "blocker-task").unwrap();
+        blocker["slug"].as_str().unwrap().to_string()
+    };
+
     filament(&dir)
-        .args(["task", "close", "blocker-task"])
+        .args(["task", "close", &blocker_slug])
         .assert()
         .success();
 
@@ -155,22 +141,16 @@ fn task_with_blocks() {
 fn task_critical_path() {
     let dir = init_project();
 
+    let slug1 = add_task(&dir, "step-1", &["--summary", "First step"]);
+    let slug2 = add_task(&dir, "step-2", &["--summary", "Second step"]);
+
     filament(&dir)
-        .args(["task", "add", "step-1", "--summary", "First step"])
-        .assert()
-        .success();
-    filament(&dir)
-        .args(["task", "add", "step-2", "--summary", "Second step"])
+        .args(["relate", &slug1, "blocks", &slug2])
         .assert()
         .success();
 
     filament(&dir)
-        .args(["relate", "step-1", "blocks", "step-2"])
-        .assert()
-        .success();
-
-    filament(&dir)
-        .args(["task", "critical-path", "step-1"])
+        .args(["task", "critical-path", &slug1])
         .assert()
         .success()
         .stdout(predicate::str::contains("step-1").and(predicate::str::contains("step-2")));
@@ -180,14 +160,11 @@ fn task_critical_path() {
 fn task_critical_path_no_deps() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["task", "add", "standalone", "--summary", "No deps"])
-        .assert()
-        .success();
+    let slug = add_task(&dir, "standalone", &["--summary", "No deps"]);
 
     // With no outgoing dependency edges, the path is just the node itself (1 step)
     filament(&dir)
-        .args(["task", "critical-path", "standalone"])
+        .args(["task", "critical-path", &slug])
         .assert()
         .success()
         .stdout(
@@ -200,58 +177,28 @@ fn task_critical_path_no_deps() {
 fn task_assign() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["task", "add", "assignable", "--summary", "Will be assigned"])
-        .assert()
-        .success();
+    let task_slug = add_task(&dir, "assignable", &["--summary", "Will be assigned"]);
+    let agent_slug = add_entity(&dir, "worker-agent", "agent", &["--summary", "An agent"]);
 
     filament(&dir)
-        .args([
-            "add",
-            "worker-agent",
-            "--type",
-            "agent",
-            "--summary",
-            "An agent",
-        ])
-        .assert()
-        .success();
-
-    filament(&dir)
-        .args(["task", "assign", "assignable", "--to", "worker-agent"])
+        .args(["task", "assign", &task_slug, "--to", &agent_slug])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Assigned assignable to worker-agent",
-        ));
+        .stdout(predicate::str::contains("Assigned assignable to"));
 }
 
 #[test]
 fn task_list_unblocked() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["task", "add", "free-task", "--summary", "Not blocked"])
-        .assert()
-        .success();
+    add_task(&dir, "free-task", &["--summary", "Not blocked"]);
+    let victim_slug = add_task(&dir, "victim-task", &["--summary", "Will be blocked"]);
 
-    filament(&dir)
-        .args(["task", "add", "victim-task", "--summary", "Will be blocked"])
-        .assert()
-        .success();
-
-    filament(&dir)
-        .args([
-            "task",
-            "add",
-            "blocker",
-            "--summary",
-            "Blocks another task",
-            "--blocks",
-            "victim-task",
-        ])
-        .assert()
-        .success();
+    add_task(
+        &dir,
+        "blocker",
+        &["--summary", "Blocks another task", "--blocks", &victim_slug],
+    );
 
     // --unblocked should show free-task and blocker, but NOT victim-task
     let output = filament(&dir)
@@ -262,14 +209,10 @@ fn task_list_unblocked() {
 
     assert!(stdout.contains("free-task"), "should contain free-task");
     assert!(stdout.contains("blocker"), "should contain blocker");
-    // victim-task appears only on its own line (blocked), not in a summary
-    let victim_lines: Vec<_> = stdout
-        .lines()
-        .filter(|line| line.starts_with("[P") && line.contains("victim-task"))
-        .collect();
+    // victim-task should not appear as a list item
     assert!(
-        victim_lines.is_empty(),
-        "victim-task should not appear as a list item, but found: {victim_lines:?}"
+        !stdout.contains("victim-task"),
+        "victim-task should not appear in unblocked list, but found in: {stdout}"
     );
 }
 
@@ -277,23 +220,17 @@ fn task_list_unblocked() {
 fn task_show_displays_relation_names() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["task", "add", "parent-task", "--summary", "Parent"])
-        .assert()
-        .success();
-    filament(&dir)
-        .args(["task", "add", "child-task", "--summary", "Child"])
-        .assert()
-        .success();
+    let parent_slug = add_task(&dir, "parent-task", &["--summary", "Parent"]);
+    let child_slug = add_task(&dir, "child-task", &["--summary", "Child"]);
 
     filament(&dir)
-        .args(["relate", "parent-task", "blocks", "child-task"])
+        .args(["relate", &parent_slug, "blocks", &child_slug])
         .assert()
         .success();
 
     // Should show entity names (not UUIDs) in relations
     filament(&dir)
-        .args(["task", "show", "parent-task"])
+        .args(["task", "show", &parent_slug])
         .assert()
         .success()
         .stdout(
@@ -307,18 +244,11 @@ fn task_show_displays_relation_names() {
 fn task_ready_json() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "task",
-            "add",
-            "json-ready",
-            "--summary",
-            "Ready task",
-            "--priority",
-            "0",
-        ])
-        .assert()
-        .success();
+    add_task(
+        &dir,
+        "json-ready",
+        &["--summary", "Ready task", "--priority", "0"],
+    );
 
     let output = filament(&dir)
         .args(["--json", "task", "ready"])
@@ -337,23 +267,17 @@ fn task_ready_json() {
 fn task_critical_path_plural_steps() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["task", "add", "cp-a", "--summary", "Step A"])
-        .assert()
-        .success();
-    filament(&dir)
-        .args(["task", "add", "cp-b", "--summary", "Step B"])
-        .assert()
-        .success();
+    let slug_a = add_task(&dir, "cp-a", &["--summary", "Step A"]);
+    let slug_b = add_task(&dir, "cp-b", &["--summary", "Step B"]);
 
     filament(&dir)
-        .args(["relate", "cp-a", "blocks", "cp-b"])
+        .args(["relate", &slug_a, "blocks", &slug_b])
         .assert()
         .success();
 
     // 2 steps should use plural "steps"
     filament(&dir)
-        .args(["task", "critical-path", "cp-a"])
+        .args(["task", "critical-path", &slug_a])
         .assert()
         .success()
         .stdout(predicate::str::contains("Critical path (2 steps)"));
@@ -363,20 +287,10 @@ fn task_critical_path_plural_steps() {
 fn task_close_rejects_non_task() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "add",
-            "my-module",
-            "--type",
-            "module",
-            "--summary",
-            "A module",
-        ])
-        .assert()
-        .success();
+    let slug = add_entity(&dir, "my-module", "module", &["--summary", "A module"]);
 
     filament(&dir)
-        .args(["task", "close", "my-module"])
+        .args(["task", "close", &slug])
         .assert()
         .failure()
         .stderr(predicate::str::contains("not a task"));
@@ -386,25 +300,11 @@ fn task_close_rejects_non_task() {
 fn task_assign_rejects_non_task() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "add",
-            "my-module",
-            "--type",
-            "module",
-            "--summary",
-            "A module",
-        ])
-        .assert()
-        .success();
+    let mod_slug = add_entity(&dir, "my-module", "module", &["--summary", "A module"]);
+    let agent_slug = add_entity(&dir, "worker", "agent", &["--summary", "An agent"]);
 
     filament(&dir)
-        .args(["add", "worker", "--type", "agent", "--summary", "An agent"])
-        .assert()
-        .success();
-
-    filament(&dir)
-        .args(["task", "assign", "my-module", "--to", "worker"])
+        .args(["task", "assign", &mod_slug, "--to", &agent_slug])
         .assert()
         .failure()
         .stderr(predicate::str::contains("not a task"));
@@ -426,33 +326,32 @@ fn task_list_status_conflicts_with_unblocked() {
 fn task_add_with_depends_on() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "task",
-            "add",
-            "dep-target",
-            "--summary",
-            "Dependency target",
-        ])
-        .assert()
-        .success();
+    let target_slug = add_task(&dir, "dep-target", &["--summary", "Dependency target"]);
 
-    filament(&dir)
-        .args([
-            "task",
-            "add",
-            "dep-source",
+    add_task(
+        &dir,
+        "dep-source",
+        &[
             "--summary",
             "Depends on target",
             "--depends-on",
-            "dep-target",
-        ])
-        .assert()
-        .success();
+            &target_slug,
+        ],
+    );
+
+    // Find the dep-source slug from the task list
+    let output = filament(&dir)
+        .args(["--json", "task", "list"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let tasks: Vec<serde_json::Value> = serde_json::from_str(&stdout).unwrap();
+    let source = tasks.iter().find(|t| t["name"] == "dep-source").unwrap();
+    let source_slug = source["slug"].as_str().unwrap();
 
     // The dependency should show in task show
     filament(&dir)
-        .args(["task", "show", "dep-source"])
+        .args(["task", "show", source_slug])
         .assert()
         .success()
         .stdout(

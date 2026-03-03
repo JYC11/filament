@@ -1,6 +1,6 @@
 mod common;
 
-use common::{filament, init_project};
+use common::{add_entity, add_task, filament, init_project};
 use predicates::prelude::*;
 use tempfile::TempDir;
 
@@ -19,17 +19,12 @@ fn no_project_error() {
 fn list_json_output() {
     let dir = init_project();
 
-    filament(&dir)
-        .args([
-            "add",
-            "json-entity",
-            "--type",
-            "module",
-            "--summary",
-            "For JSON test",
-        ])
-        .assert()
-        .success();
+    add_entity(
+        &dir,
+        "json-entity",
+        "module",
+        &["--summary", "For JSON test"],
+    );
 
     let output = filament(&dir).args(["--json", "list"]).output().unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
@@ -43,40 +38,28 @@ fn full_workflow() {
     let dir = init_project();
 
     // Add entities
-    filament(&dir)
-        .args([
-            "add",
-            "auth-module",
-            "--type",
-            "module",
-            "--summary",
-            "Authentication system",
-        ])
-        .assert()
-        .success();
+    let mod_slug = add_entity(
+        &dir,
+        "auth-module",
+        "module",
+        &["--summary", "Authentication system"],
+    );
 
-    filament(&dir)
-        .args([
-            "task",
-            "add",
-            "implement-login",
-            "--summary",
-            "Build login endpoint",
-            "--priority",
-            "1",
-        ])
-        .assert()
-        .success();
+    let task_slug = add_task(
+        &dir,
+        "implement-login",
+        &["--summary", "Build login endpoint", "--priority", "1"],
+    );
 
     // Create relation
     filament(&dir)
-        .args(["relate", "implement-login", "depends_on", "auth-module"])
+        .args(["relate", &task_slug, "depends_on", &mod_slug])
         .assert()
         .success();
 
     // Context query (from implement-login, which has outgoing depends_on edge to auth-module)
     filament(&dir)
-        .args(["context", "--around", "implement-login", "--depth", "2"])
+        .args(["context", "--around", &task_slug, "--depth", "2"])
         .assert()
         .success()
         .stdout(predicate::str::contains("auth-module"));
@@ -91,7 +74,7 @@ fn full_workflow() {
 
     // Close the dependency, then implement-login should become ready
     filament(&dir)
-        .args(["update", "auth-module", "--status", "closed"])
+        .args(["update", &mod_slug, "--status", "closed"])
         .assert()
         .success();
 
@@ -103,13 +86,13 @@ fn full_workflow() {
 
     // Close task
     filament(&dir)
-        .args(["task", "close", "implement-login"])
+        .args(["task", "close", &task_slug])
         .assert()
         .success();
 
     // Verify closed
     filament(&dir)
-        .args(["inspect", "implement-login"])
+        .args(["inspect", &task_slug])
         .assert()
         .success()
         .stdout(predicate::str::contains("Status:   closed"));

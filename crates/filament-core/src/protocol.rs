@@ -53,7 +53,7 @@ pub enum Method {
     // Entity operations
     CreateEntity,
     GetEntity,
-    GetEntityByName,
+    GetEntityBySlug,
     ListEntities,
     UpdateEntitySummary,
     UpdateEntityStatus,

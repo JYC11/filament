@@ -1,11 +1,20 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::models::{EntityType, Slug};
+
 /// All errors in the filament system.
 #[derive(Error, Debug)]
 pub enum FilamentError {
     #[error("Entity not found: {id}")]
     EntityNotFound { id: String },
+
+    #[error("Type mismatch for '{slug}': expected {expected}, got {actual}")]
+    TypeMismatch {
+        expected: EntityType,
+        actual: EntityType,
+        slug: Slug,
+    },
 
     #[error("Relation not found: {id}")]
     RelationNotFound { id: String },
@@ -46,6 +55,7 @@ impl FilamentError {
     pub const fn error_code(&self) -> &'static str {
         match self {
             Self::EntityNotFound { .. } => "ENTITY_NOT_FOUND",
+            Self::TypeMismatch { .. } => "TYPE_MISMATCH",
             Self::RelationNotFound { .. } => "RELATION_NOT_FOUND",
             Self::MessageNotFound { .. } => "MESSAGE_NOT_FOUND",
             Self::AgentRunNotFound { .. } => "AGENT_RUN_NOT_FOUND",
@@ -71,6 +81,11 @@ impl FilamentError {
             Self::EntityNotFound { id } => {
                 Some(format!("Check entity '{id}' exists with `filament list`"))
             }
+            Self::TypeMismatch {
+                expected, slug, ..
+            } => Some(format!(
+                "'{slug}' is not a {expected}. Use `filament inspect {slug}` to check its type"
+            )),
             Self::MessageNotFound { id } => {
                 Some(format!("Check message ID '{id}' with `filament message inbox <agent>`"))
             }
@@ -106,7 +121,7 @@ impl FilamentError {
             | Self::MessageNotFound { .. }
             | Self::AgentRunNotFound { .. }
             | Self::ReservationNotFound { .. } => 3,
-            Self::Validation(_) | Self::Protocol(_) => 4,
+            Self::Validation(_) | Self::Protocol(_) | Self::TypeMismatch { .. } => 4,
             Self::CycleDetected { .. } => 5,
             Self::FileReserved { .. } | Self::ReservationExpired => 6,
             Self::Io(_) => 7,

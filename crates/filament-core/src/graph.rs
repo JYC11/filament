@@ -8,8 +8,9 @@ use sqlx::{Pool, Sqlite};
 use crate::error::{FilamentError, Result};
 use crate::models::{
     Entity, EntityId, EntityStatus, EntityType, NonEmptyString, Priority, Relation, RelationType,
-    Weight,
+    Slug, Weight,
 };
+use crate::store;
 
 // ---------------------------------------------------------------------------
 // Graph node/edge data
@@ -19,6 +20,7 @@ use crate::models::{
 #[derive(Debug, Clone)]
 pub struct GraphNode {
     pub entity_id: EntityId,
+    pub slug: Slug,
     pub name: NonEmptyString,
     pub entity_type: EntityType,
     pub status: EntityStatus,
@@ -64,9 +66,7 @@ impl KnowledgeGraph {
         self.graph.clear();
         self.index.clear();
 
-        let entities = sqlx::query_as::<_, Entity>("SELECT * FROM entities")
-            .fetch_all(pool)
-            .await?;
+        let entities = store::list_entities(pool, None, None).await?;
 
         for entity in &entities {
             self.add_node_from_entity(entity);
@@ -85,20 +85,22 @@ impl KnowledgeGraph {
 
     /// Add a node from an entity (idempotent — updates if exists).
     pub fn add_node_from_entity(&mut self, entity: &Entity) -> NodeIndex {
+        let c = entity.common();
         let node = GraphNode {
-            entity_id: entity.id.clone(),
-            name: entity.name.clone(),
-            entity_type: entity.entity_type.clone(),
-            status: entity.status.clone(),
-            priority: entity.priority,
-            summary: entity.summary.clone(),
+            entity_id: c.id.clone(),
+            slug: c.slug.clone(),
+            name: c.name.clone(),
+            entity_type: entity.entity_type(),
+            status: c.status.clone(),
+            priority: c.priority,
+            summary: c.summary.clone(),
         };
 
-        if let Some(&idx) = self.index.get(entity.id.as_str()) {
+        if let Some(&idx) = self.index.get(c.id.as_str()) {
             self.graph[idx] = node;
             idx
         } else {
-            let id = entity.id.clone();
+            let id = c.id.clone();
             let idx = self.graph.add_node(node);
             self.index.insert(id, idx);
             idx

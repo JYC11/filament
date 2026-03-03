@@ -465,6 +465,115 @@ impl std::borrow::Borrow<str> for NonEmptyString {
 
 impl_sqlx_newtype!(NonEmptyString, String);
 
+/// 8-character base36 slug for stable, human-typeable entity identifiers.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(try_from = "String", into = "String")]
+pub struct Slug(String);
+
+impl Slug {
+    /// Generate a new random slug (8 chars, `[a-z0-9]`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if UTF-8 construction fails (impossible — all chars are ASCII).
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
+    pub fn new() -> Self {
+        let chars: Vec<u8> = (0..8)
+            .map(|_| {
+                let idx = fastrand_u8() % 36;
+                if idx < 10 {
+                    b'0' + idx
+                } else {
+                    b'a' + (idx - 10)
+                }
+            })
+            .collect();
+        Self(String::from_utf8(chars).expect("ASCII only"))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for Slug {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for Slug {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for Slug {
+    type Error = String;
+    fn try_from(s: String) -> std::result::Result<Self, String> {
+        let s = s.trim().to_string();
+        if s.len() != 8
+            || !s
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        {
+            return Err(format!("invalid slug: '{s}' (expected 8-char [a-z0-9])"));
+        }
+        Ok(Self(s))
+    }
+}
+
+impl From<Slug> for String {
+    fn from(s: Slug) -> Self {
+        s.0
+    }
+}
+
+impl std::str::FromStr for Slug {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Self::try_from(s.to_string())
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for Slug {
+    fn decode(
+        value: <sqlx::Sqlite as sqlx::Database>::ValueRef<'r>,
+    ) -> std::result::Result<Self, sqlx::error::BoxDynError> {
+        let s = <String as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
+        Self::try_from(s).map_err(std::convert::Into::into)
+    }
+}
+
+impl sqlx::Encode<'_, sqlx::Sqlite> for Slug {
+    fn encode_by_ref(
+        &self,
+        args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>,
+    ) -> std::result::Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        <String as sqlx::Encode<'_, sqlx::Sqlite>>::encode_by_ref(&self.0, args)
+    }
+}
+
+impl sqlx::Type<sqlx::Sqlite> for Slug {
+    fn type_info() -> <sqlx::Sqlite as sqlx::Database>::TypeInfo {
+        <String as sqlx::Type<sqlx::Sqlite>>::type_info()
+    }
+
+    fn compatible(ty: &<sqlx::Sqlite as sqlx::Database>::TypeInfo) -> bool {
+        <String as sqlx::Type<sqlx::Sqlite>>::compatible(ty)
+    }
+}
+
+impl std::borrow::Borrow<str> for Slug {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Reservation TTL in seconds. Must be > 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TtlSeconds(u32);
@@ -650,11 +759,12 @@ impl_enum_str!(EventType {
 // DB row structs
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize, JsonSchema)]
-pub struct Entity {
+/// Shared fields for all entity types.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EntityCommon {
     pub id: EntityId,
+    pub slug: Slug,
     pub name: NonEmptyString,
-    pub entity_type: EntityType,
     pub summary: String,
     pub key_facts: serde_json::Value,
     pub content_path: Option<String>,
@@ -663,6 +773,98 @@ pub struct Entity {
     pub priority: Priority,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Domain entity — an algebraic data type with one variant per entity type.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "entity_type", rename_all = "snake_case")]
+pub enum Entity {
+    Task(EntityCommon),
+    Module(EntityCommon),
+    Service(EntityCommon),
+    Agent(EntityCommon),
+    Plan(EntityCommon),
+    Doc(EntityCommon),
+}
+
+impl Entity {
+    /// Access the common fields shared by all entity types.
+    #[must_use]
+    pub const fn common(&self) -> &EntityCommon {
+        match self {
+            Self::Task(c)
+            | Self::Module(c)
+            | Self::Service(c)
+            | Self::Agent(c)
+            | Self::Plan(c)
+            | Self::Doc(c) => c,
+        }
+    }
+
+    /// Consume and return the common fields.
+    #[must_use]
+    pub fn into_common(self) -> EntityCommon {
+        match self {
+            Self::Task(c)
+            | Self::Module(c)
+            | Self::Service(c)
+            | Self::Agent(c)
+            | Self::Plan(c)
+            | Self::Doc(c) => c,
+        }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> &EntityId {
+        &self.common().id
+    }
+
+    #[must_use]
+    pub const fn slug(&self) -> &Slug {
+        &self.common().slug
+    }
+
+    #[must_use]
+    pub const fn name(&self) -> &NonEmptyString {
+        &self.common().name
+    }
+
+    #[must_use]
+    pub const fn entity_type(&self) -> EntityType {
+        match self {
+            Self::Task(_) => EntityType::Task,
+            Self::Module(_) => EntityType::Module,
+            Self::Service(_) => EntityType::Service,
+            Self::Agent(_) => EntityType::Agent,
+            Self::Plan(_) => EntityType::Plan,
+            Self::Doc(_) => EntityType::Doc,
+        }
+    }
+
+    #[must_use]
+    pub const fn status(&self) -> &EntityStatus {
+        &self.common().status
+    }
+
+    #[must_use]
+    pub const fn priority(&self) -> Priority {
+        self.common().priority
+    }
+
+    #[must_use]
+    pub fn summary(&self) -> &str {
+        &self.common().summary
+    }
+
+    #[must_use]
+    pub const fn is_task(&self) -> bool {
+        matches!(self, Self::Task(_))
+    }
+
+    #[must_use]
+    pub const fn is_agent(&self) -> bool {
+        matches!(self, Self::Agent(_))
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize, JsonSchema)]
