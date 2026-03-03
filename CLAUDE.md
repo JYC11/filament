@@ -78,7 +78,16 @@ See `.plan/gotchas.md` for the full list. Top hits:
 
 ## Current Status
 
-**Phase 1 complete + reviewed** (2026-03-03). filament-core library: models, errors, schema, store, graph, connection, protocol. Value types enforce invariants at compile time and at DB decode. `impl_enum_str!` and `impl_sqlx_newtype!` macros reduce boilerplate. 76 tests, zero warnings. Phase 2 (CLI) next.
+**Phase 2 complete** (2026-03-03). Full CLI binary with all command groups:
+- `filament init` — project initialization
+- `filament add/remove/update/inspect/read/list` — entity CRUD (top-level)
+- `filament relate/unrelate` — relation management
+- `filament task add/list/ready/show/close/assign/critical-path` — task subgroup
+- `filament context --around <name> --depth N` — graph neighborhood query
+- `filament message send/inbox/read` — inter-agent messaging
+- `filament reserve/release/reservations` — file reservation management
+- Global flags: `--json`, `-v`/`-q` verbosity, structured error output
+- 107 tests (80 core + 27 CLI integration), zero clippy warnings
 
 ## References
 

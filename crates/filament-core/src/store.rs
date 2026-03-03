@@ -76,7 +76,8 @@ pub async fn create_entity(
 ) -> Result<EntityId> {
     let id = EntityId::new();
     let now = Utc::now();
-    let key_facts = serde_json::to_string(&req.key_facts).expect("Value serialization is infallible");
+    let key_facts =
+        serde_json::to_string(&req.key_facts).expect("Value serialization is infallible");
 
     sqlx::query(
         "INSERT INTO entities (id, name, entity_type, summary, key_facts, content_path, status, priority, created_at, updated_at)
@@ -110,6 +111,21 @@ pub async fn get_entity(pool: &Pool<Sqlite>, id: &str) -> Result<Entity> {
         .ok_or_else(|| FilamentError::EntityNotFound { id: id.to_string() })
 }
 
+/// Get an entity by name.
+///
+/// # Errors
+///
+/// Returns `FilamentError::EntityNotFound` if no entity with that name exists.
+pub async fn get_entity_by_name(pool: &Pool<Sqlite>, name: &str) -> Result<Entity> {
+    sqlx::query_as::<_, Entity>("SELECT * FROM entities WHERE name = ?")
+        .bind(name)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| FilamentError::EntityNotFound {
+            id: format!("name:{name}"),
+        })
+}
+
 /// List entities, optionally filtered by type and/or status.
 ///
 /// # Errors
@@ -138,6 +154,32 @@ pub async fn list_entities(
     }
 
     Ok(q.fetch_all(pool).await?)
+}
+
+/// Update entity summary.
+///
+/// # Errors
+///
+/// Returns `FilamentError::EntityNotFound` if the entity doesn't exist.
+pub async fn update_entity_summary(
+    conn: &mut SqliteConnection,
+    id: &str,
+    summary: &str,
+) -> Result<()> {
+    let now = Utc::now();
+
+    let rows = sqlx::query("UPDATE entities SET summary = ?, updated_at = ? WHERE id = ?")
+        .bind(summary)
+        .bind(now)
+        .bind(id)
+        .execute(conn)
+        .await?
+        .rows_affected();
+
+    if rows == 0 {
+        return Err(FilamentError::EntityNotFound { id: id.to_string() });
+    }
+    Ok(())
 }
 
 /// Update entity status.
@@ -249,6 +291,35 @@ pub async fn delete_relation(conn: &mut SqliteConnection, id: &str) -> Result<()
 
     if rows == 0 {
         return Err(FilamentError::RelationNotFound { id: id.to_string() });
+    }
+    Ok(())
+}
+
+/// Delete a relation by its endpoints and type.
+///
+/// # Errors
+///
+/// Returns `FilamentError::RelationNotFound` if no matching relation exists.
+pub async fn delete_relation_by_endpoints(
+    conn: &mut SqliteConnection,
+    source_id: &str,
+    target_id: &str,
+    relation_type: &str,
+) -> Result<()> {
+    let rows = sqlx::query(
+        "DELETE FROM relations WHERE source_id = ? AND target_id = ? AND relation_type = ?",
+    )
+    .bind(source_id)
+    .bind(target_id)
+    .bind(relation_type)
+    .execute(conn)
+    .await?
+    .rows_affected();
+
+    if rows == 0 {
+        return Err(FilamentError::RelationNotFound {
+            id: format!("{source_id} -{relation_type}-> {target_id}"),
+        });
     }
     Ok(())
 }
@@ -402,6 +473,55 @@ pub async fn expire_stale_reservations(conn: &mut SqliteConnection) -> Result<u6
     Ok(rows)
 }
 
+/// List active reservations, optionally filtered by agent.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_reservations(
+    pool: &Pool<Sqlite>,
+    agent: Option<&str>,
+) -> Result<Vec<Reservation>> {
+    let now = Utc::now();
+    if let Some(agent_name) = agent {
+        Ok(sqlx::query_as::<_, Reservation>(
+            "SELECT * FROM file_reservations WHERE agent_name = ? AND expires_at > ? ORDER BY created_at ASC",
+        )
+        .bind(agent_name)
+        .bind(now)
+        .fetch_all(pool)
+        .await?)
+    } else {
+        Ok(sqlx::query_as::<_, Reservation>(
+            "SELECT * FROM file_reservations WHERE expires_at > ? ORDER BY created_at ASC",
+        )
+        .bind(now)
+        .fetch_all(pool)
+        .await?)
+    }
+}
+
+/// Find a reservation by glob pattern and agent name.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn find_reservation(
+    pool: &Pool<Sqlite>,
+    file_glob: &str,
+    agent_name: &str,
+) -> Result<Option<Reservation>> {
+    let now = Utc::now();
+    Ok(sqlx::query_as::<_, Reservation>(
+        "SELECT * FROM file_reservations WHERE file_glob = ? AND agent_name = ? AND expires_at > ?",
+    )
+    .bind(file_glob)
+    .bind(agent_name)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?)
+}
+
 // ---------------------------------------------------------------------------
 // Agent run repo functions
 // ---------------------------------------------------------------------------
@@ -448,15 +568,16 @@ pub async fn finish_agent_run(
 ) -> Result<()> {
     let now = Utc::now();
 
-    let rows =
-        sqlx::query("UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?")
-            .bind(status.as_str())
-            .bind(result_json)
-            .bind(now)
-            .bind(id)
-            .execute(conn)
-            .await?
-            .rows_affected();
+    let rows = sqlx::query(
+        "UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?",
+    )
+    .bind(status.as_str())
+    .bind(result_json)
+    .bind(now)
+    .bind(id)
+    .execute(conn)
+    .await?
+    .rows_affected();
 
     if rows == 0 {
         return Err(FilamentError::AgentRunNotFound { id: id.to_string() });
