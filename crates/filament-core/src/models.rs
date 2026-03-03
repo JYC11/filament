@@ -751,7 +751,7 @@ pub struct AgentMessage {
 // Validated DTOs (boundary validation via TryFrom)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateEntityRequest {
     pub name: String,
     pub entity_type: String,
@@ -805,7 +805,7 @@ impl TryFrom<CreateEntityRequest> for ValidCreateEntityRequest {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateRelationRequest {
     pub source_id: String,
     pub target_id: String,
@@ -875,7 +875,7 @@ impl TryFrom<CreateRelationRequest> for ValidCreateRelationRequest {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendMessageRequest {
     pub from_agent: String,
     pub to_agent: String,

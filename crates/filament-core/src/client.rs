@@ -4,7 +4,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
 
 use crate::error::{FilamentError, Result};
-use crate::models::{AgentRun, Entity, EntityId, Event, Message, Relation, Reservation};
+use crate::models::{
+    AgentRun, AgentRunId, Entity, EntityId, Event, Message, MessageId, Relation, RelationId,
+    Reservation, ReservationId,
+};
 use crate::protocol::{Method, Request, Response};
 
 /// Client for communicating with the filament daemon over a Unix socket.
@@ -106,6 +109,13 @@ impl DaemonClient {
         serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
     }
 
+    pub async fn get_entity_by_name(&mut self, name: &str) -> Result<Entity> {
+        let result = self
+            .call(Method::GetEntityByName, serde_json::json!({ "name": name }))
+            .await?;
+        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+    }
+
     pub async fn list_entities(
         &mut self,
         entity_type: Option<&str>,
@@ -118,6 +128,15 @@ impl DaemonClient {
             )
             .await?;
         serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
+    }
+
+    pub async fn update_entity_summary(&mut self, id: &str, summary: &str) -> Result<()> {
+        self.call(
+            Method::UpdateEntitySummary,
+            serde_json::json!({ "id": id, "summary": summary }),
+        )
+        .await?;
+        Ok(())
     }
 
     pub async fn update_entity_status(&mut self, id: &str, status: &str) -> Result<()> {
@@ -137,11 +156,11 @@ impl DaemonClient {
 
     // -- Relation operations --
 
-    pub async fn create_relation(&mut self, params: serde_json::Value) -> Result<String> {
+    pub async fn create_relation(&mut self, params: serde_json::Value) -> Result<RelationId> {
         let result = self.call(Method::CreateRelation, params).await?;
         let id: String = serde_json::from_value(result["id"].clone())
             .map_err(|e| FilamentError::Protocol(e.to_string()))?;
-        Ok(id)
+        Ok(RelationId::from(id))
     }
 
     pub async fn list_relations(&mut self, entity_id: &str) -> Result<Vec<Relation>> {
@@ -174,11 +193,11 @@ impl DaemonClient {
 
     // -- Message operations --
 
-    pub async fn send_message(&mut self, params: serde_json::Value) -> Result<String> {
+    pub async fn send_message(&mut self, params: serde_json::Value) -> Result<MessageId> {
         let result = self.call(Method::SendMessage, params).await?;
         let id: String = serde_json::from_value(result["id"].clone())
             .map_err(|e| FilamentError::Protocol(e.to_string()))?;
-        Ok(id)
+        Ok(MessageId::from(id))
     }
 
     pub async fn get_inbox(&mut self, agent: &str) -> Result<Vec<Message>> {
@@ -202,7 +221,7 @@ impl DaemonClient {
         file_glob: &str,
         exclusive: bool,
         ttl_secs: u32,
-    ) -> Result<String> {
+    ) -> Result<ReservationId> {
         let result = self
             .call(
                 Method::AcquireReservation,
@@ -216,7 +235,35 @@ impl DaemonClient {
             .await?;
         let id: String = serde_json::from_value(result["id"].clone())
             .map_err(|e| FilamentError::Protocol(e.to_string()))?;
-        Ok(id)
+        Ok(ReservationId::from(id))
+    }
+
+    pub async fn find_reservation(
+        &mut self,
+        file_glob: &str,
+        agent_name: &str,
+    ) -> Result<Option<Reservation>> {
+        let result = self
+            .call(
+                Method::FindReservation,
+                serde_json::json!({ "file_glob": file_glob, "agent_name": agent_name }),
+            )
+            .await?;
+        let inner = result
+            .get("reservation")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        serde_json::from_value(inner).map_err(|e| FilamentError::Protocol(e.to_string()))
+    }
+
+    pub async fn list_reservations(&mut self, agent: Option<&str>) -> Result<Vec<Reservation>> {
+        let result = self
+            .call(
+                Method::ListReservations,
+                serde_json::json!({ "agent": agent }),
+            )
+            .await?;
+        serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
     }
 
     pub async fn release_reservation(&mut self, id: &str) -> Result<()> {
@@ -241,7 +288,7 @@ impl DaemonClient {
         task_id: &str,
         agent_role: &str,
         pid: Option<i32>,
-    ) -> Result<String> {
+    ) -> Result<AgentRunId> {
         let result = self
             .call(
                 Method::CreateAgentRun,
@@ -254,7 +301,7 @@ impl DaemonClient {
             .await?;
         let id: String = serde_json::from_value(result["id"].clone())
             .map_err(|e| FilamentError::Protocol(e.to_string()))?;
-        Ok(id)
+        Ok(AgentRunId::from(id))
     }
 
     pub async fn finish_agent_run(
@@ -340,13 +387,5 @@ impl DaemonClient {
             )
             .await?;
         serde_json::from_value(result).map_err(|e| FilamentError::Protocol(e.to_string()))
-    }
-
-    // -- Reservation listing (uses list_entities pattern) --
-
-    pub fn list_reservations(&mut self, _agent: Option<&str>) -> Result<Vec<Reservation>> {
-        Err(FilamentError::Protocol(
-            "list_reservations not available over socket (no protocol method)".to_string(),
-        ))
     }
 }

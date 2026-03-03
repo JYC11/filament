@@ -182,7 +182,10 @@ async fn message_operations_via_socket() {
     assert_eq!(inbox[0].body, "Hello from the test");
 
     // Mark as read
-    client.mark_message_read(&msg_id).await.expect("mark read");
+    client
+        .mark_message_read(msg_id.as_str())
+        .await
+        .expect("mark read");
 
     // Inbox should be empty now
     let inbox = client.get_inbox("agent-b").await.expect("inbox after read");
@@ -203,7 +206,7 @@ async fn reservation_operations_via_socket() {
 
     // Release
     client
-        .release_reservation(&res_id)
+        .release_reservation(res_id.as_str())
         .await
         .expect("release reservation");
 
@@ -379,6 +382,278 @@ async fn stale_reservation_cleanup() {
         .acquire_reservation("agent-other", "test/*.rs", true, 300)
         .await
         .expect("acquire after cleanup");
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_run_operations_via_socket() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Create a task entity to associate the run with
+    let task_id = client
+        .create_entity(serde_json::json!({
+            "name": "run-target-task",
+            "entity_type": "task",
+            "summary": "Task for agent run test",
+        }))
+        .await
+        .expect("create task");
+
+    // Create agent run
+    let run_id = client
+        .create_agent_run(task_id.as_str(), "code-reviewer", Some(12345))
+        .await
+        .expect("create agent run");
+
+    // List running agents
+    let running = client.list_running_agents().await.expect("list running");
+    assert_eq!(running.len(), 1);
+    assert_eq!(running[0].agent_role, "code-reviewer");
+
+    // Finish agent run
+    client
+        .finish_agent_run(run_id.as_str(), "completed", Some(r#"{"result":"ok"}"#))
+        .await
+        .expect("finish agent run");
+
+    // List running agents — should be empty now
+    let running = client
+        .list_running_agents()
+        .await
+        .expect("list after finish");
+    assert!(running.is_empty());
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn entity_events_via_socket() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Create entity — should generate an entity_created event
+    let id = client
+        .create_entity(serde_json::json!({
+            "name": "event-test",
+            "entity_type": "task",
+            "summary": "Test events",
+        }))
+        .await
+        .expect("create entity");
+
+    // Get events — should have entity_created
+    let events = client
+        .get_entity_events(id.as_str())
+        .await
+        .expect("get events");
+    assert_eq!(events.len(), 1, "expected 1 event after create");
+    assert_eq!(events[0].event_type.as_str(), "entity_created");
+
+    // Update status — should generate a status_change event
+    client
+        .update_entity_status(id.as_str(), "in_progress")
+        .await
+        .expect("update status");
+
+    let events = client
+        .get_entity_events(id.as_str())
+        .await
+        .expect("get events after status update");
+    assert_eq!(events.len(), 2, "expected 2 events after status change");
+    assert_eq!(events[1].event_type.as_str(), "status_change");
+
+    // Verify get_entity_events for nonexistent entity returns empty
+    let events = client
+        .get_entity_events("nonexistent-id")
+        .await
+        .expect("get events for missing entity");
+    assert!(events.is_empty());
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn update_entity_status_invalid_returns_error() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    let id = client
+        .create_entity(serde_json::json!({
+            "name": "status-test",
+            "entity_type": "task",
+            "summary": "Test invalid status",
+        }))
+        .await
+        .expect("create entity");
+
+    // Try invalid status
+    let result = client
+        .update_entity_status(id.as_str(), "totally_bogus_status")
+        .await;
+    assert!(result.is_err(), "expected error for invalid status");
+
+    // Entity should still have original status
+    let entity = client.get_entity(id.as_str()).await.expect("get entity");
+    assert_eq!(entity.status.as_str(), "open");
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn delete_relation_invalid_type_returns_error() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    let id_a = client
+        .create_entity(serde_json::json!({
+            "name": "rel-err-a",
+            "entity_type": "module",
+        }))
+        .await
+        .expect("create a");
+
+    let id_b = client
+        .create_entity(serde_json::json!({
+            "name": "rel-err-b",
+            "entity_type": "module",
+        }))
+        .await
+        .expect("create b");
+
+    // Try to delete a relation with an invalid relation_type
+    let result = client
+        .delete_relation(id_a.as_str(), id_b.as_str(), "not_a_real_type")
+        .await;
+    assert!(result.is_err(), "expected error for invalid relation type");
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_entity_by_name_via_socket() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Create entity
+    let id = client
+        .create_entity(serde_json::json!({
+            "name": "named-lookup",
+            "entity_type": "module",
+            "summary": "Test get by name",
+        }))
+        .await
+        .expect("create entity");
+
+    // Look up by name
+    let entity = client
+        .get_entity_by_name("named-lookup")
+        .await
+        .expect("get by name");
+    assert_eq!(entity.id, id);
+    assert_eq!(entity.name, "named-lookup");
+
+    // Nonexistent name should error
+    let result = client.get_entity_by_name("no-such-entity").await;
+    assert!(result.is_err());
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn update_entity_summary_via_socket() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    let id = client
+        .create_entity(serde_json::json!({
+            "name": "summary-test",
+            "entity_type": "task",
+            "summary": "Original summary",
+        }))
+        .await
+        .expect("create entity");
+
+    // Update summary
+    client
+        .update_entity_summary(id.as_str(), "Updated summary text")
+        .await
+        .expect("update summary");
+
+    // Verify
+    let entity = client.get_entity(id.as_str()).await.expect("get entity");
+    assert_eq!(entity.summary, "Updated summary text");
+
+    // Update summary of nonexistent entity should error
+    let result = client.update_entity_summary("nonexistent-id", "nope").await;
+    assert!(result.is_err());
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn find_reservation_via_socket() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Acquire a reservation
+    let res_id = client
+        .acquire_reservation("agent-find", "src/*.rs", false, 300)
+        .await
+        .expect("acquire");
+
+    // Find by glob + agent
+    let found = client
+        .find_reservation("src/*.rs", "agent-find")
+        .await
+        .expect("find reservation");
+    assert!(found.is_some());
+    let found = found.unwrap();
+    assert_eq!(found.id, res_id);
+    assert_eq!(found.agent_name, "agent-find");
+    assert_eq!(found.file_glob, "src/*.rs");
+
+    // Find with wrong agent returns None
+    let not_found = client
+        .find_reservation("src/*.rs", "other-agent")
+        .await
+        .expect("find other");
+    assert!(not_found.is_none());
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn list_reservations_via_socket() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Acquire several reservations
+    client
+        .acquire_reservation("agent-a", "foo/*.rs", false, 300)
+        .await
+        .expect("acquire 1");
+    client
+        .acquire_reservation("agent-b", "bar/*.rs", true, 300)
+        .await
+        .expect("acquire 2");
+    client
+        .acquire_reservation("agent-a", "baz/*.rs", false, 300)
+        .await
+        .expect("acquire 3");
+
+    // List all
+    let all = client.list_reservations(None).await.expect("list all");
+    assert_eq!(all.len(), 3);
+
+    // List filtered by agent
+    let agent_a = client
+        .list_reservations(Some("agent-a"))
+        .await
+        .expect("list agent-a");
+    assert_eq!(agent_a.len(), 2);
+    assert!(agent_a.iter().all(|r| r.agent_name == "agent-a"));
+
+    let agent_b = client
+        .list_reservations(Some("agent-b"))
+        .await
+        .expect("list agent-b");
+    assert_eq!(agent_b.len(), 1);
+    assert_eq!(agent_b[0].agent_name, "agent-b");
+    assert!(agent_b[0].exclusive);
 
     cancel.cancel();
 }

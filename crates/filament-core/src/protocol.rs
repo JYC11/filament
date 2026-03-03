@@ -53,7 +53,9 @@ pub enum Method {
     // Entity operations
     CreateEntity,
     GetEntity,
+    GetEntityByName,
     ListEntities,
+    UpdateEntitySummary,
     UpdateEntityStatus,
     DeleteEntity,
 
@@ -69,6 +71,8 @@ pub enum Method {
 
     // Reservation operations
     AcquireReservation,
+    FindReservation,
+    ListReservations,
     ReleaseReservation,
     ExpireStaleReservations,
 

@@ -1,8 +1,6 @@
 use clap::{Args, Subcommand};
 use filament_core::error::Result;
-use filament_core::graph::KnowledgeGraph;
-use filament_core::models::{CreateEntityRequest, CreateRelationRequest, EntityId, EntityStatus};
-use filament_core::store;
+use filament_core::models::{CreateEntityRequest, CreateRelationRequest, EntityId};
 
 use super::helpers::{
     connect, output_json, print_entity_list, resolve_entity, resolve_entity_id,
@@ -112,7 +110,7 @@ struct TaskCriticalPathArgs {
 }
 
 async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
     let req = CreateEntityRequest {
         name: args.title.clone(),
@@ -122,57 +120,44 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
         content_path: None,
         priority: args.priority,
     };
-    let valid = req.try_into()?;
 
-    // Resolve relation targets before the transaction
+    // Resolve relation targets before creating the entity
     let blocks_id = if let Some(blocks_name) = &args.blocks {
-        Some(resolve_entity_id(&s, blocks_name).await?)
+        Some(resolve_entity_id(&mut conn, blocks_name).await?)
     } else {
         None
     };
     let depends_on_id = if let Some(dep_name) = &args.depends_on {
-        Some(resolve_entity_id(&s, dep_name).await?)
+        Some(resolve_entity_id(&mut conn, dep_name).await?)
     } else {
         None
     };
 
-    let id = s
-        .with_transaction(|tx| {
-            Box::pin(async move {
-                let id = store::create_entity(tx, &valid).await?;
+    let id = conn.create_entity(req).await?;
 
-                if let Some(target_id) = blocks_id {
-                    let rel_req = CreateRelationRequest {
-                        source_id: id.to_string(),
-                        target_id: target_id.to_string(),
-                        relation_type: "blocks".to_string(),
-                        weight: None,
-                        summary: None,
-                        metadata: None,
-                    };
-                    let valid_rel: filament_core::models::ValidCreateRelationRequest =
-                        rel_req.try_into()?;
-                    store::create_relation(tx, &valid_rel).await?;
-                }
+    if let Some(target_id) = blocks_id {
+        let rel_req = CreateRelationRequest {
+            source_id: id.to_string(),
+            target_id: target_id.to_string(),
+            relation_type: "blocks".to_string(),
+            weight: None,
+            summary: None,
+            metadata: None,
+        };
+        conn.create_relation(rel_req).await?;
+    }
 
-                if let Some(dep_id) = depends_on_id {
-                    let rel_req = CreateRelationRequest {
-                        source_id: id.to_string(),
-                        target_id: dep_id.to_string(),
-                        relation_type: "depends_on".to_string(),
-                        weight: None,
-                        summary: None,
-                        metadata: None,
-                    };
-                    let valid_rel: filament_core::models::ValidCreateRelationRequest =
-                        rel_req.try_into()?;
-                    store::create_relation(tx, &valid_rel).await?;
-                }
-
-                Ok(id)
-            })
-        })
-        .await?;
+    if let Some(dep_id) = depends_on_id {
+        let rel_req = CreateRelationRequest {
+            source_id: id.to_string(),
+            target_id: dep_id.to_string(),
+            relation_type: "depends_on".to_string(),
+            weight: None,
+            summary: None,
+            metadata: None,
+        };
+        conn.create_relation(rel_req).await?;
+    }
 
     if cli.json {
         output_json(&serde_json::json!({"id": id.as_str()}));
@@ -183,7 +168,7 @@ async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
 }
 
 async fn list(cli: &Cli, args: &TaskListArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
     let status_filter = match args.status.as_str() {
         "all" => None,
@@ -191,25 +176,20 @@ async fn list(cli: &Cli, args: &TaskListArgs) -> Result<()> {
     };
 
     if args.unblocked {
-        let tasks = s
-            .with_transaction(|tx| Box::pin(async move { store::ready_tasks(tx).await }))
-            .await?;
+        let tasks = conn.ready_tasks().await?;
         print_entity_list(cli, &tasks, "No tasks found.");
         return Ok(());
     }
 
-    let entities = store::list_entities(s.pool(), Some("task"), status_filter).await?;
+    let entities = conn.list_entities(Some("task"), status_filter).await?;
     print_entity_list(cli, &entities, "No tasks found.");
     Ok(())
 }
 
 async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
-    let mut graph = KnowledgeGraph::new();
-    graph.hydrate(s.pool()).await?;
-
-    let tasks = graph.ready_tasks();
+    let tasks = conn.ready_tasks().await?;
     let limited: Vec<_> = tasks.into_iter().take(args.limit).collect();
 
     if cli.json {
@@ -218,10 +198,10 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
             .map(|t| {
                 serde_json::json!({
                     "name": t.name.as_str(),
-                    "entity_id": t.entity_id.as_str(),
+                    "entity_id": t.id.as_str(),
                     "priority": t.priority.value(),
                     "status": t.status.as_str(),
-                    "summary": t.summary,
+                    "summary": t.summary.as_str(),
                 })
             })
             .collect();
@@ -241,8 +221,8 @@ async fn ready(cli: &Cli, args: &TaskReadyArgs) -> Result<()> {
 }
 
 async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
-    let s = connect().await?;
-    let entity = resolve_entity(&s, &args.name).await?;
+    let mut conn = connect().await?;
+    let entity = resolve_entity(&mut conn, &args.name).await?;
 
     if entity.entity_type.as_str() != "task" {
         return Err(filament_core::error::FilamentError::Validation(format!(
@@ -251,7 +231,7 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
         )));
     }
 
-    let relations = store::list_relations(s.pool(), entity.id.as_str()).await?;
+    let relations = conn.list_relations(entity.id.as_str()).await?;
 
     if cli.json {
         let out = serde_json::json!({
@@ -275,8 +255,8 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
                 } else {
                     &r.source_id
                 };
-                // Resolve the other entity's name for display
-                let other_name = store::get_entity(s.pool(), other_id.as_str())
+                let other_name = conn
+                    .get_entity(other_id.as_str())
                     .await
                     .map_or_else(|_| other_id.to_string(), |e| e.name.to_string());
                 if r.source_id == entity.id {
@@ -291,8 +271,8 @@ async fn show(cli: &Cli, args: &TaskShowArgs) -> Result<()> {
 }
 
 async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
-    let s = connect().await?;
-    let entity = resolve_entity(&s, &args.name).await?;
+    let mut conn = connect().await?;
+    let entity = resolve_entity(&mut conn, &args.name).await?;
 
     if entity.entity_type.as_str() != "task" {
         return Err(filament_core::error::FilamentError::Validation(format!(
@@ -301,14 +281,8 @@ async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
         )));
     }
 
-    let id = entity.id.clone();
-
-    s.with_transaction(|tx| {
-        Box::pin(
-            async move { store::update_entity_status(tx, id.as_str(), EntityStatus::Closed).await },
-        )
-    })
-    .await?;
+    conn.update_entity_status(entity.id.as_str(), "closed")
+        .await?;
 
     if cli.json {
         output_json(&serde_json::json!({"closed": entity.id.as_str()}));
@@ -319,8 +293,8 @@ async fn close(cli: &Cli, args: &TaskCloseArgs) -> Result<()> {
 }
 
 async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
-    let s = connect().await?;
-    let task = resolve_entity(&s, &args.name).await?;
+    let mut conn = connect().await?;
+    let task = resolve_entity(&mut conn, &args.name).await?;
 
     if task.entity_type.as_str() != "task" {
         return Err(filament_core::error::FilamentError::Validation(format!(
@@ -329,21 +303,18 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
         )));
     }
 
-    let agent = resolve_entity_id(&s, &args.to).await?;
-    let task_id = task.id.clone();
+    let agent = resolve_entity_id(&mut conn, &args.to).await?;
 
     let rel_req = CreateRelationRequest {
         source_id: agent.to_string(),
-        target_id: task_id.to_string(),
+        target_id: task.id.to_string(),
         relation_type: "assigned_to".to_string(),
         weight: None,
         summary: None,
         metadata: None,
     };
-    let valid = rel_req.try_into()?;
 
-    s.with_transaction(|tx| Box::pin(async move { store::create_relation(tx, &valid).await }))
-        .await?;
+    conn.create_relation(rel_req).await?;
 
     if cli.json {
         output_json(&serde_json::json!({"assigned": task.name.as_str(), "to": args.to}));
@@ -354,13 +325,10 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
 }
 
 async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
-    let s = connect().await?;
-    let entity = resolve_entity(&s, &args.name).await?;
+    let mut conn = connect().await?;
+    let entity = resolve_entity(&mut conn, &args.name).await?;
 
-    let mut graph = KnowledgeGraph::new();
-    graph.hydrate(s.pool()).await?;
-
-    let path = graph.critical_path(entity.id.as_str());
+    let path = conn.critical_path(entity.id.as_str()).await?;
 
     if cli.json {
         let items: Vec<_> = path.iter().map(EntityId::as_str).collect();
@@ -371,9 +339,10 @@ async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
         let label = if path.len() == 1 { "step" } else { "steps" };
         println!("Critical path ({} {label}):", path.len());
         for (i, id) in path.iter().enumerate() {
-            let name = graph
-                .get_node(id.as_str())
-                .map_or(id.as_str(), |n| n.name.as_str());
+            let name = conn
+                .get_entity(id.as_str())
+                .await
+                .map_or_else(|_| id.to_string(), |e| e.name.to_string());
             println!("  {}. {}", i + 1, name);
         }
     }

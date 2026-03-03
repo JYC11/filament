@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use filament_core::connection::FilamentConnection;
 use filament_core::error::{FilamentError, Result};
 use filament_core::models::{Entity, EntityId};
-use filament_core::store::{self, FilamentStore};
 
 use crate::Cli;
 
@@ -24,33 +23,30 @@ pub fn find_project_root() -> Result<PathBuf> {
     }
 }
 
-/// Connect to the project database, returning the store handle.
-pub async fn connect() -> Result<FilamentStore> {
+/// Connect to the project, returning a `FilamentConnection` (Direct or Socket).
+pub async fn connect() -> Result<FilamentConnection> {
     let root = find_project_root()?;
-    let conn = FilamentConnection::auto_detect(&root).await?;
-    match conn {
-        FilamentConnection::Direct(store) => Ok(store),
-        FilamentConnection::Socket(_) => Err(FilamentError::Validation(
-            "daemon is running — CLI direct mode unavailable. Stop the daemon with `filament stop` or use a daemon-aware client.".to_string(),
-        )),
-    }
+    FilamentConnection::auto_detect(&root).await
 }
 
 /// Resolve an entity name or ID to an `Entity`.
-pub async fn resolve_entity(store: &FilamentStore, name_or_id: &str) -> Result<Entity> {
+pub async fn resolve_entity(conn: &mut FilamentConnection, name_or_id: &str) -> Result<Entity> {
     // Try by name first (most common CLI usage)
-    match store::get_entity_by_name(store.pool(), name_or_id).await {
+    match conn.get_entity_by_name(name_or_id).await {
         Ok(entity) => return Ok(entity),
         Err(FilamentError::EntityNotFound { .. }) => {}
         Err(e) => return Err(e),
     }
     // Fall back to ID lookup
-    store::get_entity(store.pool(), name_or_id).await
+    conn.get_entity(name_or_id).await
 }
 
 /// Resolve an entity name to just the ID.
-pub async fn resolve_entity_id(store: &FilamentStore, name_or_id: &str) -> Result<EntityId> {
-    Ok(resolve_entity(store, name_or_id).await?.id)
+pub async fn resolve_entity_id(
+    conn: &mut FilamentConnection,
+    name_or_id: &str,
+) -> Result<EntityId> {
+    Ok(resolve_entity(conn, name_or_id).await?.id)
 }
 
 /// Print a value as JSON.

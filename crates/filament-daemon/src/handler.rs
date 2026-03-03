@@ -50,6 +50,12 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
             Ok(serde_json::to_value(&entity).expect("infallible"))
         }
 
+        Method::GetEntityByName => {
+            let p: NameParam = parse_params(params)?;
+            let entity = store::get_entity_by_name(state.store.pool(), &p.name).await?;
+            Ok(serde_json::to_value(&entity).expect("infallible"))
+        }
+
         Method::ListEntities => {
             let p: ListEntitiesParam = parse_params(params)?;
             let entities = store::list_entities(
@@ -59,6 +65,22 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
             )
             .await?;
             Ok(serde_json::to_value(&entities).expect("infallible"))
+        }
+
+        Method::UpdateEntitySummary => {
+            let p: UpdateSummaryParam = parse_params(params)?;
+            let id = p.id.clone();
+            let summary = p.summary.clone();
+            state
+                .store
+                .with_transaction(|conn| {
+                    let id = id.clone();
+                    let summary = summary.clone();
+                    Box::pin(async move { store::update_entity_summary(conn, &id, &summary).await })
+                })
+                .await?;
+
+            Ok(serde_json::json!({ "ok": true }))
         }
 
         Method::UpdateEntityStatus => {
@@ -135,6 +157,17 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
 
         Method::DeleteRelation => {
             let p: DeleteRelationParam = parse_params(params)?;
+
+            // Validate relation_type BEFORE the DB operation
+            let rt: filament_core::models::RelationType =
+                serde_json::from_value(serde_json::Value::String(p.relation_type.clone()))
+                    .map_err(|_| {
+                        FilamentError::Validation(format!(
+                            "invalid relation type: '{}'",
+                            p.relation_type
+                        ))
+                    })?;
+
             let source_id = p.source_id.clone();
             let target_id = p.target_id.clone();
             let relation_type = p.relation_type.clone();
@@ -157,14 +190,6 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
                 .await?;
 
             // Update in-memory graph
-            let rt: filament_core::models::RelationType =
-                serde_json::from_value(serde_json::Value::String(p.relation_type.clone()))
-                    .map_err(|_| {
-                        FilamentError::Validation(format!(
-                            "invalid relation type: '{}'",
-                            p.relation_type
-                        ))
-                    })?;
             state
                 .graph_write()
                 .await
@@ -211,7 +236,7 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
             let p: AcquireReservationParam = parse_params(params)?;
             let agent = p.agent_name.clone();
             let glob = p.file_glob.clone();
-            let exclusive = p.exclusive.unwrap_or(true);
+            let exclusive = p.exclusive.unwrap_or(false);
             let ttl = TtlSeconds::new(p.ttl_secs.unwrap_or(300))?;
             let res_id = state
                 .store
@@ -224,6 +249,20 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
                 })
                 .await?;
             Ok(serde_json::json!({ "id": res_id }))
+        }
+
+        Method::FindReservation => {
+            let p: FindReservationParam = parse_params(params)?;
+            let reservation =
+                store::find_reservation(state.store.pool(), &p.file_glob, &p.agent_name).await?;
+            Ok(serde_json::json!({ "reservation": reservation }))
+        }
+
+        Method::ListReservations => {
+            let p: ListReservationsParam = parse_params(params)?;
+            let reservations =
+                store::list_reservations(state.store.pool(), p.agent.as_deref()).await?;
+            Ok(serde_json::to_value(&reservations).expect("infallible"))
         }
 
         Method::ReleaseReservation => {
@@ -399,6 +438,28 @@ struct FinishAgentRunParam {
     id: String,
     status: String,
     result_json: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NameParam {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct UpdateSummaryParam {
+    id: String,
+    summary: String,
+}
+
+#[derive(Deserialize)]
+struct FindReservationParam {
+    file_glob: String,
+    agent_name: String,
+}
+
+#[derive(Deserialize)]
+struct ListReservationsParam {
+    agent: Option<String>,
 }
 
 #[derive(Deserialize)]

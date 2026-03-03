@@ -2,8 +2,7 @@ use std::path::Path;
 
 use clap::Args;
 use filament_core::error::Result;
-use filament_core::models::{CreateEntityRequest, EntityStatus};
-use filament_core::store;
+use filament_core::models::CreateEntityRequest;
 
 use super::helpers::{connect, output_json, print_entity_list, read_content_file, resolve_entity};
 use crate::Cli;
@@ -71,7 +70,7 @@ pub struct ListArgs {
 }
 
 pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
     let key_facts: Option<serde_json::Value> = args
         .facts
@@ -93,11 +92,7 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         priority: args.priority,
     };
 
-    let valid = req.try_into()?;
-
-    let id = s
-        .with_transaction(|tx| Box::pin(async move { store::create_entity(tx, &valid).await }))
-        .await?;
+    let id = conn.create_entity(req).await?;
 
     if cli.json {
         output_json(&serde_json::json!({"id": id.as_str()}));
@@ -108,12 +103,10 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
 }
 
 pub async fn remove(cli: &Cli, args: &RemoveArgs) -> Result<()> {
-    let s = connect().await?;
-    let entity = resolve_entity(&s, &args.name).await?;
-    let id = entity.id.clone();
+    let mut conn = connect().await?;
+    let entity = resolve_entity(&mut conn, &args.name).await?;
 
-    s.with_transaction(|tx| Box::pin(async move { store::delete_entity(tx, id.as_str()).await }))
-        .await?;
+    conn.delete_entity(entity.id.as_str()).await?;
 
     if cli.json {
         output_json(&serde_json::json!({"deleted": entity.id.as_str()}));
@@ -130,39 +123,16 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
         ));
     }
 
-    let s = connect().await?;
-    let entity = resolve_entity(&s, &args.name).await?;
+    let mut conn = connect().await?;
+    let entity = resolve_entity(&mut conn, &args.name).await?;
     let id = entity.id.clone();
 
-    // Parse status before starting the transaction so we fail fast on bad input
-    let parsed_status = args
-        .status
-        .as_deref()
-        .map(|status_str| match status_str.to_lowercase().as_str() {
-            "open" => Ok(EntityStatus::Open),
-            "closed" => Ok(EntityStatus::Closed),
-            "in_progress" => Ok(EntityStatus::InProgress),
-            "blocked" => Ok(EntityStatus::Blocked),
-            other => Err(filament_core::error::FilamentError::Validation(format!(
-                "invalid status: '{other}' (expected: open, closed, in_progress, blocked)"
-            ))),
-        })
-        .transpose()?;
-
-    let summary = args.summary.clone();
-    let tx_id = id.clone();
-    s.with_transaction(|tx| {
-        Box::pin(async move {
-            if let Some(summary) = &summary {
-                store::update_entity_summary(tx, tx_id.as_str(), summary).await?;
-            }
-            if let Some(status) = parsed_status {
-                store::update_entity_status(tx, tx_id.as_str(), status).await?;
-            }
-            Ok(())
-        })
-    })
-    .await?;
+    if let Some(summary) = &args.summary {
+        conn.update_entity_summary(id.as_str(), summary).await?;
+    }
+    if let Some(status) = &args.status {
+        conn.update_entity_status(id.as_str(), status).await?;
+    }
 
     if cli.json {
         output_json(&serde_json::json!({"updated": id.as_str()}));
@@ -173,10 +143,10 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
 }
 
 pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
-    let s = connect().await?;
-    let entity = resolve_entity(&s, &args.name).await?;
+    let mut conn = connect().await?;
+    let entity = resolve_entity(&mut conn, &args.name).await?;
 
-    let relations = store::list_relations(s.pool(), entity.id.as_str()).await?;
+    let relations = conn.list_relations(entity.id.as_str()).await?;
 
     if cli.json {
         let out = serde_json::json!({
@@ -210,7 +180,8 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
                 } else {
                     &r.source_id
                 };
-                let other_name = store::get_entity(s.pool(), other_id.as_str())
+                let other_name = conn
+                    .get_entity(other_id.as_str())
                     .await
                     .map_or_else(|_| other_id.to_string(), |e| e.name.to_string());
                 if r.source_id == entity.id {
@@ -227,8 +198,8 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
 }
 
 pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
-    let s = connect().await?;
-    let entity = resolve_entity(&s, &args.name).await?;
+    let mut conn = connect().await?;
+    let entity = resolve_entity(&mut conn, &args.name).await?;
 
     let Some(ref content_path) = entity.content_path else {
         if cli.json {
@@ -255,10 +226,11 @@ pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
 }
 
 pub async fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
-    let entities =
-        store::list_entities(s.pool(), args.r#type.as_deref(), args.status.as_deref()).await?;
+    let entities = conn
+        .list_entities(args.r#type.as_deref(), args.status.as_deref())
+        .await?;
 
     print_entity_list(cli, &entities, "No entities found.");
     Ok(())

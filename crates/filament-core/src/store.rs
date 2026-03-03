@@ -92,7 +92,17 @@ pub async fn create_entity(
     .bind(req.priority)
     .bind(now)
     .bind(now)
-    .execute(conn)
+    .execute(&mut *conn)
+    .await?;
+
+    record_event(
+        conn,
+        Some(id.as_str()),
+        EventType::EntityCreated,
+        "system",
+        None,
+        Some(req.name.as_str()),
+    )
     .await?;
 
     Ok(id)
@@ -172,13 +182,24 @@ pub async fn update_entity_summary(
         .bind(summary)
         .bind(now)
         .bind(id)
-        .execute(conn)
+        .execute(&mut *conn)
         .await?
         .rows_affected();
 
     if rows == 0 {
         return Err(FilamentError::EntityNotFound { id: id.to_string() });
     }
+
+    record_event(
+        conn,
+        Some(id),
+        EventType::EntityUpdated,
+        "system",
+        None,
+        Some(summary),
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -198,13 +219,24 @@ pub async fn update_entity_status(
         .bind(status.as_str())
         .bind(now)
         .bind(id)
-        .execute(conn)
+        .execute(&mut *conn)
         .await?
         .rows_affected();
 
     if rows == 0 {
         return Err(FilamentError::EntityNotFound { id: id.to_string() });
     }
+
+    record_event(
+        conn,
+        Some(id),
+        EventType::StatusChange,
+        "system",
+        None,
+        Some(status.as_str()),
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -216,13 +248,24 @@ pub async fn update_entity_status(
 pub async fn delete_entity(conn: &mut SqliteConnection, id: &str) -> Result<()> {
     let rows = sqlx::query("DELETE FROM entities WHERE id = ?")
         .bind(id)
-        .execute(conn)
+        .execute(&mut *conn)
         .await?
         .rows_affected();
 
     if rows == 0 {
         return Err(FilamentError::EntityNotFound { id: id.to_string() });
     }
+
+    record_event(
+        conn,
+        Some(id),
+        EventType::EntityDeleted,
+        "system",
+        None,
+        None,
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -256,7 +299,21 @@ pub async fn create_relation(
     .bind(&req.summary)
     .bind(&metadata)
     .bind(now)
-    .execute(conn)
+    .execute(&mut *conn)
+    .await?;
+
+    let detail = format!(
+        "{} -{}- {}",
+        req.source_id, req.relation_type, req.target_id
+    );
+    record_event(
+        conn,
+        Some(req.source_id.as_str()),
+        EventType::RelationCreated,
+        "system",
+        None,
+        Some(&detail),
+    )
     .await?;
 
     Ok(id)
@@ -312,7 +369,7 @@ pub async fn delete_relation_by_endpoints(
     .bind(source_id)
     .bind(target_id)
     .bind(relation_type)
-    .execute(conn)
+    .execute(&mut *conn)
     .await?
     .rows_affected();
 
@@ -321,6 +378,18 @@ pub async fn delete_relation_by_endpoints(
             id: format!("{source_id} -{relation_type}-> {target_id}"),
         });
     }
+
+    let detail = format!("{source_id} -{relation_type}-> {target_id}");
+    record_event(
+        conn,
+        Some(source_id),
+        EventType::RelationDeleted,
+        "system",
+        Some(&detail),
+        None,
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -352,7 +421,17 @@ pub async fn send_message(
     .bind(&req.in_reply_to)
     .bind(&req.task_id)
     .bind(now)
-    .execute(conn)
+    .execute(&mut *conn)
+    .await?;
+
+    record_event(
+        conn,
+        req.task_id.as_ref().map(EntityId::as_str),
+        EventType::MessageSent,
+        req.from_agent.as_str(),
+        None,
+        Some(req.to_agent.as_str()),
+    )
     .await?;
 
     Ok(id)
@@ -384,13 +463,16 @@ pub async fn mark_message_read(conn: &mut SqliteConnection, id: &str) -> Result<
     )
     .bind(now)
     .bind(id)
-    .execute(conn)
+    .execute(&mut *conn)
     .await?
     .rows_affected();
 
     if rows == 0 {
         return Err(FilamentError::MessageNotFound { id: id.to_string() });
     }
+
+    record_event(conn, None, EventType::MessageRead, "system", None, Some(id)).await?;
+
     Ok(())
 }
 
@@ -446,7 +528,17 @@ pub async fn acquire_reservation(
     .bind(exclusive)
     .bind(now)
     .bind(expires_at)
-    .execute(conn)
+    .execute(&mut *conn)
+    .await?;
+
+    record_event(
+        conn,
+        None,
+        EventType::ReservationAcquired,
+        agent_name,
+        None,
+        Some(file_glob),
+    )
     .await?;
 
     Ok(id)
@@ -460,8 +552,19 @@ pub async fn acquire_reservation(
 pub async fn release_reservation(conn: &mut SqliteConnection, id: &str) -> Result<()> {
     sqlx::query("DELETE FROM file_reservations WHERE id = ?")
         .bind(id)
-        .execute(conn)
+        .execute(&mut *conn)
         .await?;
+
+    record_event(
+        conn,
+        None,
+        EventType::ReservationReleased,
+        "system",
+        Some(id),
+        None,
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -556,7 +659,17 @@ pub async fn create_agent_run(
     .bind(agent_role)
     .bind(pid)
     .bind(now)
-    .execute(conn)
+    .execute(&mut *conn)
+    .await?;
+
+    record_event(
+        conn,
+        Some(task_id),
+        EventType::AgentStarted,
+        agent_role,
+        None,
+        Some(id.as_str()),
+    )
     .await?;
 
     Ok(id)
@@ -575,20 +688,31 @@ pub async fn finish_agent_run(
 ) -> Result<()> {
     let now = Utc::now();
 
-    let rows = sqlx::query(
-        "UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?",
-    )
-    .bind(status.as_str())
-    .bind(result_json)
-    .bind(now)
-    .bind(id)
-    .execute(conn)
-    .await?
-    .rows_affected();
+    // Look up the run to get task_id and agent_role for the event
+    let run: AgentRun = sqlx::query_as::<_, AgentRun>("SELECT * FROM agent_runs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or_else(|| FilamentError::AgentRunNotFound { id: id.to_string() })?;
 
-    if rows == 0 {
-        return Err(FilamentError::AgentRunNotFound { id: id.to_string() });
-    }
+    sqlx::query("UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?")
+        .bind(status.as_str())
+        .bind(result_json)
+        .bind(now)
+        .bind(id)
+        .execute(&mut *conn)
+        .await?;
+
+    record_event(
+        conn,
+        Some(run.task_id.as_str()),
+        EventType::AgentFinished,
+        run.agent_role.as_str(),
+        None,
+        Some(status.as_str()),
+    )
+    .await?;
+
     Ok(())
 }
 

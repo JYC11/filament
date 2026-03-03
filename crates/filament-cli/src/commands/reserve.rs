@@ -1,7 +1,6 @@
 use clap::Args;
 use filament_core::error::{FilamentError, Result};
 use filament_core::models::TtlSeconds;
-use filament_core::store;
 
 use super::helpers::{connect, output_json};
 use crate::Cli;
@@ -41,18 +40,11 @@ pub struct ReservationsArgs {
 }
 
 pub async fn reserve(cli: &Cli, args: &ReserveArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
     let ttl = TtlSeconds::new(args.ttl)?;
 
-    let agent = args.agent.clone();
-    let glob = args.glob.clone();
-    let exclusive = args.exclusive;
-    let id = s
-        .with_transaction(|tx| {
-            Box::pin(
-                async move { store::acquire_reservation(tx, &agent, &glob, exclusive, ttl).await },
-            )
-        })
+    let id = conn
+        .acquire_reservation(&args.agent, &args.glob, args.exclusive, ttl)
         .await?;
 
     if cli.json {
@@ -64,9 +56,9 @@ pub async fn reserve(cli: &Cli, args: &ReserveArgs) -> Result<()> {
 }
 
 pub async fn release(cli: &Cli, args: &ReleaseArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
-    let reservation = store::find_reservation(s.pool(), &args.glob, &args.agent).await?;
+    let reservation = conn.find_reservation(&args.glob, &args.agent).await?;
     let Some(reservation) = reservation else {
         return Err(FilamentError::Validation(format!(
             "no active reservation found for glob '{}' by agent '{}'",
@@ -74,9 +66,7 @@ pub async fn release(cli: &Cli, args: &ReleaseArgs) -> Result<()> {
         )));
     };
 
-    let id = reservation.id.to_string();
-    s.with_transaction(|tx| Box::pin(async move { store::release_reservation(tx, &id).await }))
-        .await?;
+    conn.release_reservation(reservation.id.as_str()).await?;
 
     if cli.json {
         output_json(&serde_json::json!({"released": true}));
@@ -87,20 +77,16 @@ pub async fn release(cli: &Cli, args: &ReleaseArgs) -> Result<()> {
 }
 
 pub async fn reservations(cli: &Cli, args: &ReservationsArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
     if args.clean {
-        let cleaned = s
-            .with_transaction(|tx| {
-                Box::pin(async move { store::expire_stale_reservations(tx).await })
-            })
-            .await?;
+        let cleaned = conn.expire_stale_reservations().await?;
         if !cli.json && cleaned > 0 {
             println!("Cleaned up {cleaned} expired reservation(s).");
         }
     }
 
-    let reservations = store::list_reservations(s.pool(), args.agent.as_deref()).await?;
+    let reservations = conn.list_reservations(args.agent.as_deref()).await?;
 
     if cli.json {
         output_json(&reservations);

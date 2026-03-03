@@ -53,7 +53,15 @@ pub async fn handle_connection(stream: UnixStream, state: Arc<SharedState>) {
     let (reader, mut writer) = stream.into_split();
     let mut lines = BufReader::new(reader).lines();
 
-    while let Ok(Some(line)) = lines.next_line().await {
+    loop {
+        let line = match lines.next_line().await {
+            Ok(Some(line)) => line,
+            Ok(None) => break, // client disconnected cleanly
+            Err(e) => {
+                debug!("connection read error: {e}");
+                break;
+            }
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -70,6 +78,7 @@ pub async fn handle_connection(stream: UnixStream, state: Arc<SharedState>) {
                 let json = serde_json::to_string(&err_response).expect("infallible");
                 if writer.write_all(json.as_bytes()).await.is_err()
                     || writer.write_all(b"\n").await.is_err()
+                    || writer.flush().await.is_err()
                 {
                     error!("failed to write error response");
                     return;

@@ -1,7 +1,6 @@
 use clap::Args;
 use filament_core::error::Result;
 use filament_core::models::CreateRelationRequest;
-use filament_core::store;
 
 use super::helpers::{connect, output_json, resolve_entity_id};
 use crate::Cli;
@@ -34,10 +33,10 @@ pub struct UnrelateArgs {
 }
 
 pub async fn relate(cli: &Cli, args: &RelateArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
-    let source_id = resolve_entity_id(&s, &args.source).await?;
-    let target_id = resolve_entity_id(&s, &args.target).await?;
+    let source_id = resolve_entity_id(&mut conn, &args.source).await?;
+    let target_id = resolve_entity_id(&mut conn, &args.target).await?;
 
     let req = CreateRelationRequest {
         source_id: source_id.to_string(),
@@ -47,11 +46,8 @@ pub async fn relate(cli: &Cli, args: &RelateArgs) -> Result<()> {
         summary: Some(args.summary.clone()),
         metadata: None,
     };
-    let valid = req.try_into()?;
 
-    let id = s
-        .with_transaction(|tx| Box::pin(async move { store::create_relation(tx, &valid).await }))
-        .await?;
+    let id = conn.create_relation(req).await?;
 
     if cli.json {
         output_json(&serde_json::json!({"id": id.as_str()}));
@@ -65,20 +61,13 @@ pub async fn relate(cli: &Cli, args: &RelateArgs) -> Result<()> {
 }
 
 pub async fn unrelate(cli: &Cli, args: &UnrelateArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
-    let source_id = resolve_entity_id(&s, &args.source).await?;
-    let target_id = resolve_entity_id(&s, &args.target).await?;
+    let source_id = resolve_entity_id(&mut conn, &args.source).await?;
+    let target_id = resolve_entity_id(&mut conn, &args.target).await?;
 
-    let rel_type = args.relation_type.clone();
-    let src = source_id.to_string();
-    let tgt = target_id.to_string();
-    s.with_transaction(|tx| {
-        Box::pin(
-            async move { store::delete_relation_by_endpoints(tx, &src, &tgt, &rel_type).await },
-        )
-    })
-    .await?;
+    conn.delete_relation(source_id.as_str(), target_id.as_str(), &args.relation_type)
+        .await?;
 
     if cli.json {
         output_json(&serde_json::json!({"deleted": true}));

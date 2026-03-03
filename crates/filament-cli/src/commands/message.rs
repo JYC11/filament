@@ -1,7 +1,6 @@
 use clap::{Args, Subcommand};
 use filament_core::error::Result;
 use filament_core::models::SendMessageRequest;
-use filament_core::store;
 
 use super::helpers::{connect, output_json, truncate_with_ellipsis};
 use crate::Cli;
@@ -61,7 +60,7 @@ struct MessageReadArgs {
 }
 
 async fn send(cli: &Cli, args: &MessageSendArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
     let req = SendMessageRequest {
         from_agent: args.from.clone(),
@@ -71,11 +70,8 @@ async fn send(cli: &Cli, args: &MessageSendArgs) -> Result<()> {
         in_reply_to: None,
         task_id: None,
     };
-    let valid = req.try_into()?;
 
-    let id = s
-        .with_transaction(|tx| Box::pin(async move { store::send_message(tx, &valid).await }))
-        .await?;
+    let id = conn.send_message(req).await?;
 
     if cli.json {
         output_json(&serde_json::json!({"id": id.as_str()}));
@@ -86,9 +82,9 @@ async fn send(cli: &Cli, args: &MessageSendArgs) -> Result<()> {
 }
 
 async fn inbox(cli: &Cli, args: &MessageInboxArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
-    let messages = store::get_inbox(s.pool(), &args.agent).await?;
+    let messages = conn.get_inbox(&args.agent).await?;
 
     if cli.json {
         output_json(&messages);
@@ -107,11 +103,9 @@ async fn inbox(cli: &Cli, args: &MessageInboxArgs) -> Result<()> {
 }
 
 async fn read(cli: &Cli, args: &MessageReadArgs) -> Result<()> {
-    let s = connect().await?;
+    let mut conn = connect().await?;
 
-    let id = args.id.clone();
-    s.with_transaction(|tx| Box::pin(async move { store::mark_message_read(tx, &id).await }))
-        .await?;
+    conn.mark_message_read(&args.id).await?;
 
     if cli.json {
         output_json(&serde_json::json!({"read": args.id}));

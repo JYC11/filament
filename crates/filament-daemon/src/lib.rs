@@ -44,12 +44,10 @@ pub async fn serve(config: ServeConfig, cancel: CancellationToken) -> Result<()>
 
     let state = Arc::new(SharedState::new(store, graph));
 
-    // Write PID file
+    // Bind socket first — write PID file only after successful bind
+    let listener = UnixListener::bind(&config.socket_path)?;
     let pid = std::process::id();
     std::fs::write(&config.pid_path, pid.to_string())?;
-
-    // Bind socket
-    let listener = UnixListener::bind(&config.socket_path)?;
     info!(
         socket = %config.socket_path.display(),
         pid = pid,
