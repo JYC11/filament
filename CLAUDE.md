@@ -106,7 +106,10 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 - `DaemonClient` in filament-core: typed async methods for all operations
 - `CancellationToken`-based graceful shutdown + periodic stale reservation cleanup
 - `remove_edge()` added to `KnowledgeGraph`
-- 151 tests (84 core + 58 CLI + 9 daemon integration), zero clippy warnings
+- CLI routes through daemon when running (falls back to direct DB access)
+- All 12 mutating store functions record events
+- 159 tests (84 core + 54 CLI + 21 daemon integration), zero clippy warnings
+- Multi-agent integration tests: task scheduling, reservation conflicts, messaging, full workflow
 - MCP server (3.3) deferred — tracked as `implement-mcp-server` task
 
 ## References

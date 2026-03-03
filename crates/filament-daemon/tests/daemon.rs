@@ -659,6 +659,635 @@ async fn list_reservations_via_socket() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn multi_agent_task_scheduling() {
+    let (client, cancel, tmp) = start_test_daemon().await;
+    drop(client);
+
+    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+
+    // Setup: create task graph
+    let mut setup = DaemonClient::connect(&socket_path).await.expect("connect");
+
+    let core_refactor = setup
+        .create_entity(serde_json::json!({
+            "name": "core-refactor",
+            "entity_type": "task",
+            "summary": "Refactor core module",
+            "priority": 1,
+        }))
+        .await
+        .expect("create core-refactor");
+
+    let write_tests = setup
+        .create_entity(serde_json::json!({
+            "name": "write-tests",
+            "entity_type": "task",
+            "summary": "Write tests for refactored code",
+            "priority": 2,
+        }))
+        .await
+        .expect("create write-tests");
+
+    let code_review = setup
+        .create_entity(serde_json::json!({
+            "name": "code-review",
+            "entity_type": "task",
+            "summary": "Review the refactored code",
+            "priority": 2,
+        }))
+        .await
+        .expect("create code-review");
+
+    // write-tests depends_on core-refactor
+    setup
+        .create_relation(serde_json::json!({
+            "source_id": write_tests.as_str(),
+            "target_id": core_refactor.as_str(),
+            "relation_type": "depends_on",
+        }))
+        .await
+        .expect("write-tests depends_on core-refactor");
+
+    // code-review depends_on core-refactor
+    setup
+        .create_relation(serde_json::json!({
+            "source_id": code_review.as_str(),
+            "target_id": core_refactor.as_str(),
+            "relation_type": "depends_on",
+        }))
+        .await
+        .expect("code-review depends_on core-refactor");
+
+    // Verify: only core-refactor is ready
+    let ready = setup.ready_tasks().await.expect("ready tasks initial");
+    assert_eq!(ready.len(), 1, "only core-refactor should be ready");
+    assert_eq!(ready[0].name, "core-refactor");
+
+    // Agent A: claims core-refactor, marks in_progress, then closed
+    let sp = socket_path.clone();
+    let cr_id = core_refactor.clone();
+    let agent_a = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp).await.expect("agent-a connect");
+        c.update_entity_status(cr_id.as_str(), "in_progress")
+            .await
+            .expect("agent-a in_progress");
+        c.update_entity_status(cr_id.as_str(), "closed")
+            .await
+            .expect("agent-a closed");
+    });
+
+    agent_a.await.expect("agent-a join");
+
+    // After Agent A finishes: Agent B and Agent C concurrently query ready_tasks
+    // Verify both tasks are now ready before concurrent agents claim them
+    let mut pre_check = DaemonClient::connect(&socket_path)
+        .await
+        .expect("pre-check connect");
+    let ready = pre_check
+        .ready_tasks()
+        .await
+        .expect("pre-check ready tasks");
+    assert_eq!(
+        ready.len(),
+        2,
+        "both write-tests and code-review should be ready"
+    );
+    let ready_names: Vec<&str> = ready.iter().map(|e| e.name.as_str()).collect();
+    assert!(
+        ready_names.contains(&"write-tests"),
+        "write-tests should be ready"
+    );
+    assert!(
+        ready_names.contains(&"code-review"),
+        "code-review should be ready"
+    );
+
+    // Agent B and C concurrently claim their respective tasks
+    let sp_b = socket_path.clone();
+    let wt_id = write_tests.clone();
+    let agent_b = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_b).await.expect("agent-b connect");
+        c.update_entity_status(wt_id.as_str(), "in_progress")
+            .await
+            .expect("agent-b in_progress");
+        c.update_entity_status(wt_id.as_str(), "closed")
+            .await
+            .expect("agent-b closed");
+    });
+
+    let sp_c = socket_path.clone();
+    let cr_rev_id = code_review.clone();
+    let agent_c = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_c).await.expect("agent-c connect");
+        c.update_entity_status(cr_rev_id.as_str(), "in_progress")
+            .await
+            .expect("agent-c in_progress");
+        c.update_entity_status(cr_rev_id.as_str(), "closed")
+            .await
+            .expect("agent-c closed");
+    });
+
+    agent_b.await.expect("agent-b join");
+    agent_c.await.expect("agent-c join");
+
+    // Final: verify all 3 tasks are closed
+    let mut verify = DaemonClient::connect(&socket_path)
+        .await
+        .expect("verify connect");
+    let all_tasks = verify
+        .list_entities(Some("task"), Some("closed"))
+        .await
+        .expect("list closed tasks");
+    assert_eq!(all_tasks.len(), 3, "all 3 tasks should be closed");
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_agent_reservation_conflicts() {
+    let (client, cancel, tmp) = start_test_daemon().await;
+    drop(client);
+
+    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+
+    // Agent A: acquires exclusive reservation on src/**/*.rs
+    let sp_a = socket_path.clone();
+    let agent_a_handle = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_a).await.expect("agent-a connect");
+        let res_id = c
+            .acquire_reservation("agent-a", "src/**/*.rs", true, 300)
+            .await
+            .expect("agent-a acquire exclusive");
+        res_id
+    });
+    let res_id_a = agent_a_handle.await.expect("agent-a join");
+
+    // Agent B (concurrent): tries the same glob — expects error
+    let sp_b = socket_path.clone();
+    let agent_b_conflict = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_b).await.expect("agent-b connect");
+        let result = c
+            .acquire_reservation("agent-b", "src/**/*.rs", true, 300)
+            .await;
+        assert!(
+            result.is_err(),
+            "agent-b should fail on conflicting exclusive reservation"
+        );
+    });
+
+    // Agent C (concurrent): acquires non-overlapping glob — succeeds
+    let sp_c = socket_path.clone();
+    let agent_c_handle = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_c).await.expect("agent-c connect");
+        let res_id = c
+            .acquire_reservation("agent-c", "docs/**/*.md", true, 300)
+            .await
+            .expect("agent-c acquire non-overlapping should succeed");
+        res_id
+    });
+
+    agent_b_conflict.await.expect("agent-b join");
+    let _res_id_c = agent_c_handle.await.expect("agent-c join");
+
+    // Agent A: releases reservation
+    let mut release_client = DaemonClient::connect(&socket_path)
+        .await
+        .expect("release connect");
+    release_client
+        .release_reservation(res_id_a.as_str())
+        .await
+        .expect("agent-a release");
+
+    // Agent B retries: now succeeds
+    let sp_b2 = socket_path.clone();
+    let agent_b_retry = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_b2)
+            .await
+            .expect("agent-b retry connect");
+        let _res_id = c
+            .acquire_reservation("agent-b", "src/**/*.rs", true, 300)
+            .await
+            .expect("agent-b retry should succeed after release");
+    });
+    agent_b_retry.await.expect("agent-b retry join");
+
+    // Final: list_reservations shows 2 active (agent-b + agent-c)
+    let mut verify = DaemonClient::connect(&socket_path)
+        .await
+        .expect("verify connect");
+    let all_res = verify
+        .list_reservations(None)
+        .await
+        .expect("list all reservations");
+    assert_eq!(
+        all_res.len(),
+        2,
+        "should have 2 active reservations (agent-b + agent-c)"
+    );
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_agent_messaging_workflow() {
+    let (client, cancel, tmp) = start_test_daemon().await;
+    drop(client);
+
+    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+
+    // Create a task to link messages to
+    let mut setup = DaemonClient::connect(&socket_path)
+        .await
+        .expect("setup connect");
+    let task_id = setup
+        .create_entity(serde_json::json!({
+            "name": "review-task",
+            "entity_type": "task",
+            "summary": "Task for messaging test",
+        }))
+        .await
+        .expect("create task");
+
+    // Agent A ("code-writer"): sends a question to "code-reviewer"
+    let sp_a = socket_path.clone();
+    let tid = task_id.clone();
+    let agent_a_send = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_a).await.expect("agent-a connect");
+        let msg_id = c
+            .send_message(serde_json::json!({
+                "from_agent": "code-writer",
+                "to_agent": "code-reviewer",
+                "body": "Is the error handling correct in module X?",
+                "msg_type": "question",
+                "task_id": tid.as_str(),
+            }))
+            .await
+            .expect("agent-a send question");
+        msg_id
+    });
+    let question_msg_id = agent_a_send.await.expect("agent-a send join");
+
+    // Agent B ("code-reviewer"): checks inbox, finds the question, marks read, sends reply
+    let sp_b = socket_path.clone();
+    let tid2 = task_id.clone();
+    let agent_b_reply = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_b).await.expect("agent-b connect");
+
+        // Check inbox
+        let inbox = c.get_inbox("code-reviewer").await.expect("agent-b inbox");
+        assert_eq!(inbox.len(), 1, "code-reviewer should have 1 message");
+        assert_eq!(inbox[0].body, "Is the error handling correct in module X?");
+        assert_eq!(inbox[0].msg_type.as_str(), "question");
+
+        // Mark as read
+        c.mark_message_read(inbox[0].id.as_str())
+            .await
+            .expect("agent-b mark read");
+
+        // Verify inbox is now empty
+        let inbox_after = c
+            .get_inbox("code-reviewer")
+            .await
+            .expect("agent-b inbox after read");
+        assert!(
+            inbox_after.is_empty(),
+            "inbox should be empty after mark_read"
+        );
+
+        // Send reply
+        let reply_id = c
+            .send_message(serde_json::json!({
+                "from_agent": "code-reviewer",
+                "to_agent": "code-writer",
+                "body": "Yes, looks good. Approved.",
+                "msg_type": "text",
+                "task_id": tid2.as_str(),
+            }))
+            .await
+            .expect("agent-b send reply");
+        reply_id
+    });
+    let _reply_msg_id = agent_b_reply.await.expect("agent-b reply join");
+
+    // Agent A: checks inbox, finds the reply
+    let sp_a2 = socket_path.clone();
+    let agent_a_read = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_a2)
+            .await
+            .expect("agent-a read connect");
+        let inbox = c.get_inbox("code-writer").await.expect("agent-a inbox");
+        assert_eq!(inbox.len(), 1, "code-writer should have 1 reply");
+        assert_eq!(inbox[0].body, "Yes, looks good. Approved.");
+        assert_eq!(inbox[0].from_agent, "code-reviewer");
+    });
+    agent_a_read.await.expect("agent-a read join");
+
+    // Agent C ("observer"): checks inbox — should be empty
+    let sp_c = socket_path.clone();
+    let agent_c_check = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp_c).await.expect("agent-c connect");
+        let inbox = c.get_inbox("observer").await.expect("observer inbox");
+        assert!(
+            inbox.is_empty(),
+            "observer should have no messages (targeted messaging)"
+        );
+    });
+    agent_c_check.await.expect("agent-c check join");
+
+    // Drop the unused variable
+    let _ = question_msg_id;
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn multi_agent_full_workflow() {
+    let (client, cancel, tmp) = start_test_daemon().await;
+    drop(client);
+
+    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+
+    // Setup: create linear task chain: design → implement → test → review
+    let mut setup = DaemonClient::connect(&socket_path)
+        .await
+        .expect("setup connect");
+
+    let design = setup
+        .create_entity(serde_json::json!({
+            "name": "design",
+            "entity_type": "task",
+            "summary": "Design the feature",
+            "priority": 1,
+        }))
+        .await
+        .expect("create design");
+
+    let implement = setup
+        .create_entity(serde_json::json!({
+            "name": "implement",
+            "entity_type": "task",
+            "summary": "Implement the feature",
+            "priority": 2,
+        }))
+        .await
+        .expect("create implement");
+
+    let test = setup
+        .create_entity(serde_json::json!({
+            "name": "test",
+            "entity_type": "task",
+            "summary": "Test the implementation",
+            "priority": 3,
+        }))
+        .await
+        .expect("create test");
+
+    let review = setup
+        .create_entity(serde_json::json!({
+            "name": "review",
+            "entity_type": "task",
+            "summary": "Review everything",
+            "priority": 4,
+        }))
+        .await
+        .expect("create review");
+
+    // implement depends_on design
+    setup
+        .create_relation(serde_json::json!({
+            "source_id": implement.as_str(),
+            "target_id": design.as_str(),
+            "relation_type": "depends_on",
+        }))
+        .await
+        .expect("implement depends_on design");
+
+    // test depends_on implement
+    setup
+        .create_relation(serde_json::json!({
+            "source_id": test.as_str(),
+            "target_id": implement.as_str(),
+            "relation_type": "depends_on",
+        }))
+        .await
+        .expect("test depends_on implement");
+
+    // review depends_on test
+    setup
+        .create_relation(serde_json::json!({
+            "source_id": review.as_str(),
+            "target_id": test.as_str(),
+            "relation_type": "depends_on",
+        }))
+        .await
+        .expect("review depends_on test");
+
+    // Phase 1: Only design is ready. Agent A claims it.
+    let ready = setup.ready_tasks().await.expect("ready tasks phase 1");
+    assert_eq!(ready.len(), 1, "only design should be ready");
+    assert_eq!(ready[0].name, "design");
+
+    let sp = socket_path.clone();
+    let design_id = design.clone();
+    let implement_id = implement.clone();
+    let phase1 = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp).await.expect("agent-a connect");
+
+        // Create agent run
+        let run_id = c
+            .create_agent_run(design_id.as_str(), "designer", Some(1001))
+            .await
+            .expect("create agent run for design");
+
+        // Set in_progress
+        c.update_entity_status(design_id.as_str(), "in_progress")
+            .await
+            .expect("design in_progress");
+
+        // Acquire reservation on docs
+        let res_id = c
+            .acquire_reservation("designer", "docs/**", true, 300)
+            .await
+            .expect("designer acquire docs");
+
+        // "Do work" — then finish
+        c.finish_agent_run(run_id.as_str(), "completed", Some(r#"{"design":"done"}"#))
+            .await
+            .expect("finish design run");
+
+        c.update_entity_status(design_id.as_str(), "closed")
+            .await
+            .expect("design closed");
+
+        c.release_reservation(res_id.as_str())
+            .await
+            .expect("designer release");
+
+        // Send message to implementer
+        c.send_message(serde_json::json!({
+            "from_agent": "designer",
+            "to_agent": "implementer",
+            "body": "Design is done, you can start implementing",
+            "msg_type": "text",
+            "task_id": implement_id.as_str(),
+        }))
+        .await
+        .expect("designer send message");
+    });
+    phase1.await.expect("phase 1 join");
+
+    // Phase 2: implement is now ready. Agent B reads inbox and claims it.
+    let sp2 = socket_path.clone();
+    let impl_id = implement.clone();
+    let test_id = test.clone();
+    let phase2 = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp2).await.expect("agent-b connect");
+
+        // Read inbox
+        let inbox = c.get_inbox("implementer").await.expect("implementer inbox");
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].from_agent, "designer");
+        c.mark_message_read(inbox[0].id.as_str())
+            .await
+            .expect("mark read");
+
+        // Check ready tasks
+        let ready = c.ready_tasks().await.expect("ready tasks phase 2");
+        assert_eq!(ready.len(), 1, "only implement should be ready");
+        assert_eq!(ready[0].name, "implement");
+
+        // Create run, claim task, acquire reservation
+        let run_id = c
+            .create_agent_run(impl_id.as_str(), "implementer", Some(1002))
+            .await
+            .expect("create implement run");
+        c.update_entity_status(impl_id.as_str(), "in_progress")
+            .await
+            .expect("implement in_progress");
+        let res_id = c
+            .acquire_reservation("implementer", "src/**", true, 300)
+            .await
+            .expect("implementer acquire src");
+
+        // Finish
+        c.finish_agent_run(run_id.as_str(), "completed", Some(r#"{"impl":"done"}"#))
+            .await
+            .expect("finish implement run");
+        c.update_entity_status(impl_id.as_str(), "closed")
+            .await
+            .expect("implement closed");
+        c.release_reservation(res_id.as_str())
+            .await
+            .expect("implementer release");
+
+        // Send message to tester
+        c.send_message(serde_json::json!({
+            "from_agent": "implementer",
+            "to_agent": "tester",
+            "body": "Implementation done, please test",
+            "msg_type": "text",
+            "task_id": test_id.as_str(),
+        }))
+        .await
+        .expect("implementer send message");
+    });
+    phase2.await.expect("phase 2 join");
+
+    // Phase 3: Agent C picks up test, then review (sequential)
+    let sp3 = socket_path.clone();
+    let tst_id = test.clone();
+    let rev_id = review.clone();
+    let phase3 = tokio::spawn(async move {
+        let mut c = DaemonClient::connect(&sp3).await.expect("agent-c connect");
+
+        // Test task
+        let ready = c.ready_tasks().await.expect("ready tasks phase 3a");
+        assert_eq!(ready.len(), 1, "only test should be ready");
+        assert_eq!(ready[0].name, "test");
+
+        let run_id = c
+            .create_agent_run(tst_id.as_str(), "tester", Some(1003))
+            .await
+            .expect("create test run");
+        c.update_entity_status(tst_id.as_str(), "in_progress")
+            .await
+            .expect("test in_progress");
+        c.finish_agent_run(run_id.as_str(), "completed", Some(r#"{"tests":"pass"}"#))
+            .await
+            .expect("finish test run");
+        c.update_entity_status(tst_id.as_str(), "closed")
+            .await
+            .expect("test closed");
+
+        // Review task
+        let ready = c.ready_tasks().await.expect("ready tasks phase 3b");
+        assert_eq!(ready.len(), 1, "only review should be ready");
+        assert_eq!(ready[0].name, "review");
+
+        let run_id = c
+            .create_agent_run(rev_id.as_str(), "reviewer", Some(1004))
+            .await
+            .expect("create review run");
+        c.update_entity_status(rev_id.as_str(), "in_progress")
+            .await
+            .expect("review in_progress");
+        c.finish_agent_run(
+            run_id.as_str(),
+            "completed",
+            Some(r#"{"review":"approved"}"#),
+        )
+        .await
+        .expect("finish review run");
+        c.update_entity_status(rev_id.as_str(), "closed")
+            .await
+            .expect("review closed");
+    });
+    phase3.await.expect("phase 3 join");
+
+    // Final assertions
+    let mut verify = DaemonClient::connect(&socket_path)
+        .await
+        .expect("verify connect");
+
+    // All 4 tasks closed
+    let closed = verify
+        .list_entities(Some("task"), Some("closed"))
+        .await
+        .expect("list closed");
+    assert_eq!(closed.len(), 4, "all 4 tasks should be closed");
+
+    // No running agents
+    let running = verify.list_running_agents().await.expect("list running");
+    assert!(running.is_empty(), "no agents should be running");
+
+    // Ready tasks should be empty (all closed)
+    let ready = verify.ready_tasks().await.expect("final ready tasks");
+    assert!(ready.is_empty(), "no tasks should be ready (all closed)");
+
+    // Critical path from review — always includes at least the starting node
+    let path = verify
+        .critical_path(review.as_str())
+        .await
+        .expect("critical path");
+    assert!(
+        !path.is_empty(),
+        "critical path should include at least the starting node"
+    );
+
+    // Events were recorded for design entity
+    let events = verify
+        .get_entity_events(design.as_str())
+        .await
+        .expect("design events");
+    assert!(
+        events.len() >= 2,
+        "design should have at least entity_created + status_change events"
+    );
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn invalid_request_returns_error() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
