@@ -76,6 +76,26 @@ See `.plan/gotchas.md` for the full list. Top hits:
 - `with_transaction` requires `|conn| Box::pin(async move { ... })`
 - petgraph 0.7 requires `use petgraph::visit::EdgeRef` for edge methods
 
+## Dual-Track Project Management
+
+This project uses **both** traditional `.md` files and filament's own knowledge graph. Keep both in sync.
+
+| Concern | Old way (.md files) | New way (filament CLI) |
+|---------|--------------------|-----------------------|
+| Plans & phases | `.plan/filament-v1.md`, `phase*.md` | `filament list --type plan` |
+| Tasks & deps | Manual tracking in MEMORY.md | `filament task ready`, `filament task critical-path` |
+| Architecture | `.plan/adr/*.md` | `filament list --type doc`, `filament context --around <adr>` |
+| Code structure | This file's Project Layout section | `filament list --type module`, `filament context --around <module>` |
+| What's next | MEMORY.md "Next Steps" | `filament task ready` |
+| Gotchas | `.plan/gotchas.md` | `filament inspect gotchas`, `filament read gotchas` |
+
+**Rules:**
+- When creating/closing tasks, do it in filament AND update MEMORY.md
+- When adding ADRs or plans, create both the `.md` file and a filament entity with `--content` pointing to it
+- When finishing a phase, `filament task close <phase-task>` and update Current Status below
+- `.filament/` is gitignored (local per-user DB) — `.md` files remain the committed source of truth
+- Use `filament task ready` to decide what to work on next
+
 ## Current Status
 
 **Phase 2 complete** (2026-03-03). Full CLI binary with all command groups:
@@ -87,8 +107,9 @@ See `.plan/gotchas.md` for the full list. Top hits:
 - `filament message send/inbox/read` — inter-agent messaging
 - `filament reserve/release/reservations` — file reservation management
 - Global flags: `--json`, `-v`/`-q` verbosity, structured error output
-- 140 tests (83 core + 57 CLI integration), zero clippy warnings
+- 142 tests (84 core + 58 CLI integration), zero clippy warnings
 - 3 code reviews + 2 manual QA rounds (65 test cases, results in `.qa/`)
+- Self-hosting: 26 entities + 16 relations in `.filament/` knowledge graph
 
 ## References
 
