@@ -1,0 +1,451 @@
+use filament_core::connection::FilamentConnection;
+use filament_core::schema::init_pool;
+use rmcp::model::CallToolRequestParams;
+use rmcp::{ClientHandler, ServiceExt};
+
+/// Helper: create a direct `FilamentConnection` backed by a fresh temp DB.
+async fn test_connection() -> (FilamentConnection, tempfile::TempDir) {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let db_path = tmp.path().join("test.db");
+    let pool = init_pool(db_path.to_str().unwrap())
+        .await
+        .expect("init pool");
+    let store = filament_core::store::FilamentStore::new(pool);
+    (FilamentConnection::Direct(store), tmp)
+}
+
+/// Minimal MCP client handler (needed by rmcp to create a client service).
+#[derive(Default, Clone)]
+struct TestClient;
+impl ClientHandler for TestClient {}
+
+/// Spawn MCP server on one end of a duplex, return client peer on the other.
+async fn start_mcp_client(
+    conn: FilamentConnection,
+) -> rmcp::service::RunningService<rmcp::RoleClient, TestClient> {
+    let (server_io, client_io) = tokio::io::duplex(16384);
+
+    tokio::spawn(async move {
+        let _ = filament_daemon::mcp::run_mcp_transport(conn, server_io).await;
+    });
+
+    TestClient.serve(client_io).await.expect("MCP client init")
+}
+
+/// Build a `CallToolRequestParams` from name and JSON args.
+fn call(name: &str, args: serde_json::Value) -> CallToolRequestParams {
+    CallToolRequestParams {
+        meta: None,
+        name: name.to_string().into(),
+        arguments: args.as_object().cloned(),
+        task: None,
+    }
+}
+
+/// Extract text from a `CallToolResult`.
+fn extract_text(result: &rmcp::model::CallToolResult) -> String {
+    result
+        .content
+        .iter()
+        .filter_map(|c| c.raw.as_text().map(|t| t.text.as_str()))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tools_list_returns_all_tools() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+
+    let result = client
+        .peer()
+        .list_tools(Default::default())
+        .await
+        .expect("list_tools");
+
+    assert_eq!(
+        result.tools.len(),
+        filament_daemon::mcp::TOOL_COUNT,
+        "expected {} tools, got {}: {:?}",
+        filament_daemon::mcp::TOOL_COUNT,
+        result.tools.len(),
+        result.tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+    );
+
+    // Verify expected tool names
+    let names: Vec<&str> = result.tools.iter().map(|t| t.name.as_ref()).collect();
+    for expected in &[
+        "filament_task_ready",
+        "filament_task_close",
+        "filament_context",
+        "filament_message_send",
+        "filament_message_inbox",
+        "filament_reserve",
+        "filament_release",
+        "filament_reservations",
+        "filament_inspect",
+        "filament_list",
+        "filament_add",
+        "filament_update",
+    ] {
+        assert!(names.contains(expected), "missing tool: {expected}");
+    }
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_add_and_list() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    // Add an entity
+    let result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({
+                "name": "mcp-test-task",
+                "entity_type": "task",
+                "summary": "Test task via MCP",
+            }),
+        ))
+        .await
+        .expect("call filament_add");
+
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "filament_add should succeed: {result:?}"
+    );
+    let text = extract_text(&result);
+    assert!(text.contains("Created:"), "expected 'Created:' in: {text}");
+
+    // List entities
+    let result = peer
+        .call_tool(call(
+            "filament_list",
+            serde_json::json!({ "entity_type": "task" }),
+        ))
+        .await
+        .expect("call filament_list");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("mcp-test-task"),
+        "list should contain the entity: {text}"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_inspect_entity() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    peer.call_tool(call(
+        "filament_add",
+        serde_json::json!({
+            "name": "inspect-me",
+            "entity_type": "doc",
+            "summary": "A doc to inspect",
+        }),
+    ))
+    .await
+    .expect("add");
+
+    let result = peer
+        .call_tool(call(
+            "filament_inspect",
+            serde_json::json!({ "name": "inspect-me" }),
+        ))
+        .await
+        .expect("inspect");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+    assert_eq!(parsed["entity"]["name"], "inspect-me");
+    assert_eq!(parsed["entity"]["entity_type"], "doc");
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_task_close() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    peer.call_tool(call(
+        "filament_add",
+        serde_json::json!({
+            "name": "closeable-task",
+            "entity_type": "task",
+            "summary": "Will be closed",
+        }),
+    ))
+    .await
+    .expect("add");
+
+    let result = peer
+        .call_tool(call(
+            "filament_task_close",
+            serde_json::json!({ "name": "closeable-task" }),
+        ))
+        .await
+        .expect("close");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    assert!(text.contains("Closed:"), "expected 'Closed:' in: {text}");
+
+    // Verify it's closed via inspect
+    let result = peer
+        .call_tool(call(
+            "filament_inspect",
+            serde_json::json!({ "name": "closeable-task" }),
+        ))
+        .await
+        .expect("inspect");
+
+    let text = extract_text(&result);
+    let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+    assert_eq!(parsed["entity"]["status"], "closed");
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_update_entity() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    peer.call_tool(call(
+        "filament_add",
+        serde_json::json!({
+            "name": "updatable",
+            "entity_type": "task",
+            "summary": "Before update",
+        }),
+    ))
+    .await
+    .expect("add");
+
+    let result = peer
+        .call_tool(call(
+            "filament_update",
+            serde_json::json!({
+                "name": "updatable",
+                "summary": "After update",
+                "status": "in_progress",
+            }),
+        ))
+        .await
+        .expect("update");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    assert!(text.contains("summary and status"), "got: {text}");
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_messaging() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    let result = peer
+        .call_tool(call(
+            "filament_message_send",
+            serde_json::json!({
+                "from_agent": "agent-a",
+                "to_agent": "agent-b",
+                "body": "Hello from MCP",
+            }),
+        ))
+        .await
+        .expect("send");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    assert!(text.contains("Message sent:"), "got: {text}");
+
+    let result = peer
+        .call_tool(call(
+            "filament_message_inbox",
+            serde_json::json!({ "agent": "agent-b" }),
+        ))
+        .await
+        .expect("inbox");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    assert!(
+        text.contains("Hello from MCP"),
+        "inbox should contain message: {text}"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_reservations() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    let result = peer
+        .call_tool(call(
+            "filament_reserve",
+            serde_json::json!({
+                "file_glob": "src/**/*.rs",
+                "agent": "test-agent",
+                "ttl_secs": 60,
+            }),
+        ))
+        .await
+        .expect("reserve");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    assert!(text.contains("Reservation acquired:"), "got: {text}");
+
+    let res_id = text.strip_prefix("Reservation acquired: ").unwrap();
+
+    // List reservations
+    let result = peer
+        .call_tool(call(
+            "filament_reservations",
+            serde_json::json!({ "agent": "test-agent" }),
+        ))
+        .await
+        .expect("list reservations");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    assert!(text.contains("src/**/*.rs"), "reservations: {text}");
+
+    // Release
+    let result = peer
+        .call_tool(call(
+            "filament_release",
+            serde_json::json!({ "reservation_id": res_id }),
+        ))
+        .await
+        .expect("release");
+
+    assert!(!result.is_error.unwrap_or(false));
+    assert_eq!(extract_text(&result), "Reservation released");
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_task_ready() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    for name in &["ready-a", "ready-b"] {
+        peer.call_tool(call(
+            "filament_add",
+            serde_json::json!({
+                "name": name,
+                "entity_type": "task",
+                "summary": format!("Task {name}"),
+            }),
+        ))
+        .await
+        .expect("add");
+    }
+
+    let result = peer
+        .call_tool(call(
+            "filament_task_ready",
+            serde_json::json!({ "limit": 10 }),
+        ))
+        .await
+        .expect("ready tasks");
+
+    assert!(!result.is_error.unwrap_or(false));
+    let text = extract_text(&result);
+    let tasks: Vec<serde_json::Value> = serde_json::from_str(&text).expect("valid JSON");
+    assert!(
+        tasks.len() >= 2,
+        "expected >= 2 ready tasks, got {}",
+        tasks.len()
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_error_nonexistent_entity() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    let result = peer
+        .call_tool(call(
+            "filament_inspect",
+            serde_json::json!({ "name": "does-not-exist" }),
+        ))
+        .await
+        .expect("inspect");
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "inspecting nonexistent entity should be an error"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("ENTITY_NOT_FOUND"),
+        "error should contain code: {text}"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_update_validation_error() {
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    peer.call_tool(call(
+        "filament_add",
+        serde_json::json!({
+            "name": "needs-update",
+            "entity_type": "task",
+            "summary": "Test",
+        }),
+    ))
+    .await
+    .expect("add");
+
+    // Update with neither summary nor status — should error
+    let result = peer
+        .call_tool(call(
+            "filament_update",
+            serde_json::json!({ "name": "needs-update" }),
+        ))
+        .await
+        .expect("update");
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "update with no fields should be an error"
+    );
+
+    client.cancel().await.expect("cancel");
+}

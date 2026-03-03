@@ -27,7 +27,7 @@ pub struct Cli {
     command: Commands,
 }
 
-fn init_tracing(verbose: u8, quiet: bool) {
+fn init_tracing(verbose: u8, quiet: bool, stderr_only: bool) {
     let filter = if quiet {
         "error"
     } else {
@@ -38,17 +38,29 @@ fn init_tracing(verbose: u8, quiet: bool) {
         }
     };
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::new(filter))
-        .with_target(false)
-        .without_time()
-        .init();
+    if stderr_only {
+        // MCP mode: stdout is the JSON-RPC transport — all logs must go to stderr.
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::new(filter))
+            .with_target(false)
+            .without_time()
+            .with_writer(std::io::stderr)
+            .with_ansi(false)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::new(filter))
+            .with_target(false)
+            .without_time()
+            .init();
+    }
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    init_tracing(cli.verbose, cli.quiet);
+    let mcp_mode = matches!(cli.command, Commands::Mcp);
+    init_tracing(cli.verbose, cli.quiet, mcp_mode);
 
     match cli.command.run(&cli).await {
         Ok(()) => ExitCode::SUCCESS,

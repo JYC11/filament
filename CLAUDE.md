@@ -98,9 +98,10 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**Phase 3 complete** (2026-03-03). Daemon server with NDJSON Unix socket protocol:
+**Phase 3 complete** (2026-03-03). Daemon server with NDJSON Unix socket protocol + MCP server:
 - `filament serve [--foreground]` — start daemon (background or foreground)
 - `filament stop` — stop daemon via PID file + SIGTERM
+- `filament mcp` — start MCP stdio server (for AI agent integration via Claude Code)
 - `SharedState` = `FilamentStore` + `RwLock<KnowledgeGraph>` (thread-safe shared state)
 - NDJSON protocol: all 23 `Method` variants dispatched over Unix socket
 - `DaemonClient` in filament-core: typed async methods for all operations
@@ -110,9 +111,9 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 - All 12 mutating store functions record events
 - Handler refactored: `handler/` module directory (entity, relation, message, reservation, agent_run, graph, event)
 - `store::get_relation()` added — direct lookup by ID
-- 160 tests (84 core + 54 CLI + 22 daemon integration), zero clippy warnings
+- MCP server: 12 tools via `rmcp` crate (stdio transport, `FilamentConnection::auto_detect()`)
+- 170 tests (84 core + 54 CLI + 22 daemon + 10 MCP), zero clippy warnings
 - Multi-agent integration tests: task scheduling, reservation conflicts, messaging, full workflow
-- MCP server (3.3) deferred — tracked as `implement-mcp-server` task
 
 ## References
 

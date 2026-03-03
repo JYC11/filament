@@ -14,7 +14,10 @@ tokio-util = { version = "0.7", features = ["rt"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
+rmcp = { version = "0.17.0", features = ["server", "transport-io"] }
+schemars = { version = "1.2.1", features = ["chrono04"] }
 
 [dev-dependencies]
 filament-core = { path = "../filament-core", features = ["test-utils"] }
+rmcp = { version = "0.17.0", features = ["client", "transport-io"] }
 tempfile = "3"

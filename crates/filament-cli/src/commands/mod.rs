@@ -1,6 +1,7 @@
 mod entity;
 pub mod helpers;
 mod init;
+mod mcp;
 mod message;
 mod query;
 mod relation;
@@ -63,6 +64,10 @@ pub enum Commands {
     Serve(serve::ServeArgs),
     /// Stop the filament daemon.
     Stop,
+
+    // -- MCP server --
+    /// Start the MCP stdio server (for AI agent integration).
+    Mcp,
 }
 
 impl Commands {
@@ -85,6 +90,7 @@ impl Commands {
             Self::Reservations(args) => reserve::reservations(cli, args).await,
             Self::Serve(args) => serve::serve(args).await,
             Self::Stop => serve::stop().await,
+            Self::Mcp => mcp::run().await,
         }
     }
 }
