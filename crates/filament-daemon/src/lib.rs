@@ -28,6 +28,23 @@ use server::SharedState;
 ///
 /// Returns an error if the socket cannot be bound or the database cannot be opened.
 pub async fn serve(config: ServeConfig, cancel: CancellationToken) -> Result<()> {
+    serve_with_dispatch(config, cancel, None).await
+}
+
+/// Start the daemon server with an optional explicit dispatch configuration.
+///
+/// When `dispatch_override` is `None`, dispatch config is derived from the project root
+/// and the `FILAMENT_AGENT_COMMAND` environment variable.
+/// When `Some`, the provided config is used directly (useful for testing).
+///
+/// # Errors
+///
+/// Returns an error if the socket cannot be bound or the database cannot be opened.
+pub async fn serve_with_dispatch(
+    config: ServeConfig,
+    cancel: CancellationToken,
+    dispatch_override: Option<DispatchConfig>,
+) -> Result<()> {
     // Remove stale socket file
     if config.socket_path.exists() {
         std::fs::remove_file(&config.socket_path)?;
@@ -46,13 +63,15 @@ pub async fn serve(config: ServeConfig, cancel: CancellationToken) -> Result<()>
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(&pool).await?;
 
-    // Derive project root from config (db_path parent is .filament, its parent is project root)
-    let project_root = config
-        .db_path
-        .parent()
-        .and_then(|p| p.parent())
-        .unwrap_or_else(|| std::path::Path::new("."));
-    let dispatch_config = DispatchConfig::from_project_root(project_root);
+    // Use provided dispatch config or derive from project root
+    let dispatch_config = dispatch_override.unwrap_or_else(|| {
+        let project_root = config
+            .db_path
+            .parent()
+            .and_then(|p| p.parent())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        DispatchConfig::from_project_root(project_root)
+    });
     let state = Arc::new(SharedState::with_dispatch(store, graph, dispatch_config));
 
     // Bind socket first — write PID file only after successful bind

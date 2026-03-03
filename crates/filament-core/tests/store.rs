@@ -817,6 +817,52 @@ async fn has_running_agent_false_after_finish() {
 }
 
 // ---------------------------------------------------------------------------
+// has_running_agent_conn (transaction-safe version)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn has_running_agent_conn_in_transaction() {
+    let store = test_db().await;
+
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = sample_entity_req();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // Initially no running agent — check inside a transaction
+    let result = store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move { has_running_agent_conn(conn, tid.as_str()).await })
+        })
+        .await
+        .unwrap();
+    assert!(!result);
+
+    // Create a running agent
+    store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move { create_agent_run(conn, tid.as_str(), "coder", None).await })
+        })
+        .await
+        .unwrap();
+
+    // Now should be true
+    let result = store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move { has_running_agent_conn(conn, tid.as_str()).await })
+        })
+        .await
+        .unwrap();
+    assert!(result);
+}
+
+// ---------------------------------------------------------------------------
 // list_agent_runs_by_task
 // ---------------------------------------------------------------------------
 

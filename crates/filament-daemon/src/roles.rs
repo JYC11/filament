@@ -33,7 +33,8 @@ impl AgentRole {
         }
     }
 
-    /// MCP tool whitelist for this role. Controls which filament tools the agent can use.
+    /// MCP tool whitelist for this role.
+    /// Note: not yet enforced in MCP config — reserved for future tool filtering.
     #[must_use]
     pub const fn allowed_tools(&self) -> &'static [&'static str] {
         match self {

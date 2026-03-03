@@ -101,17 +101,20 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**Phases 1–3 complete + slug/ADT refactor** (2026-03-03):
+**Phases 1–4 complete** (2026-03-03):
 - Phase 1: Core library — models, errors, schema, store, graph, connection, protocol
 - Phase 2: CLI — entity, task, relation, query, message, reserve commands (54 integration tests)
 - Phase 3: Daemon — NDJSON Unix socket server + MCP server (16 tools via `rmcp`)
+- Phase 4: Agent dispatching — dispatch engine, roles, CLI commands, death cleanup
 - `filament serve [--foreground]` / `filament stop` / `filament mcp`
+- `filament agent dispatch|dispatch-all|status|list|history`
 - CLI routes through daemon when running (falls back to direct DB access)
+- **Agent roles**: Coder, Reviewer, Planner, Dockeeper with compiled-in prompts and tool whitelists
+- **Dispatch engine**: spawn subprocess, monitor via `tokio::spawn`, parse `AgentResult` JSON, route messages, death cleanup (revert task, release reservations, refresh graph)
 - **Slug-based identity** (ADR-019): 8-char `[a-z0-9]` slugs replace name-based lookup
 - **Entity ADT** (ADR-020): `Entity` enum with typed variants, `TypeMismatch` error, compile-time type safety
-- **Typed API boundaries**: `update_entity_status` and `list_entities` take typed enums, `resolve_task`/`resolve_agent` helpers
-- 184 tests (97 core + 54 CLI + 22 daemon + 10 MCP + 1 TUI), zero clippy warnings
-- **Next**: Phase 4 — agent dispatching
+- 208 tests (105 core + 58 CLI + 35 daemon + 10 MCP), zero clippy warnings
+- **Next**: Phase 5 — TUI
 
 ## References
 

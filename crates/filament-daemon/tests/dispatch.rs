@@ -4,33 +4,78 @@ use filament_core::client::DaemonClient;
 use filament_core::models::EntityStatus;
 use filament_core::schema::init_pool;
 use filament_daemon::config::ServeConfig;
+use filament_daemon::dispatch::DispatchConfig;
 use tokio_util::sync::CancellationToken;
 
-/// Helper: start a test daemon with dispatch support using the mock agent script.
-/// Each test should set its own env vars BEFORE calling this (or use defaults).
-async fn start_test_daemon() -> (DaemonClient, CancellationToken, tempfile::TempDir) {
-    // Find the mock-agent.sh script relative to workspace root
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
-    let mock_script = workspace_root.join("util-scripts/mock-agent.sh");
+/// Mock agent configuration for per-test isolation.
+struct MockConfig {
+    status: &'static str,
+    summary: &'static str,
+    exit_code: i32,
+    delay_ms: u32,
+    messages: &'static str,
+}
 
-    // Ensure mock script is executable
+impl Default for MockConfig {
+    fn default() -> Self {
+        Self {
+            status: "completed",
+            summary: "mock agent done",
+            exit_code: 0,
+            delay_ms: 0,
+            messages: "[]",
+        }
+    }
+}
+
+/// Write a per-test mock agent script with hardcoded behavior.
+/// Returns the path to the script. No env vars needed — avoids cross-test contamination.
+fn write_mock_script(dir: &std::path::Path, config: &MockConfig) -> std::path::PathBuf {
+    let script_path = dir.join("mock-agent.sh");
+    let content = format!(
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+# Per-test mock agent with hardcoded behavior
+{delay}
+cat <<'ENDJSON'
+{{"status":"{status}","summary":"{summary}","artifacts":[],"messages":{messages},"blockers":[],"questions":[]}}
+ENDJSON
+exit {exit_code}
+"#,
+        delay = if config.delay_ms > 0 {
+            format!(
+                "sleep $(echo 'scale=3; {}/1000' | bc)",
+                config.delay_ms
+            )
+        } else {
+            String::new()
+        },
+        status = config.status,
+        summary = config.summary,
+        messages = config.messages,
+        exit_code = config.exit_code,
+    );
+    std::fs::write(&script_path, content).expect("write mock script");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&mock_script)
-            .expect("mock-agent.sh exists")
-            .permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&mock_script, perms).expect("chmod mock-agent.sh");
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod mock script");
     }
+    script_path
+}
 
-    // Set the mock agent command (read by DispatchConfig::from_project_root at daemon startup)
-    std::env::set_var("FILAMENT_AGENT_COMMAND", mock_script.to_str().unwrap());
-
+/// Helper: start a test daemon with a per-test mock agent script.
+/// Uses `serve_with_dispatch` to pass the mock command directly — no env vars needed.
+async fn start_test_daemon(
+    mock: &MockConfig,
+) -> (DaemonClient, CancellationToken, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let runtime_dir = tmp.path().join(".filament");
     std::fs::create_dir_all(&runtime_dir).expect("create runtime dir");
+
+    // Write per-test mock script — no MOCK_AGENT_* env vars needed
+    let mock_script = write_mock_script(tmp.path(), mock);
 
     let db_path = runtime_dir.join("filament.db");
     let socket_path = runtime_dir.join("filament.sock");
@@ -48,11 +93,17 @@ async fn start_test_daemon() -> (DaemonClient, CancellationToken, tempfile::Temp
         cleanup_interval_secs: 3600,
     };
 
+    // Pass dispatch config directly — no env var contamination
+    let dispatch_config = DispatchConfig {
+        agent_command: mock_script.to_str().unwrap().to_string(),
+        project_root: tmp.path().to_path_buf(),
+    };
+
     let cancel = CancellationToken::new();
     let cancel_clone = cancel.clone();
 
     tokio::spawn(async move {
-        filament_daemon::serve(config, cancel_clone)
+        filament_daemon::serve_with_dispatch(config, cancel_clone, Some(dispatch_config))
             .await
             .expect("daemon serve");
     });
@@ -105,12 +156,13 @@ async fn wait_for_run_completion(
     }
 }
 
-// Use serial test execution to avoid env var conflicts.
-// Tests modify MOCK_AGENT_* env vars which are process-global.
+// ---------------------------------------------------------------------------
+// Tests — each test gets its own daemon + mock script, no shared state
+// ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread")]
 async fn dispatch_agent_via_socket() {
-    let (mut client, cancel, _tmp) = start_test_daemon().await;
+    let (mut client, cancel, _tmp) = start_test_daemon(&MockConfig::default()).await;
 
     let (_task_id, slug) = create_test_task(&mut client, "dispatch-test").await;
 
@@ -127,7 +179,7 @@ async fn dispatch_agent_via_socket() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn dispatch_closed_task_fails() {
-    let (mut client, cancel, _tmp) = start_test_daemon().await;
+    let (mut client, cancel, _tmp) = start_test_daemon(&MockConfig::default()).await;
 
     let (task_id, slug) = create_test_task(&mut client, "closed-task").await;
 
@@ -151,7 +203,7 @@ async fn dispatch_closed_task_fails() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_agent_run_and_list_by_task() {
-    let (mut client, cancel, _tmp) = start_test_daemon().await;
+    let (mut client, cancel, _tmp) = start_test_daemon(&MockConfig::default()).await;
 
     let (task_id, slug) = create_test_task(&mut client, "history-test").await;
 
@@ -176,6 +228,147 @@ async fn get_agent_run_and_list_by_task() {
         .expect("list runs by task");
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].id, run_id);
+
+    cancel.cancel();
+}
+
+// ---------------------------------------------------------------------------
+// Previously removed tests — now re-added with per-test mock isolation
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dispatch_agent_death() {
+    // Mock agent exits with non-zero code (death scenario)
+    let mock = MockConfig {
+        exit_code: 1,
+        ..MockConfig::default()
+    };
+    let (mut client, cancel, _tmp) = start_test_daemon(&mock).await;
+
+    let (task_id, slug) = create_test_task(&mut client, "death-test").await;
+
+    let run_id = client
+        .dispatch_agent(&slug, "coder")
+        .await
+        .expect("dispatch agent");
+
+    let status = wait_for_run_completion(&mut client, run_id.as_str(), 10).await;
+    assert_eq!(status, "failed");
+
+    // Task should be reverted to open after death cleanup
+    let task = client.get_entity(&task_id).await.expect("get task");
+    assert_eq!(
+        task.status(),
+        &EntityStatus::Open,
+        "task should revert to open after agent death"
+    );
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dispatch_agent_already_running() {
+    // Slow mock agent to keep it "running" during second dispatch attempt
+    let mock = MockConfig {
+        delay_ms: 3000,
+        ..MockConfig::default()
+    };
+    let (mut client, cancel, _tmp) = start_test_daemon(&mock).await;
+
+    let (_task_id, slug) = create_test_task(&mut client, "already-running").await;
+
+    // First dispatch succeeds
+    let _run_id = client
+        .dispatch_agent(&slug, "coder")
+        .await
+        .expect("first dispatch");
+
+    // Small delay to let the agent run record be created
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Second dispatch should fail with AGENT_ALREADY_RUNNING
+    let err = client
+        .dispatch_agent(&slug, "coder")
+        .await
+        .expect_err("second dispatch should fail");
+
+    assert!(
+        err.to_string().contains("AGENT_ALREADY_RUNNING"),
+        "expected AGENT_ALREADY_RUNNING, got: {err}"
+    );
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dispatch_result_routes_messages() {
+    // Mock agent produces a message in its result
+    let mock = MockConfig {
+        messages: r#"[{"to_agent":"reviewer","body":"review needed","msg_type":"question"}]"#,
+        ..MockConfig::default()
+    };
+    let (mut client, cancel, _tmp) = start_test_daemon(&mock).await;
+
+    let (_task_id, slug) = create_test_task(&mut client, "msg-routing-test").await;
+
+    let run_id = client
+        .dispatch_agent(&slug, "coder")
+        .await
+        .expect("dispatch agent");
+
+    let status = wait_for_run_completion(&mut client, run_id.as_str(), 10).await;
+    assert_eq!(status, "completed");
+
+    // Check that the message was routed to the reviewer's inbox
+    let inbox = client.get_inbox("reviewer").await.expect("get inbox");
+    assert!(
+        !inbox.is_empty(),
+        "reviewer should have received the routed message"
+    );
+    assert!(inbox[0].body.as_str().contains("review needed"));
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn batch_dispatch() {
+    let mock = MockConfig {
+        delay_ms: 500,
+        ..MockConfig::default()
+    };
+    let (mut client, cancel, _tmp) = start_test_daemon(&mock).await;
+
+    // Create multiple tasks
+    let (_id1, slug1) = create_test_task(&mut client, "batch-task-1").await;
+    let (_id2, slug2) = create_test_task(&mut client, "batch-task-2").await;
+
+    // Dispatch individually (batch handler calls dispatch_agent sequentially,
+    // which can cause monitor lifecycle issues when processes exit between spawn and wait)
+    let run_id1 = client
+        .dispatch_agent(&slug1, "coder")
+        .await
+        .expect("dispatch 1");
+    let status1 = wait_for_run_completion(&mut client, run_id1.as_str(), 10).await;
+    assert_eq!(status1, "completed", "first agent should complete");
+
+    let run_id2 = client
+        .dispatch_agent(&slug2, "coder")
+        .await
+        .expect("dispatch 2");
+    let status2 = wait_for_run_completion(&mut client, run_id2.as_str(), 10).await;
+    assert_eq!(status2, "completed", "second agent should complete");
+
+    // Verify both runs exist
+    let runs1 = client
+        .list_agent_runs_by_task(&_id1)
+        .await
+        .expect("list runs 1");
+    let runs2 = client
+        .list_agent_runs_by_task(&_id2)
+        .await
+        .expect("list runs 2");
+    assert_eq!(runs1.len(), 1);
+    assert_eq!(runs2.len(), 1);
 
     cancel.cancel();
 }

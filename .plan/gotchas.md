@@ -78,6 +78,14 @@ Pitfalls discovered during implementation. Check here before debugging mysteriou
 - **`Cow<'static, str>.as_str()`** — requires unstable `str_as_str`; use `.as_ref()` instead.
 - **`.filament/` is gitignored** — per-user local database, not committed.
 
+## Agent dispatch
+
+- **BUG: `dispatch_batch` monitor lifecycle issue** — when `dispatch_batch` handler dispatches multiple agents sequentially in the same request, the second agent's `tokio::spawn` monitor task sometimes fails to reap the child process via `wait_with_output()`. The run stays stuck in "running" forever. Root cause appears to be a race between `tokio::process::Child` lifecycle and the async state machine — the child process exits before the monitor's `wait_with_output` is polled. **Workaround**: dispatch agents individually (not via batch). **Fix needed**: refactor `dispatch_batch` to `tokio::spawn` each `dispatch_agent` call (parallel dispatch with `JoinSet`), or ensure the monitor is spawned immediately after `cmd.spawn()` before any `.await` points. This is a P1 bug.
+- **`allowed_tools()` on `AgentRole` is not enforced** — defined and tested but never wired into MCP config generation. The system prompt tells the agent its allowed tools, but there's no server-side filtering. Reserved for future implementation.
+- **Dispatch tests use per-test mock scripts** — each test writes its own `mock-agent.sh` with hardcoded behavior. The `serve_with_dispatch()` function accepts an explicit `DispatchConfig` to avoid env var contamination between parallel tests.
+- **`FILAMENT_AGENT_COMMAND` env var is read once at daemon startup** — changing it after `DispatchConfig::from_project_root()` has no effect. Tests use `serve_with_dispatch()` instead.
+- **`AgentRole::FromStr` returns `Result<Self, String>`** (not `FilamentError`) — map at caller boundary to `FilamentError::Validation`.
+
 ## Tests
 
 - **`#![allow(dead_code)]` in `tests/common/mod.rs`** — each test binary only uses a subset of helpers.

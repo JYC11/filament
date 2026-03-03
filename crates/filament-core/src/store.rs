@@ -851,7 +851,7 @@ pub async fn list_agent_runs_by_task(pool: &Pool<Sqlite>, task_id: &str) -> Resu
     .await?)
 }
 
-/// Check if a task has a running agent.
+/// Check if a task has a running agent (pool version for read-only queries).
 ///
 /// # Errors
 ///
@@ -861,6 +861,20 @@ pub async fn has_running_agent(pool: &Pool<Sqlite>, task_id: &str) -> Result<boo
         sqlx::query_as("SELECT 1 FROM agent_runs WHERE task_id = ? AND status = 'running' LIMIT 1")
             .bind(task_id)
             .fetch_optional(pool)
+            .await?;
+    Ok(row.is_some())
+}
+
+/// Check if a task has a running agent (connection version for use inside transactions).
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn has_running_agent_conn(conn: &mut SqliteConnection, task_id: &str) -> Result<bool> {
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT 1 FROM agent_runs WHERE task_id = ? AND status = 'running' LIMIT 1")
+            .bind(task_id)
+            .fetch_optional(&mut *conn)
             .await?;
     Ok(row.is_some())
 }

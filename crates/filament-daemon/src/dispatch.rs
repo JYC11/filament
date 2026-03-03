@@ -34,6 +34,7 @@ impl DispatchConfig {
 }
 
 /// Verify pre-dispatch conditions: no running agent on this task.
+/// Note: For race-free checking, prefer the in-transaction check in `create_agent_run_checked`.
 ///
 /// # Errors
 ///
@@ -51,7 +52,7 @@ pub async fn pre_dispatch_checks(state: &Arc<SharedState>, task_id: &str) -> Res
 ///
 /// # Errors
 ///
-/// Returns `AgentDispatchFailed` if the config file cannot be written.
+/// Returns `AgentDispatchFailed` if JSON serialization fails, or `Io` if the file cannot be written.
 pub fn build_mcp_config(run_id: &AgentRunId, project_root: &Path) -> Result<PathBuf> {
     let runtime_dir = project_root.join(".filament");
     let config_path = runtime_dir.join(format!("mcp-{run_id}.json"));
@@ -119,9 +120,10 @@ pub async fn dispatch_agent(
     let task = store::resolve_task(state.store.pool(), task_slug).await?;
     let task_id = task.id.as_str().to_string();
     let task_name = task.name.to_string();
+    let task_slug_resolved = task.slug.as_str().to_string();
     let summary = task.summary.clone();
 
-    // Pre-dispatch checks (status + no running agent)
+    // Pre-dispatch checks (status)
     let status = &task.status;
     if !matches!(status, EntityStatus::Open | EntityStatus::InProgress) {
         return Err(FilamentError::AgentDispatchFailed {
@@ -130,7 +132,6 @@ pub async fn dispatch_agent(
             ),
         });
     }
-    pre_dispatch_checks(state, &task_id).await?;
 
     // Build MCP config
     let mcp_config_path = build_mcp_config(&AgentRunId::new(), &config.project_root)?;
@@ -164,14 +165,22 @@ pub async fn dispatch_agent(
     #[allow(clippy::cast_possible_wrap)]
     let pid = child.id().map(|p| p as i32);
 
-    // Record the run in the database
-    let agent_name = format!("{}-{task_slug}", role.name());
+    // Atomically check for running agent + create run in a single transaction
+    let agent_name = format!("{}-{task_slug_resolved}", role.name());
     let run_id = state
         .store
         .with_transaction(|conn| {
             let task_id = task_id.clone();
             let role_name = role.name().to_string();
-            Box::pin(async move { store::create_agent_run(conn, &task_id, &role_name, pid).await })
+            Box::pin(async move {
+                // Check for running agent inside the transaction to prevent TOCTOU races
+                if store::has_running_agent_conn(conn, &task_id).await? {
+                    return Err(FilamentError::AgentAlreadyRunning {
+                        task_id: task_id.clone(),
+                    });
+                }
+                store::create_agent_run(conn, &task_id, &role_name, pid).await
+            })
         })
         .await?;
 
@@ -381,8 +390,11 @@ async fn route_result(
         }
     }
 
-    // Release reservations on completion or failure
-    if matches!(result.status, AgentStatus::Completed | AgentStatus::Failed) {
+    // Release reservations when agent exits (completed, failed, or blocked — subprocess is gone)
+    if matches!(
+        result.status,
+        AgentStatus::Completed | AgentStatus::Failed | AgentStatus::Blocked
+    ) {
         if let Err(e) = state
             .store
             .with_transaction(|conn| {
