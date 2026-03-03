@@ -81,7 +81,23 @@ fn full_workflow() {
         .success()
         .stdout(predicate::str::contains("auth-module"));
 
-    // Task ready (implement-login depends on auth-module, but depends_on doesn't block)
+    // Task ready: implement-login depends_on auth-module (open), so it's blocked
+    let output = filament(&dir)
+        .args(["task", "ready"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        !stdout.contains("implement-login"),
+        "implement-login should be blocked by depends_on auth-module"
+    );
+
+    // Close the dependency, then implement-login should become ready
+    filament(&dir)
+        .args(["update", "auth-module", "--status", "closed"])
+        .assert()
+        .success();
+
     filament(&dir)
         .args(["task", "ready"])
         .assert()

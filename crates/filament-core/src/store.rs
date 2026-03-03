@@ -672,18 +672,26 @@ pub async fn rebuild_blocked_cache(conn: &mut SqliteConnection) -> Result<()> {
         .execute(&mut *conn)
         .await?;
 
-    // Find all entities that have a "blocks" relation pointing at them where the blocker is not closed
-    // i.e., entity X is blocked if there exists a relation (Y blocks X) and Y.status != 'closed'
+    // An entity is blocked if:
+    //   1. Someone blocks it: relation (Y blocks X) and Y.status != 'closed'
+    //   2. It depends on something: relation (X depends_on Y) and Y.status != 'closed'
     sqlx::query(
         "INSERT INTO blocked_entities_cache (entity_id, blocker_ids_json, updated_at)
-         SELECT r.target_id,
-                json_group_array(r.source_id),
-                ?
-         FROM relations r
-         JOIN entities e ON e.id = r.source_id
-         WHERE r.relation_type = 'blocks'
-           AND e.status != 'closed'
-         GROUP BY r.target_id",
+         SELECT blocked_id, json_group_array(blocker_id), ?
+         FROM (
+             -- Y blocks X: X is blocked by Y
+             SELECT r.target_id AS blocked_id, r.source_id AS blocker_id
+             FROM relations r
+             JOIN entities e ON e.id = r.source_id
+             WHERE r.relation_type = 'blocks' AND e.status != 'closed'
+             UNION ALL
+             -- X depends_on Y: X is blocked by Y
+             SELECT r.source_id AS blocked_id, r.target_id AS blocker_id
+             FROM relations r
+             JOIN entities e ON e.id = r.target_id
+             WHERE r.relation_type = 'depends_on' AND e.status != 'closed'
+         )
+         GROUP BY blocked_id",
     )
     .bind(now)
     .execute(conn)

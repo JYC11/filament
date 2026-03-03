@@ -1,6 +1,6 @@
 mod common;
 
-use common::{blocks_req, sample_entity_req, sample_message_req, task_req, test_db};
+use common::{blocks_req, depends_on_req, sample_entity_req, sample_message_req, task_req, test_db};
 use filament_core::error::FilamentError;
 use filament_core::models::*;
 use filament_core::store::*;
@@ -447,6 +447,46 @@ async fn ready_tasks_excludes_blocked() {
         .unwrap();
     assert_eq!(ready.len(), 2); // Blocker + Free
     assert!(ready.iter().all(|e| e.name != "Blocked"));
+}
+
+#[tokio::test]
+#[allow(clippy::similar_names)]
+async fn ready_tasks_excludes_depends_on() {
+    let store = test_db().await;
+
+    let mut req_dependency = sample_entity_req();
+    req_dependency.name = NonEmptyString::new("Dependency").unwrap();
+    req_dependency.priority = Priority::new(1).unwrap();
+
+    let mut req_dependent = sample_entity_req();
+    req_dependent.name = NonEmptyString::new("Dependent").unwrap();
+    req_dependent.priority = Priority::new(0).unwrap();
+
+    let mut req_free = sample_entity_req();
+    req_free.name = NonEmptyString::new("FreeTask").unwrap();
+    req_free.priority = Priority::new(0).unwrap();
+
+    let ready = store
+        .with_transaction(|conn| {
+            let req_dependency = req_dependency.clone();
+            let req_dependent = req_dependent.clone();
+            let req_free = req_free.clone();
+            Box::pin(async move {
+                let dep_id = create_entity(conn, &req_dependency).await?;
+                let dependent_id = create_entity(conn, &req_dependent).await?;
+                let _free_id = create_entity(conn, &req_free).await?;
+
+                // Dependent depends_on Dependency (Dependent is blocked until Dependency closes)
+                let rel = depends_on_req(dependent_id.as_str(), dep_id.as_str());
+                create_relation(conn, &rel).await?;
+
+                ready_tasks(conn).await
+            })
+        })
+        .await
+        .unwrap();
+    assert_eq!(ready.len(), 2); // Dependency + FreeTask
+    assert!(ready.iter().all(|e| e.name != "Dependent"));
 }
 
 // ---------------------------------------------------------------------------

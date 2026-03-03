@@ -215,15 +215,22 @@ impl KnowledgeGraph {
                 if node.status != EntityStatus::Open && node.status != EntityStatus::InProgress {
                     return None;
                 }
-                // Check if any incoming "blocks" edge comes from a non-closed node
-                let is_blocked = self
+                // Check if blocked: incoming "blocks" or outgoing "depends_on" from non-closed node
+                let blocked_by_blocks = self
                     .graph
                     .edges_directed(idx, Direction::Incoming)
                     .any(|edge| {
                         edge.weight().relation_type == RelationType::Blocks
                             && self.graph[edge.source()].status != EntityStatus::Closed
                     });
-                if is_blocked {
+                let blocked_by_depends = self
+                    .graph
+                    .edges_directed(idx, Direction::Outgoing)
+                    .any(|edge| {
+                        edge.weight().relation_type == RelationType::DependsOn
+                            && self.graph[edge.target()].status != EntityStatus::Closed
+                    });
+                if blocked_by_blocks || blocked_by_depends {
                     return None;
                 }
                 Some(node)

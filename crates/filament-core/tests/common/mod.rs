@@ -46,6 +46,17 @@ pub fn blocks_req(source: &str, target: &str) -> ValidCreateRelationRequest {
     }
 }
 
+pub fn depends_on_req(source: &str, target: &str) -> ValidCreateRelationRequest {
+    ValidCreateRelationRequest {
+        source_id: EntityId::from(source),
+        target_id: EntityId::from(target),
+        relation_type: RelationType::DependsOn,
+        weight: Weight::DEFAULT,
+        summary: String::new(),
+        metadata: serde_json::json!({}),
+    }
+}
+
 pub fn sample_message_req() -> ValidSendMessageRequest {
     ValidSendMessageRequest {
         from_agent: NonEmptyString::new("agent-a").unwrap(),
