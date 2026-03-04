@@ -1144,3 +1144,106 @@ async fn batch_get_entities_missing_ids_are_omitted() {
     assert_eq!(map.len(), 1);
     assert_eq!(map[id_a.as_str()].name().as_str(), "Exists");
 }
+
+// ---------------------------------------------------------------------------
+// Regression: duplicate relation returns validation error (not raw DB error)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_duplicate_relation_returns_validation_error() {
+    let store = test_db().await;
+    let req1 = task_req("Source", 1);
+    let req2 = task_req("Target", 1);
+
+    let (id1, id2) = store
+        .with_transaction(|conn| {
+            let req1 = req1.clone();
+            let req2 = req2.clone();
+            Box::pin(async move {
+                let (id1, _) = create_entity(conn, &req1).await?;
+                let (id2, _) = create_entity(conn, &req2).await?;
+                Ok((id1, id2))
+            })
+        })
+        .await
+        .unwrap();
+
+    // First relation succeeds
+    store
+        .with_transaction(|conn| {
+            let rel = depends_on_req(id1.as_str(), id2.as_str());
+            Box::pin(async move { create_relation(conn, &rel).await.map(|_| ()) })
+        })
+        .await
+        .unwrap();
+
+    // Duplicate relation returns Validation error, not Database error
+    let result = store
+        .with_transaction(|conn| {
+            let rel = depends_on_req(id1.as_str(), id2.as_str());
+            Box::pin(async move { create_relation(conn, &rel).await.map(|_| ()) })
+        })
+        .await;
+
+    let err = result.unwrap_err();
+    assert!(
+        matches!(err, FilamentError::Validation(ref msg) if msg.contains("relation already exists")),
+        "expected Validation('relation already exists'), got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Regression: empty glob pattern rejected in acquire_reservation
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn acquire_reservation_rejects_empty_glob() {
+    let store = test_db().await;
+
+    let result = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                acquire_reservation(
+                    conn,
+                    "test-agent",
+                    "",
+                    ReservationMode::from(false),
+                    TtlSeconds::new(3600).unwrap(),
+                )
+                .await
+            })
+        })
+        .await;
+
+    let err = result.unwrap_err();
+    assert!(
+        matches!(err, FilamentError::Validation(ref msg) if msg.contains("cannot be empty")),
+        "expected Validation('cannot be empty'), got: {err}"
+    );
+}
+
+#[tokio::test]
+async fn acquire_reservation_rejects_whitespace_only_glob() {
+    let store = test_db().await;
+
+    let result = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                acquire_reservation(
+                    conn,
+                    "test-agent",
+                    "   ",
+                    ReservationMode::from(false),
+                    TtlSeconds::new(3600).unwrap(),
+                )
+                .await
+            })
+        })
+        .await;
+
+    let err = result.unwrap_err();
+    assert!(
+        matches!(err, FilamentError::Validation(ref msg) if msg.contains("cannot be empty")),
+        "expected Validation('cannot be empty'), got: {err}"
+    );
+}

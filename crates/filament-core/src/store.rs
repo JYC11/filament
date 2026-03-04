@@ -379,7 +379,7 @@ pub async fn create_relation(
     let now = Utc::now();
     let metadata = serde_json::to_string(&req.metadata).expect("Value serialization is infallible");
 
-    sqlx::query(
+    let insert_result = sqlx::query(
         "INSERT INTO relations (id, source_id, target_id, relation_type, weight, summary, metadata, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -392,7 +392,17 @@ pub async fn create_relation(
     .bind(&metadata)
     .bind(now)
     .execute(&mut *conn)
-    .await?;
+    .await;
+
+    if let Err(sqlx::Error::Database(ref db_err)) = insert_result {
+        if db_err.code().as_deref() == Some("2067") {
+            return Err(FilamentError::Validation(format!(
+                "relation already exists: {} -{}- {}",
+                req.source_id, req.relation_type, req.target_id
+            )));
+        }
+    }
+    insert_result?;
 
     let detail = format!(
         "{} -{}- {}",
@@ -588,6 +598,12 @@ pub async fn acquire_reservation(
     mode: ReservationMode,
     ttl: TtlSeconds,
 ) -> Result<ReservationId> {
+    let trimmed = file_glob.trim();
+    if trimmed.is_empty() {
+        return Err(FilamentError::Validation(
+            "file glob pattern cannot be empty".to_string(),
+        ));
+    }
     let now = Utc::now();
     let expires_at = now + ttl.as_duration();
 
