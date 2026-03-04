@@ -10,13 +10,11 @@ filament/
 ├── Makefile                    # make fmt/check/build/test/run/migration/adr/ci
 ├── util-scripts/               # shell scripts backing Makefile targets
 ├── .plan/
-│   ├── filament-v1.md          # master plan v1.1 (6 phases, 30+ tasks)
-│   ├── phase1-core.md … phase6-integration.md
+│   ├── filament-v1.md          # master plan v1.1 (all 6 phases complete)
 │   ├── test-standards.md       # layered test strategy
-│   ├── benchmarks.md           # beads_rust + Flywheel analysis
-│   ├── benchmarks-local.md     # workout-util + koupang patterns
 │   ├── gotchas.md              # pitfalls & solutions (sqlx, thiserror, petgraph, etc.)
-│   └── adr/                    # architecture decision records (001–018)
+│   └── adr/                    # architecture decision records (001–020)
+├── .qa/                        # QA results + simulation logs
 ├── crates/
 │   ├── filament-core/          # library: graph, storage, models, errors
 │   ├── filament-cli/           # the single binary (clap), depends on core + daemon + tui
@@ -67,9 +65,8 @@ Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
 - Master plan: `.plan/filament-v1.md`
 - Test standards: `.plan/test-standards.md`
 - Gotchas: `.plan/gotchas.md`
-- Benchmarks: `.plan/benchmarks.md`, `.plan/benchmarks-local.md`
-- Multi-agent research: `.plan/multi-agent-orchestration.md`
 - Architecture decisions: `.plan/adr/` (use `make adr TITLE="..."` to add new ones)
+- QA results & simulation logs: `.qa/`
 
 ## Development Rules
 
@@ -137,7 +134,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 | Concern | Old way (.md files) | New way (filament CLI) |
 |---------|--------------------|-----------------------|
-| Plans & phases | `.plan/filament-v1.md`, `phase*.md` | `filament list --type plan` |
+| Plans & phases | `.plan/filament-v1.md` | `filament list --type plan` |
 | Tasks & deps | Manual tracking in MEMORY.md | `filament task ready`, `filament task critical-path` |
 | Architecture | `.plan/adr/*.md` | `filament list --type doc`, `filament context --around <adr>` |
 | Code structure | This file's Project Layout section | `filament list --type module`, `filament context --around <module>` |
@@ -153,7 +150,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**All 6 phases complete** (2026-03-04). 258 tests, zero clippy warnings.
+**All 6 phases complete** (2026-03-04). 262 tests, zero clippy warnings.
 
 | Phase | What | Key details |
 |-------|------|-------------|

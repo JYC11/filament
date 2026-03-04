@@ -31,7 +31,7 @@ Filament gives AI coding agents (and humans) a shared project brain — a knowle
 Clone the repository and build the release binary:
 
 ```bash
-git clone https://github.com/your-org/filament.git
+git clone https://github.com/yourname/filament.git
 cd filament
 make build CRATE=all RELEASE=1
 ```
@@ -52,14 +52,6 @@ make test CRATE=all          # run all tests
 make ci                      # full CI: fmt check + clippy + tests
 ```
 
-## Setup
-
-<!-- TODO: Document project initialization workflow, .filament/ directory structure,
-     daemon configuration, MCP integration with Claude Code / other AI tools,
-     and recommended .gitignore additions -->
-
-_Coming soon._
-
 ## Usage
 
 ### Initialize a Project
@@ -71,7 +63,11 @@ cd your-project
 filament init
 ```
 
-This creates `.filament/filament.db` and `.filament/content/`. Add `.filament/` to your `.gitignore`.
+This creates:
+- `.filament/filament.db` — SQLite database (WAL mode)
+- `.filament/content/` — content file storage
+
+Add `.filament/` to your `.gitignore`.
 
 ### Global Flags
 
