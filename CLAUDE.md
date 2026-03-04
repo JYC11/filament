@@ -62,12 +62,13 @@ Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
 - **AgentResult protocol**: subprocesses (`claude -p`) emit JSON with status, artifacts, messages, blockers, questions. Filament parses and routes.
 - **Per-project storage**: `filament init` creates `.filament/` with SQLite DB, Unix socket, PID file, content dir.
 
-## Implementation Plan
+## Plans & References
 
-- Master plan (phases, tasks, deps, file paths): `.plan/filament-v1.md`
-- Phase sub-plans: `.plan/phase1-core.md` … `.plan/phase6-integration.md`
-- Benchmark analysis: `.plan/benchmarks.md`, `.plan/benchmarks-local.md`
+- Master plan: `.plan/filament-v1.md`
 - Test standards: `.plan/test-standards.md`
+- Gotchas: `.plan/gotchas.md`
+- Benchmarks: `.plan/benchmarks.md`, `.plan/benchmarks-local.md`
+- Multi-agent research: `.plan/multi-agent-orchestration.md`
 - Architecture decisions: `.plan/adr/` (use `make adr TITLE="..."` to add new ones)
 
 ## Development Rules
@@ -75,6 +76,51 @@ Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
 - **Every bug fix must include a test** — if a bug is found, write a regression test that would have caught it before fixing the implementation.
 - Tests gate completion — always run `make test CRATE=all` after changes.
 - Never weaken or modify a test to make it pass — the bug is in the implementation, not the test.
+- **Code Smells**
+  - god functions are bad
+  - overly fragmented functions are bad
+  - circular dependencies are bad, dependencies should be acyclic and unidirectional
+  - pass through methods: a method that only invokes another method and does nothing else is bad
+- **Development Heuristics**
+  - favour using ADTs, value objects, rich domain models to make illegal states unrepresentable
+  - threshold for abstraction 4+ (DRY principle), 1-3 times no abstraction (YAGNI)
+    - if unsure, repeat a bit more until abstraction becomes very obvious
+  - favour efficient SQL queries, the less I/O the better
+    - use batch `WHERE IN` to get many records instead of N+1 loops
+    - do SQL queries the simple way a couple times before finding patterns you can make efficient
+  - modules should be deep (strong functionality but simple interfaces) and minimize unnecessary information from being shown to the user of the modules
+  - different layer, different abstraction — each layer in `CLI → handler → store` should operate at a distinct level of abstraction; if two adjacent layers use the same vocabulary, one is probably unnecessary
+  - define errors out of existence — prefer validated newtypes and type states so error cases can't happen; handle the remaining errors that types can't prevent
+  - in an unsure problem area, employ tactical programming (get things done focus) to figure out patterns then do a clean up of them after with strategic programming (long term maintenance focus)
+  - complexity is incremental — each small shortcut compounds; when cleaning up tactical code, fix the small things too
+  - too much specialization of purpose can make the code too complicated
+  - comment only things that are not obvious from the code
+- **Error Handling**
+  - store/graph layers return `Result<T, FilamentError>` with structured error enums
+  - `unwrap`/`expect` only in tests and provably infallible cases (e.g., compiled regex)
+  - never silently swallow errors
+- **Naming Conventions**
+
+  | Element | Convention | Example |
+  |---------|-----------|---------|
+  | Entity variants | PascalCase noun | `Task`, `Module`, `Agent` |
+  | CLI commands | verb-noun kebab | `task ready`, `agent dispatch` |
+  | Store methods | `verb_noun` snake_case | `create_entity`, `get_entity` |
+  | Handler functions | `handle_verb_noun` snake_case | `handle_create_entity` |
+  | Domain models | Plain noun PascalCase | `Entity`, `Relation`, `Message` |
+  | Value types | PascalCase | `NonEmptyString`, `Slug`, `Priority` |
+  | Error variants | PascalCase descriptive | `EntityNotFound`, `TypeMismatch` |
+  | Migrations | `NNNN_descriptive_name` | `0001_initial_schema.sql` |
+
+- **Git Workflow**
+  - commit after completing a logical unit of work (feature, fix, refactor) — not after every file edit
+  - do not push unless explicitly asked
+  - branch naming: `feat/short-description`, `fix/short-description`, `refactor/short-description`
+  - commit messages: imperative mood, `type: description` (e.g., `feat: add export command`, `fix: prevent duplicate relations`)
+- **Refactoring Scope**
+  - refactor in the same PR if <30 min of work; otherwise create a follow-up task
+  - tactical code is fine during exploration; clean up before the feature is "done"
+- if any of the development rules are not clear, ESCALATE = stop and ask the user before proceeding
 
 ## Gotchas
 
@@ -107,22 +153,23 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**Phases 1–5 complete** (2026-03-04):
-- Phase 1: Core library — models, errors, schema, store, graph, connection, protocol
-- Phase 2: CLI — entity, task, relation, query, message, reserve commands (54 integration tests)
-- Phase 3: Daemon — NDJSON Unix socket server + MCP server (16 tools via `rmcp`)
-- Phase 4: Agent dispatching — dispatch engine, roles, CLI commands, death cleanup
-- `filament serve [--foreground]` / `filament stop` / `filament mcp`
-- `filament agent dispatch|dispatch-all|status|list|history`
-- CLI routes through daemon when running (falls back to direct DB access)
-- **Agent roles**: Coder, Reviewer, Planner, Dockeeper with compiled-in prompts and tool whitelists
-- **Dispatch engine**: spawn subprocess via `std::process`, monitor via `tokio::spawn` + `spawn_blocking`, parse `AgentResult` JSON, route messages, death cleanup (revert task, release reservations, refresh graph)
-- **No server-side batch dispatch** — CLI `dispatch-all` loops individual `dispatch_agent` RPCs to avoid child process reaping races
-- **Slug-based identity** (ADR-019): 8-char `[a-z0-9]` slugs replace name-based lookup
-- **Entity ADT** (ADR-020): `Entity` enum with typed variants, `TypeMismatch` error, compile-time type safety
-- 235 tests (120 core + 58 CLI + 39 daemon + 10 MCP + 8 TUI), zero clippy warnings
-- **Code review complete** — all 15 tasks from `.plan/code-review-session34.md` done
-- **Next**: Phase 5 manual QA, then Phase 6 — Integration
+**All 6 phases complete** (2026-03-04). 258 tests, zero clippy warnings.
+
+| Phase | What | Key details |
+|-------|------|-------------|
+| 1 | Core library | models, errors, schema, store, graph, connection, protocol |
+| 2 | CLI | entity, task, relation, query, message, reserve, export, import, escalations |
+| 3 | Daemon | NDJSON Unix socket server + MCP server (16 tools via `rmcp`) |
+| 4 | Dispatch | subprocess management, roles (Coder/Reviewer/Planner/Dockeeper), death cleanup |
+| 5 | TUI | task list, agent status, reservation views, escalation indicator |
+| 6 | Integration | context bundles, auto-dispatch, escalation routing, export/import |
+
+Key architectural features:
+- **Slug identity** (ADR-019): 8-char `[a-z0-9]` slugs for human-facing identity
+- **Entity ADT** (ADR-020): tagged enum with typed variants, compile-time type safety
+- **CLI routes through daemon** when running (falls back to direct DB access)
+- **Auto-dispatch**: `FILAMENT_AUTO_DISPATCH=1` chains agent runs on newly-unblocked tasks
+- **Escalations**: blockers/questions from agents routed as messages to "user"
 
 ## References
 
