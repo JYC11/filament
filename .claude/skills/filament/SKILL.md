@@ -8,13 +8,21 @@ description: >
   creating knowledge graph entries, coordinating agent work, or querying project structure.
   Triggers on: "filament", "add entity", "add task", "track this", "create a task",
   "relate these", "what blocks", "critical path", "ready tasks", "project graph",
-  "knowledge graph", "file reservation", "agent message", "what's next".
+  "knowledge graph", "file reservation", "agent message", "what's next", "dispatch agent",
+  "escalations", "export", "import", "daemon", "tui".
 ---
 
 # Filament CLI — Project Knowledge Management
 
-Filament is a local-only knowledge graph + task manager. All data lives in `.filament/`
-within the project root. Initialize with `filament init` before any other command.
+Filament is a local-only knowledge graph + task manager + multi-agent orchestrator. All data
+lives in `.filament/` within the project root. Initialize with `filament init` before any
+other command.
+
+## Identity: Slugs
+
+Every entity gets a unique **8-char slug** (`[a-z0-9]`) auto-generated on creation. Slugs are
+the primary human-facing identifier. All commands accept slugs (or UUIDs) wherever an entity
+reference is needed. Use `filament list` or `filament inspect` to find slugs.
 
 ## Quick Reference
 
@@ -28,21 +36,21 @@ filament init                              # creates .filament/ with SQLite DB
 Entities are nodes in the knowledge graph. Types: `task`, `module`, `service`, `agent`, `plan`, `doc`.
 
 ```bash
-# Create
+# Create — returns the entity's slug
 filament add <NAME> --type <TYPE> --summary "..." [--priority 0-4] [--facts '{"k":"v"}'] [--content path/to/file]
 
 # Read
-filament inspect <NAME>                    # details + relations
-filament read <NAME>                       # full content file
+filament inspect <SLUG>                    # details + relations
+filament read <SLUG>                       # full content file
 filament list [--type TYPE] [--status STATUS]
 
 # Update
-filament update <NAME> --summary "new"     # update summary
-filament update <NAME> --status closed     # update status (open|closed|in_progress|blocked)
-filament update <NAME> --summary "new" --status in_progress  # both at once
+filament update <SLUG> --summary "new"     # update summary
+filament update <SLUG> --status closed     # update status (open|closed|in_progress|blocked)
+filament update <SLUG> --summary "new" --status in_progress  # both at once
 
 # Delete
-filament remove <NAME>                     # cascades relations
+filament remove <SLUG>                     # cascades relations
 ```
 
 ### Relations (edges in the graph)
@@ -59,20 +67,49 @@ filament unrelate <SOURCE> <TYPE> <TARGET>
 Tasks are entities with type=task. The `task` subcommand provides workflow shortcuts.
 
 ```bash
-filament task add <TITLE> --summary "..." [--priority N] [--blocks NAME] [--depends-on NAME]
+filament task add <TITLE> --summary "..." [--priority N] [--blocks SLUG] [--depends-on SLUG]
 filament task list [--status open|closed|in_progress|all]
 filament task list --unblocked             # open tasks with no open blockers
 filament task ready [--limit N]            # unblocked tasks ranked by priority (graph-based)
-filament task show <NAME>                  # details + relations
-filament task close <NAME>                 # sets status=closed
-filament task assign <NAME> --to <AGENT>   # creates assigned_to relation
-filament task critical-path <NAME>         # longest dependency chain
+filament task show <SLUG>                  # details + relations
+filament task close <SLUG>                 # sets status=closed
+filament task assign <SLUG> --to <AGENT>   # creates assigned_to relation
+filament task critical-path <SLUG>         # longest dependency chain
 ```
+
+### Agent Dispatch (subprocess management)
+
+Dispatch AI agents to work on tasks. Agents run as subprocesses and report results.
+
+```bash
+filament agent dispatch <TASK_SLUG> [--role coder|reviewer|planner|dockeeper]
+filament agent dispatch-all [--max-parallel N] [--role ROLE]   # dispatch all ready tasks
+filament agent status <RUN_ID>             # check a specific agent run
+filament agent list                        # all agent runs
+filament agent history <TASK_SLUG>         # past runs for a task
+```
+
+Roles determine the system prompt and tool access:
+- `coder` (default) — writes code, runs tests
+- `reviewer` — reviews code, suggests improvements
+- `planner` — creates plans and breaks down work
+- `dockeeper` — writes documentation
+
+### Escalations
+
+Escalations surface blockers, questions, and needs-input from agents to the user.
+
+```bash
+filament escalations                       # show all pending escalations
+```
+
+Escalations are created automatically when agents send `--type blocker` or `--type question`
+messages TO `user`. They appear in the TUI escalation indicator and in `filament escalations`.
 
 ### Context Queries (graph traversal)
 
 ```bash
-filament context --around <NAME> --depth N [--limit N]  # BFS neighborhood
+filament context --around <SLUG> --depth N [--limit N]  # BFS neighborhood
 ```
 
 ### Inter-Agent Messaging
@@ -83,6 +120,12 @@ filament message inbox <AGENT>             # unread messages
 filament message read <MSG_ID>             # mark as read
 ```
 
+Message types:
+- `text` — general communication (default)
+- `question` — agent needs a decision (creates escalation if sent to `user`)
+- `blocker` — agent is blocked and cannot proceed (creates escalation if sent to `user`)
+- `artifact` — agent produced a deliverable
+
 ### File Reservations (advisory locking)
 
 ```bash
@@ -90,6 +133,43 @@ filament reserve <GLOB> --agent <NAME> [--exclusive] [--ttl SECS]
 filament release <GLOB> --agent <NAME>
 filament reservations [--agent NAME] [--clean]
 ```
+
+### Export / Import
+
+```bash
+filament export [--output PATH] [--no-events]    # export all data to JSON
+filament import [--input PATH] [--no-events]     # import from JSON
+```
+
+Export creates a complete snapshot (entities, relations, messages, reservations, events).
+Import performs upserts — existing entities are updated, new ones are inserted.
+
+### Daemon (multi-agent mode)
+
+```bash
+filament serve [--foreground] [--socket-path PATH]  # start Unix socket server
+filament stop                                       # stop running daemon
+```
+
+When the daemon is running, all CLI commands route through it via Unix socket instead of
+accessing SQLite directly. This enables concurrent multi-agent access.
+
+### TUI (interactive dashboard)
+
+```bash
+filament tui                               # launch ratatui terminal UI
+```
+
+The TUI shows: task list, agent status, file reservations, and an escalation indicator.
+
+### MCP Server (AI agent integration)
+
+```bash
+filament mcp                               # start MCP stdio server
+```
+
+Exposes 16 tools via the Model Context Protocol for AI agent integration. Agents connect
+via stdio and can create/read/update entities, send messages, manage tasks, etc.
 
 ### Global Flags
 
@@ -135,13 +215,77 @@ filament reserve "crates/filament-daemon/**" --agent agent-planner --exclusive -
 filament message send --from orchestrator --to agent-planner --body "Start phase 3 implementation"
 ```
 
+### Dispatch agents to ready tasks
+
+```bash
+filament task ready                        # see what's unblocked
+filament agent dispatch <TASK_SLUG>        # dispatch single task (role=coder)
+filament agent dispatch-all --max-parallel 3  # dispatch all ready tasks
+filament agent list                        # monitor running agents
+filament escalations                       # check for blockers/questions
+```
+
+### Handle escalations
+
+```bash
+filament escalations                       # see pending blockers & questions
+# Respond to the agent that raised the escalation:
+filament message send --from user --to <AGENT_SLUG> --body "Answer to your question" --type text
+# Then unblock the task:
+filament update <TASK_SLUG> --status in_progress
+```
+
+### Export, backup, and restore
+
+```bash
+filament export --output snapshot.json     # full backup
+filament import --input snapshot.json      # restore into another project
+```
+
 ### Query project structure
 
 ```bash
 filament list --type module                # all modules
 filament list --type task --status open    # open tasks
 filament task ready                        # what to work on next
-filament context --around filament-core --depth 2  # what connects to core
+filament context --around <SLUG> --depth 2 # what connects to an entity
+```
+
+### Simulation / Roleplay (exercise the full system)
+
+Seed a temp project with example data and manually simulate agent cycles:
+
+```bash
+# Setup
+cd /tmp && rm -rf filament-sim && mkdir filament-sim && cd filament-sim
+filament init
+
+# Create entities
+filament add api-gateway --type module --summary "HTTP routing layer"
+filament add auth-service --type module --summary "JWT auth + sessions"
+filament add alice --type agent --summary "Senior backend coder"
+filament add bob --type agent --summary "Frontend specialist"
+filament task add design-arch --summary "Design system architecture" --priority 0
+filament task add setup-db --summary "PostgreSQL schema + migrations" --priority 1
+
+# Create dependency chain
+filament relate <design-arch-slug> blocks <setup-db-slug>
+
+# Simulate agent cycle
+filament task ready                        # → design-arch is unblocked
+filament task assign <slug> --to <agent-slug>
+filament update <slug> --status in_progress
+filament message send --from alice --to bob --body "DB schema ready" --type artifact
+filament task close <slug>
+filament task ready                        # → next task unblocked
+
+# Simulate escalation
+filament message send --from alice --to user --body "BLOCKED: need credentials" --type blocker
+filament update <slug> --status blocked
+filament escalations                       # → shows alice's blocker
+
+# Cleanup
+rm -rf /tmp/filament-sim
 ```
 
 ## Entity Types and When to Use Them
@@ -192,10 +336,12 @@ Filament runs alongside traditional .md documentation:
 
 ## Tips
 
-- Entity names are NOT unique — use descriptive, specific names to avoid ambiguity
-- Names can be used in place of IDs for all commands (resolved by first match)
+- Entities are identified by **slugs** (8-char `[a-z0-9]`), auto-generated on creation
+- Use `filament list` or `filament inspect` to find an entity's slug
 - `--json` output is suitable for piping to `jq` or parsing in scripts
 - Priority 0 = highest urgency, 4 = lowest (default is 2)
 - Reservations use string-equality for glob matching (not pattern overlap)
 - `task close` and `task assign` validate the entity is actually a task
 - `task list --status` and `--unblocked` cannot be combined
+- To create escalations: send `--type blocker` or `--type question` messages FROM an agent TO `user`
+- Auto-dispatch: set `FILAMENT_AUTO_DISPATCH=1` to chain agent runs on newly-unblocked tasks

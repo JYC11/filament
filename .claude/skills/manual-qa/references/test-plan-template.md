@@ -60,3 +60,6 @@ For each command, test:
 - [ ] Error path (validation failure)
 - [ ] JSON output mode
 - [ ] Edge case (empty result, single item, boundary values)
+- [ ] Aggressive (oversized input, rapid repetition, wrong order)
+- [ ] Malicious (injection attempts, special characters, schema violations)
+- [ ] Stupid (missing args, wrong types, misspellings, swapped flags)

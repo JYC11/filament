@@ -84,6 +84,50 @@ For each bug found:
 4. Re-run the failing TC to confirm the fix
 5. Update the results file with fix status
 
+## Testing Mindset: Aggressive, Malicious, Stupid
+
+QA is not about confirming the software works — it's about proving it doesn't. Adopt three
+personas simultaneously:
+
+**Aggressive** — Push every boundary. Feed maximum-length strings, flood with rapid
+commands, chain operations in unexpected orders, hit the same endpoint 50 times in a row.
+Don't just test the documented limits — exceed them. If a field accepts a name, paste in
+2000 characters. If a command takes an ID, pass 50 IDs. Run `update` before `add`. Run
+`remove` twice. Nest operations that shouldn't nest.
+
+**Malicious** — Think like an attacker trying to corrupt data or crash the process. Inject
+SQL fragments, shell metacharacters (`$(rm -rf /)`), null bytes, control characters, unicode
+edge cases (RTL marks, zero-width joiners, emoji sequences). Try to escape quoted strings.
+Pass `--flag=value` where positional args are expected and vice versa. Feed valid JSON with
+wrong schemas. Send commands mid-transaction. Try to create circular dependencies. Try to
+reference entities across project boundaries.
+
+**Stupid** — Be the user who read nothing and assumes everything. Omit required flags. Pass
+a status where a priority is expected. Spell commands wrong and check if the suggestion is
+helpful. Use the wrong subcommand. Give a slug where a UUID is expected. Leave trailing
+whitespace in values. Pass empty strings. Use `--json` on commands that don't support it.
+Pass `--help` mid-argument list. Type numbers where strings go and strings where numbers go.
+
+### What This Looks Like in Practice
+
+Every test group should include at least 2-3 "break it" cases alongside the happy path:
+
+| Happy path TC | Aggressive TC | Malicious TC | Stupid TC |
+|---------------|---------------|--------------|-----------|
+| Add entity with valid name | Add entity with 500-char name | Add entity with name `'; DROP TABLE entities;--` | Add entity with no name at all |
+| List all entities | List after creating 100+ entities | List with `--type` set to `../../etc/passwd` | List with `--type` set to a misspelled value |
+| Update a field | Update every field at once | Update with JSON payload in a text field | Update with `--status` and `--priority` swapped |
+| Remove entity | Remove entity then inspect it | Remove same entity in two concurrent calls | Remove with a slug that looks like a flag (`--abc`) |
+
+### Bug Severity from Aggressive Testing
+
+Bugs found through aggressive testing get elevated severity:
+- **Panic/crash** → always Critical (the binary must never crash on bad input)
+- **Data corruption** → always Critical (silent data loss or mangled state)
+- **Leaked internal errors** (raw SQL, stack traces) → High (information leak + bad UX)
+- **Wrong exit code** → Medium (breaks scripting and CI pipelines)
+- **Missing/bad error message** → Medium (user can't self-diagnose)
+
 ## Key Things to Verify
 
 - **Output formatting**: alignment, truncation, priority/status display
