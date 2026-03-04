@@ -15,7 +15,7 @@ use filament_core::schema::init_pool;
 use filament_core::store::FilamentStore;
 use tokio::net::UnixListener;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use config::ServeConfig;
 use state::{DispatchConfig, SharedState};
@@ -63,6 +63,19 @@ pub async fn serve_with_dispatch(
 
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(&pool).await?;
+
+    // Reconcile stale agent runs left by a previous unclean shutdown
+    let store_tmp = FilamentStore::new(pool.clone());
+    let reconciled = store_tmp
+        .with_transaction(|conn| {
+            Box::pin(
+                async move { filament_core::store::reconcile_stale_agent_runs(conn).await },
+            )
+        })
+        .await?;
+    if reconciled > 0 {
+        info!(count = reconciled, "reconciled stale agent runs from previous session");
+    }
 
     // Use provided dispatch config or derive from project root
     let dispatch_config = dispatch_override.unwrap_or_else(|| {
@@ -124,10 +137,75 @@ pub async fn serve_with_dispatch(
         }
     }
 
+    // Reap orphan agent processes and reconcile their DB state
+    reap_orphan_agents(&state).await;
+
     // Cleanup
     let _ = std::fs::remove_file(&config.socket_path);
     let _ = std::fs::remove_file(&config.pid_path);
     info!("daemon stopped");
 
     Ok(())
+}
+
+/// Kill running agent processes and mark their DB records as failed.
+///
+/// Sends SIGTERM to each tracked PID, waits briefly, then SIGKILLs survivors.
+/// Finally reconciles the DB state via [`filament_core::store::reconcile_stale_agent_runs`].
+async fn reap_orphan_agents(state: &SharedState) {
+    use filament_core::store;
+
+    // 1. Collect PIDs of running agents
+    let running = match store::list_running_agents(state.store.pool()).await {
+        Ok(runs) => runs,
+        Err(e) => {
+            error!("failed to list running agents during shutdown: {e}");
+            return;
+        }
+    };
+
+    if running.is_empty() {
+        return;
+    }
+
+    let pids: Vec<i32> = running.iter().filter_map(|r| r.pid).collect();
+    info!(count = running.len(), "reaping orphan agent processes");
+
+    // 2. Send SIGTERM to each PID
+    for &pid in &pids {
+        let _ = std::process::Command::new("kill")
+            .arg("-TERM")
+            .arg(pid.to_string())
+            .status();
+    }
+
+    // 3. Wait up to 3 seconds for graceful exit
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+    // 4. SIGKILL any survivors (kill -0 checks if still alive)
+    for &pid in &pids {
+        let alive = std::process::Command::new("kill")
+            .arg("-0")
+            .arg(pid.to_string())
+            .status()
+            .is_ok_and(|s| s.success());
+        if alive {
+            warn!(pid = pid, "agent process did not exit after SIGTERM, sending SIGKILL");
+            let _ = std::process::Command::new("kill")
+                .arg("-9")
+                .arg(pid.to_string())
+                .status();
+        }
+    }
+
+    // 5. Reconcile DB state (mark running → failed, revert tasks)
+    if let Err(e) = state
+        .store
+        .with_transaction(|conn| {
+            Box::pin(async move { store::reconcile_stale_agent_runs(conn).await })
+        })
+        .await
+    {
+        error!("failed to reconcile agent runs during shutdown: {e}");
+    }
 }

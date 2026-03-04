@@ -988,6 +988,51 @@ pub async fn list_running_agents(pool: &Pool<Sqlite>) -> Result<Vec<AgentRun>> {
     .await?)
 }
 
+/// Mark all `running` agent runs as `failed` and revert their tasks to `open`.
+///
+/// Called on daemon startup to reconcile stale state left by an unclean shutdown.
+/// Returns the number of agent runs that were reconciled.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn reconcile_stale_agent_runs(conn: &mut SqliteConnection) -> Result<u64> {
+    let now = Utc::now();
+
+    // Collect task IDs before updating, so we can revert their status
+    let stale_task_ids: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT task_id FROM agent_runs WHERE status = 'running'",
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
+    let rows = sqlx::query(
+        "UPDATE agent_runs SET status = 'failed', \
+         result_json = '{\"error\":\"daemon restarted — stale run reconciled\"}', \
+         finished_at = ? \
+         WHERE status = 'running'",
+    )
+    .bind(now)
+    .execute(&mut *conn)
+    .await?
+    .rows_affected();
+
+    // Revert affected tasks from in_progress back to open
+    for (task_id,) in &stale_task_ids {
+        // Only revert if the task is still in_progress (may have been closed by other means)
+        sqlx::query(
+            "UPDATE entities SET status = 'open', updated_at = ? \
+             WHERE id = ? AND status = 'in_progress'",
+        )
+        .bind(now)
+        .bind(task_id.as_str())
+        .execute(&mut *conn)
+        .await?;
+    }
+
+    Ok(rows)
+}
+
 // ---------------------------------------------------------------------------
 // Event log
 // ---------------------------------------------------------------------------

@@ -1615,3 +1615,124 @@ async fn import_relation_with_missing_entity_returns_validation_error() {
         other => panic!("expected Validation error, got: {other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// reconcile_stale_agent_runs
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn reconcile_stale_runs_marks_running_as_failed() {
+    let store = test_db().await;
+
+    // Create a task
+    let req = sample_entity_req();
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // Create a running agent run
+    let tid = task_id.clone();
+    let run_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move { create_agent_run(conn, tid.as_str(), "coder", Some(99999)).await })
+        })
+        .await
+        .unwrap();
+
+    // Set task to in_progress (simulating what dispatch does)
+    store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move {
+                update_entity_status(conn, tid.as_str(), EntityStatus::InProgress).await
+            })
+        })
+        .await
+        .unwrap();
+
+    // Verify preconditions
+    let run = get_agent_run(store.pool(), run_id.as_str()).await.unwrap();
+    assert_eq!(run.status, AgentStatus::Running);
+
+    // Reconcile
+    let count = store
+        .with_transaction(|conn| {
+            Box::pin(async move { reconcile_stale_agent_runs(conn).await })
+        })
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+
+    // Agent run should be failed
+    let run = get_agent_run(store.pool(), run_id.as_str()).await.unwrap();
+    assert_eq!(run.status, AgentStatus::Failed);
+    assert!(run.finished_at.is_some());
+    assert!(run.result_json.unwrap().contains("daemon restarted"));
+
+    // Task should be reverted to open
+    let entity = get_entity(store.pool(), task_id.as_str()).await.unwrap();
+    assert_eq!(*entity.status(), EntityStatus::Open);
+}
+
+#[tokio::test]
+async fn reconcile_stale_runs_noop_when_none_running() {
+    let store = test_db().await;
+
+    let count = store
+        .with_transaction(|conn| {
+            Box::pin(async move { reconcile_stale_agent_runs(conn).await })
+        })
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn reconcile_stale_runs_does_not_revert_closed_tasks() {
+    let store = test_db().await;
+
+    // Create a task
+    let req = sample_entity_req();
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // Create a running agent run
+    let tid = task_id.clone();
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move { create_agent_run(conn, tid.as_str(), "coder", None).await })
+        })
+        .await
+        .unwrap();
+
+    // Close the task (e.g., user closed it manually while agent was running)
+    store
+        .with_transaction(|conn| {
+            let tid = task_id.clone();
+            Box::pin(async move {
+                update_entity_status(conn, tid.as_str(), EntityStatus::Closed).await
+            })
+        })
+        .await
+        .unwrap();
+
+    // Reconcile should mark run as failed but NOT revert the closed task
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move { reconcile_stale_agent_runs(conn).await })
+        })
+        .await
+        .unwrap();
+
+    let entity = get_entity(store.pool(), task_id.as_str()).await.unwrap();
+    assert_eq!(*entity.status(), EntityStatus::Closed);
+}

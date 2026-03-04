@@ -64,9 +64,9 @@ pub struct ListArgs {
     /// Filter by entity type.
     #[arg(long, rename_all = "snake_case")]
     r#type: Option<EntityType>,
-    /// Filter by status.
+    /// Filter by status (open, `in_progress`, closed, blocked, all).
     #[arg(long)]
-    status: Option<filament_core::models::EntityStatus>,
+    status: Option<String>,
 }
 
 pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
@@ -222,8 +222,13 @@ pub async fn read(cli: &Cli, args: &ReadArgs) -> Result<()> {
 pub async fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
     let mut conn = connect().await?;
 
+    let status_filter: Option<filament_core::models::EntityStatus> = match args.status.as_deref() {
+        None | Some("all") => None,
+        Some(other) => Some(other.parse()?),
+    };
+
     let entities = conn
-        .list_entities(args.r#type.clone(), args.status.clone())
+        .list_entities(args.r#type.clone(), status_filter)
         .await?;
 
     print_entity_list(cli, &entities, "No entities found.");
