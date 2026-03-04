@@ -171,6 +171,19 @@ Key architectural features:
 - **Auto-dispatch**: `FILAMENT_AUTO_DISPATCH=1` chains agent runs on newly-unblocked tasks
 - **Escalations**: blockers/questions from agents routed as messages to "user"
 
+## Task Tracking with Filament
+
+This project uses **filament itself** for task tracking. Always use the `/filament` skill for task management.
+
+- **Start of session**: Run `filament task ready` to see what to work on next
+- **Starting work**: `filament update <slug> --status in_progress`
+- **Finishing work**: `filament task close <slug>`
+- **New bugs/features**: `filament task add <name> --summary "..." --priority N`
+- **Dependencies**: `filament relate <blocker> blocks <blocked>`
+- **Full backlog**: `filament task list`
+
+The `.filament/` directory is gitignored (local per-user DB). The task list here is the canonical source for what needs doing.
+
 ## References
 
 - beads_rust (task management + error patterns): https://github.com/Dicklesworthstone/beads_rust
