@@ -576,6 +576,10 @@ make migration NAME=add_foo     # create a new migration
 make adr TITLE="Decision name"  # create a new ADR
 ```
 
+## Inspiration
+
+Filament was directly inspired by [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (task management and error patterns) and [Flywheel](https://github.com/Dicklesworthstone) (multi-agent orchestration ecosystem), both by [Jeff Emanuel](https://github.com/Dicklesworthstone). Those projects demonstrated powerful ideas across separate tools — Filament consolidates them into a single Rust binary that handles knowledge graph, task management, agent orchestration, messaging, and file coordination all in one place.
+
 ## License
 
-<!-- TODO -->
+MIT License. See [LICENSE](LICENSE) for details.
