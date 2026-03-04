@@ -58,7 +58,7 @@ make ci                      # full CI: fmt check + clippy + tests
      daemon configuration, MCP integration with Claude Code / other AI tools,
      and recommended .gitignore additions -->
 
-*Coming soon.*
+_Coming soon._
 
 ## Usage
 
@@ -77,11 +77,11 @@ This creates `.filament/filament.db` and `.filament/content/`. Add `.filament/` 
 
 Every command supports these flags:
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--json` | | Output JSON instead of human-readable text |
-| `--verbose` | `-v` | Increase verbosity (`-v` debug, `-vv` trace) |
-| `--quiet` | `-q` | Suppress non-error output |
+| Flag        | Short | Description                                  |
+| ----------- | ----- | -------------------------------------------- |
+| `--json`    |       | Output JSON instead of human-readable text   |
+| `--verbose` | `-v`  | Increase verbosity (`-v` debug, `-vv` trace) |
+| `--quiet`   | `-q`  | Suppress non-error output                    |
 
 ---
 
@@ -91,14 +91,14 @@ Filament's core data model is a knowledge graph of **entities** connected by **r
 
 ### Entity Types
 
-| Type | Purpose |
-|------|---------|
-| `task` | Work items with priority, status, and dependency tracking |
-| `module` | Code modules or components |
-| `service` | Services or APIs |
-| `agent` | AI or human agents |
-| `plan` | Implementation plans |
-| `doc` | Documentation, ADRs, reference material |
+| Type      | Purpose                                                   |
+| --------- | --------------------------------------------------------- |
+| `task`    | Work items with priority, status, and dependency tracking |
+| `module`  | Code modules or components                                |
+| `service` | Services or APIs                                          |
+| `agent`   | AI or human agents                                        |
+| `plan`    | Implementation plans                                      |
+| `doc`     | Documentation, ADRs, reference material                   |
 
 ### Entity Status
 
@@ -171,14 +171,14 @@ Connect entities with typed, directed edges.
 
 ### Relation Types
 
-| Type | Meaning |
-|------|---------|
-| `blocks` | Source blocks target from starting |
-| `depends_on` | Source depends on target being done |
-| `produces` | Source produces/creates target |
-| `owns` | Source owns/contains target |
-| `relates_to` | General association |
-| `assigned_to` | Agent is assigned to a task |
+| Type          | Meaning                             |
+| ------------- | ----------------------------------- |
+| `blocks`      | Source blocks target from starting  |
+| `depends_on`  | Source depends on target being done |
+| `produces`    | Source produces/creates target      |
+| `owns`        | Source owns/contains target         |
+| `relates_to`  | General association                 |
+| `assigned_to` | Agent is assigned to a task         |
 
 ### Create a Relation
 
@@ -263,6 +263,7 @@ filament task critical-path abc12345
 ```
 
 Output:
+
 ```
 Critical path (3 steps):
   1. Database schema migration
@@ -292,11 +293,11 @@ Agents communicate through targeted messages. No broadcast — every message has
 
 ### Message Types
 
-| Type | Purpose |
-|------|---------|
-| `text` | General communication (default) |
-| `question` | Questions needing answers |
-| `blocker` | Blocking issues that need resolution |
+| Type       | Purpose                              |
+| ---------- | ------------------------------------ |
+| `text`     | General communication (default)      |
+| `question` | Questions needing answers            |
+| `blocker`  | Blocking issues that need resolution |
 | `artifact` | Deliverables, code snippets, results |
 
 ### Send a Message
@@ -363,6 +364,7 @@ filament reservations --clean                      # clean expired, then list
 ## Daemon
 
 Filament runs in two modes:
+
 - **Direct mode** — CLI talks directly to SQLite (single-user, default)
 - **Daemon mode** — CLI connects to a Unix socket server (multi-agent, required for dispatching)
 
@@ -395,12 +397,12 @@ Dispatch AI agents to work on tasks. Requires the daemon to be running.
 
 ### Agent Roles
 
-| Role | Purpose | Key Capabilities |
-|------|---------|-----------------|
-| `coder` | Implement code changes | File reservations, code editing, test running |
-| `reviewer` | Review code for correctness and quality | Entity inspection, sending feedback messages |
-| `planner` | Break down work and create plans | Entity/relation creation, dependency analysis, critical path |
-| `dockeeper` | Maintain documentation | Entity updates, file reservations for docs |
+| Role        | Purpose                                 | Key Capabilities                                             |
+| ----------- | --------------------------------------- | ------------------------------------------------------------ |
+| `coder`     | Implement code changes                  | File reservations, code editing, test running                |
+| `reviewer`  | Review code for correctness and quality | Entity inspection, sending feedback messages                 |
+| `planner`   | Break down work and create plans        | Entity/relation creation, dependency analysis, critical path |
+| `dockeeper` | Maintain documentation                  | Entity updates, file reservations for docs                   |
 
 Each role has a compiled-in system prompt and a whitelist of MCP tools it can use.
 
@@ -455,44 +457,44 @@ This runs the MCP stdio transport. All logs go to stderr; stdout is reserved for
 
 #### Entity Operations
 
-| Tool | Description |
-|------|-------------|
-| `filament_add` | Create a new entity |
-| `filament_inspect` | Get entity details and relations |
-| `filament_update` | Update entity summary and/or status |
-| `filament_delete` | Delete an entity and its relations |
-| `filament_list` | List/filter entities by type and status |
+| Tool               | Description                             |
+| ------------------ | --------------------------------------- |
+| `filament_add`     | Create a new entity                     |
+| `filament_inspect` | Get entity details and relations        |
+| `filament_update`  | Update entity summary and/or status     |
+| `filament_delete`  | Delete an entity and its relations      |
+| `filament_list`    | List/filter entities by type and status |
 
 #### Relation Operations
 
-| Tool | Description |
-|------|-------------|
-| `filament_relate` | Create a relation between entities |
-| `filament_unrelate` | Remove a relation |
-| `filament_context` | BFS graph neighborhood query |
+| Tool                | Description                        |
+| ------------------- | ---------------------------------- |
+| `filament_relate`   | Create a relation between entities |
+| `filament_unrelate` | Remove a relation                  |
+| `filament_context`  | BFS graph neighborhood query       |
 
 #### Task Operations
 
-| Tool | Description |
-|------|-------------|
+| Tool                  | Description                |
+| --------------------- | -------------------------- |
 | `filament_task_ready` | Get ranked unblocked tasks |
-| `filament_task_close` | Mark a task as closed |
+| `filament_task_close` | Mark a task as closed      |
 
 #### Messaging
 
-| Tool | Description |
-|------|-------------|
-| `filament_message_send` | Send a message to another agent |
-| `filament_message_inbox` | Check unread messages |
-| `filament_message_read` | Mark a message as read |
+| Tool                     | Description                     |
+| ------------------------ | ------------------------------- |
+| `filament_message_send`  | Send a message to another agent |
+| `filament_message_inbox` | Check unread messages           |
+| `filament_message_read`  | Mark a message as read          |
 
 #### File Reservations
 
-| Tool | Description |
-|------|-------------|
-| `filament_reserve` | Acquire an advisory file lock |
-| `filament_release` | Release a file reservation |
-| `filament_reservations` | List active reservations |
+| Tool                    | Description                   |
+| ----------------------- | ----------------------------- |
+| `filament_reserve`      | Acquire an advisory file lock |
+| `filament_release`      | Release a file reservation    |
+| `filament_reservations` | List active reservations      |
 
 ---
 
@@ -508,25 +510,25 @@ filament tui
 
 ### Tabs
 
-| Tab | Key | Content |
-|-----|-----|---------|
-| Tasks | `1` | Task list with status, priority, blocked count, impact score |
-| Agents | `2` | Running agent processes with role, PID, duration |
-| Reservations | `3` | Active file locks with TTL countdown |
+| Tab          | Key | Content                                                      |
+| ------------ | --- | ------------------------------------------------------------ |
+| Tasks        | `1` | Task list with status, priority, blocked count, impact score |
+| Agents       | `2` | Running agent processes with role, PID, duration             |
+| Reservations | `3` | Active file locks with TTL countdown                         |
 
 ### Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| `q` / `Ctrl+C` | Quit |
-| `Tab` | Next tab |
-| `Shift+Tab` | Previous tab |
-| `1` `2` `3` | Jump to tab |
-| `j` / `Down` | Move selection down |
-| `k` / `Up` | Move selection up |
-| `r` | Force refresh |
-| `f` | Cycle task filter (Tasks tab only): open → in_progress → blocked → closed → all |
-| `c` | Close selected task (Tasks tab only) |
+| Key            | Action                                                                          |
+| -------------- | ------------------------------------------------------------------------------- |
+| `q` / `Ctrl+C` | Quit                                                                            |
+| `Tab`          | Next tab                                                                        |
+| `Shift+Tab`    | Previous tab                                                                    |
+| `1` `2` `3`    | Jump to tab                                                                     |
+| `j` / `Down`   | Move selection down                                                             |
+| `k` / `Up`     | Move selection up                                                               |
+| `r`            | Force refresh                                                                   |
+| `f`            | Cycle task filter (Tasks tab only): open → in_progress → blocked → closed → all |
+| `c`            | Close selected task (Tasks tab only)                                            |
 
 ### Display Details
 
@@ -543,7 +545,12 @@ Auto-refreshes every 5 seconds. Status bar shows connection mode (daemon/direct)
 All commands support `--json` for machine-readable output. Errors are also structured:
 
 ```json
-{"code": "entity_not_found", "message": "No entity with slug 'xyz'", "hint": "Check the slug with 'filament list'", "retryable": false}
+{
+  "code": "entity_not_found",
+  "message": "No entity with slug 'xyz'",
+  "hint": "Check the slug with 'filament list'",
+  "retryable": false
+}
 ```
 
 ---
@@ -578,7 +585,7 @@ make adr TITLE="Decision name"  # create a new ADR
 
 ## Inspiration
 
-Filament was directly inspired by [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (task management and error patterns) and [Flywheel](https://github.com/Dicklesworthstone) (multi-agent orchestration ecosystem), both by [Jeff Emanuel](https://github.com/Dicklesworthstone). Those projects demonstrated powerful ideas across separate tools — Filament consolidates them into a single Rust binary that handles knowledge graph, task management, agent orchestration, messaging, and file coordination all in one place.
+Filament was directly inspired by [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (task management and error patterns) and [Flywheel](https://github.com/Dicklesworthstone#the-agentic-coding-flywheel) (multi-agent orchestration ecosystem), both by [Jeff Emanuel](https://github.com/Dicklesworthstone). Those projects demonstrated powerful ideas across separate tools — Filament consolidates them into a single Rust binary that handles knowledge graph, task management, agent orchestration, messaging, and file coordination all in one place.
 
 ## License
 
