@@ -1,6 +1,7 @@
 pub mod client;
 pub mod connection;
 pub mod dto;
+pub mod enums;
 pub mod error;
 pub mod graph;
 pub mod models;
