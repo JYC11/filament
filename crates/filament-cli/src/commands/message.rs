@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
+use filament_core::dto::SendMessageRequest;
 use filament_core::error::Result;
-use filament_core::models::{MessageType, SendMessageRequest};
+use filament_core::models::MessageType;
 
 use super::helpers::{connect, output_json, truncate_with_ellipsis};
 use crate::Cli;

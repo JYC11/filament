@@ -3,11 +3,11 @@ use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
 
+use crate::dto::{Escalation, ExportData, ImportResult};
 use crate::error::{FilamentError, Result};
 use crate::models::{
-    AgentRun, AgentRunId, Entity, EntityId, EntityStatus, EntityType, Escalation, Event,
-    ExportData, ImportResult, Message, MessageId, Relation, RelationId, Reservation, ReservationId,
-    Slug,
+    AgentRun, AgentRunId, Entity, EntityId, EntityStatus, EntityType, Event, Message, MessageId,
+    Relation, RelationId, Reservation, ReservationId, Slug,
 };
 use crate::protocol::{Method, Request, Response};
 

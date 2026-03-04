@@ -3,12 +3,10 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use filament_core::dto::{AgentResult, SendMessageRequest, ValidSendMessageRequest};
 use filament_core::error::{FilamentError, Result};
 use filament_core::graph::ContextBundle;
-use filament_core::models::{
-    AgentResult, AgentRunId, AgentStatus, EntityStatus, MessageType, SendMessageRequest,
-    ValidSendMessageRequest,
-};
+use filament_core::models::{AgentRunId, AgentStatus, EntityStatus, MessageType};
 use filament_core::store;
 use std::process::Command;
 use tracing::{debug, error, info, warn};
@@ -400,17 +398,44 @@ async fn route_result(
 
     // Route messages
     for msg in &result.messages {
-        route_single_message(state, run_id, agent_name, task_id, msg.to_agent.as_str(), msg.body.as_str(), Some(msg.msg_type.clone())).await;
+        route_single_message(
+            state,
+            run_id,
+            agent_name,
+            task_id,
+            msg.to_agent.as_str(),
+            msg.body.as_str(),
+            Some(msg.msg_type.clone()),
+        )
+        .await;
     }
 
     // Route blockers as messages to "user"
     for blocker in &result.blockers {
-        route_single_message(state, run_id, agent_name, task_id, "user", blocker, Some(MessageType::Blocker)).await;
+        route_single_message(
+            state,
+            run_id,
+            agent_name,
+            task_id,
+            "user",
+            blocker,
+            Some(MessageType::Blocker),
+        )
+        .await;
     }
 
     // Route questions as messages to "user"
     for question in &result.questions {
-        route_single_message(state, run_id, agent_name, task_id, "user", question, Some(MessageType::Question)).await;
+        route_single_message(
+            state,
+            run_id,
+            agent_name,
+            task_id,
+            "user",
+            question,
+            Some(MessageType::Question),
+        )
+        .await;
     }
 
     // Update task status based on agent result
@@ -699,7 +724,8 @@ mod tests {
             impact_score: 0,
             upstream_artifacts: vec![],
         };
-        let prompt = build_system_prompt(AgentRole::Reviewer, "review-pr", "Review PR #42", &bundle);
+        let prompt =
+            build_system_prompt(AgentRole::Reviewer, "review-pr", "Review PR #42", &bundle);
         assert!(prompt.contains("Reviewer agent"));
         assert!(prompt.contains("review-pr"));
         assert!(!prompt.contains("CONTEXT"));

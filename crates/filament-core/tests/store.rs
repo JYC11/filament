@@ -3,6 +3,7 @@ mod common;
 use common::{
     blocks_req, depends_on_req, sample_entity_req, sample_message_req, task_req, test_db,
 };
+use filament_core::dto::*;
 use filament_core::error::FilamentError;
 use filament_core::models::*;
 use filament_core::store::*;
@@ -1477,9 +1478,7 @@ async fn list_pending_escalations_blocked_agent_run_has_blocker_kind() {
     store
         .with_transaction(|conn| {
             let rid = run_id.to_string();
-            Box::pin(async move {
-                finish_agent_run(conn, &rid, AgentStatus::Blocked, None).await
-            })
+            Box::pin(async move { finish_agent_run(conn, &rid, AgentStatus::Blocked, None).await })
         })
         .await
         .unwrap();
@@ -1512,9 +1511,9 @@ async fn list_pending_escalations_needs_input_agent_run_has_needs_input_kind() {
     store
         .with_transaction(|conn| {
             let rid = run_id.to_string();
-            Box::pin(async move {
-                finish_agent_run(conn, &rid, AgentStatus::NeedsInput, None).await
-            })
+            Box::pin(
+                async move { finish_agent_run(conn, &rid, AgentStatus::NeedsInput, None).await },
+            )
         })
         .await
         .unwrap();

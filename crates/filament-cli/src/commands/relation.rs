@@ -1,6 +1,7 @@
 use clap::Args;
+use filament_core::dto::CreateRelationRequest;
 use filament_core::error::Result;
-use filament_core::models::{CreateRelationRequest, RelationType};
+use filament_core::models::RelationType;
 
 use super::helpers::{connect, output_json};
 use crate::Cli;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use filament_core::dto::{SendMessageRequest, ValidSendMessageRequest};
 use filament_core::error::Result;
-use filament_core::models::{SendMessageRequest, ValidSendMessageRequest};
 use filament_core::store;
 use serde::Deserialize;
 

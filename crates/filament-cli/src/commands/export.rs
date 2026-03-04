@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use clap::Args;
+use filament_core::dto::ExportData;
 use filament_core::error::{FilamentError, Result};
-use filament_core::models::ExportData;
 
 use super::helpers::connect;
 use crate::Cli;
@@ -20,8 +20,8 @@ pub struct ExportArgs {
 pub async fn export(_cli: &Cli, args: &ExportArgs) -> Result<()> {
     let mut conn = connect().await?;
     let data = conn.export_all(!args.no_events).await?;
-    let json = serde_json::to_string_pretty(&data)
-        .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(&data).map_err(|e| FilamentError::Protocol(e.to_string()))?;
 
     if let Some(path) = &args.output {
         std::fs::write(path, &json)?;

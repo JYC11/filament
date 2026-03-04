@@ -1,8 +1,7 @@
 use clap::{Args, Subcommand};
+use filament_core::dto::{CreateEntityRequest, CreateRelationRequest};
 use filament_core::error::Result;
-use filament_core::models::{
-    CreateEntityRequest, CreateRelationRequest, EntityId, EntityType, Priority, RelationType,
-};
+use filament_core::models::{EntityId, EntityType, Priority, RelationType};
 
 use super::helpers::{
     connect, output_json, print_entity_list, print_relations, truncate_with_ellipsis,

@@ -3,13 +3,16 @@ use std::path::Path;
 use tokio::net::UnixStream;
 
 use crate::client::DaemonClient;
+use crate::dto::{
+    CreateEntityRequest, CreateRelationRequest, Escalation, ExportData, ImportResult,
+    SendMessageRequest, ValidCreateEntityRequest, ValidCreateRelationRequest,
+    ValidSendMessageRequest,
+};
 use crate::error::{FilamentError, Result};
 use crate::graph::KnowledgeGraph;
 use crate::models::{
-    CreateEntityRequest, CreateRelationRequest, Entity, EntityCommon, EntityId, EntityStatus,
-    EntityType, Escalation, Event, ExportData, ImportResult, Message, MessageId, Relation,
-    RelationId, Reservation, ReservationId, ReservationMode, SendMessageRequest, Slug, TtlSeconds,
-    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
+    Entity, EntityCommon, EntityId, EntityStatus, EntityType, Event, Message, MessageId, Relation,
+    RelationId, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
 };
 use crate::schema::init_pool;
 use crate::store::{self, FilamentStore};
@@ -544,9 +547,7 @@ impl FilamentConnection {
             Self::Direct(s) => {
                 let data = data.clone();
                 s.with_transaction(|conn| {
-                    Box::pin(
-                        async move { store::import_data(conn, &data, include_events).await },
-                    )
+                    Box::pin(async move { store::import_data(conn, &data, include_events).await })
                 })
                 .await
             }

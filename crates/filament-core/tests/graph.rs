@@ -475,7 +475,10 @@ async fn build_context_bundle_includes_all_sections() {
     graph.hydrate(store.pool()).await.unwrap();
 
     let bundle = graph.build_context_bundle(b_id.as_str(), 2);
-    assert!(!bundle.summaries.is_empty(), "should have context summaries");
+    assert!(
+        !bundle.summaries.is_empty(),
+        "should have context summaries"
+    );
     assert!(bundle.impact_score > 0, "should have downstream dependents");
 }
 
@@ -492,7 +495,12 @@ async fn upstream_artifacts_returns_closed_predecessors() {
         .with_transaction(|conn| {
             Box::pin(async move {
                 let (a, _) = create_entity(conn, &task_req("Done Task", 0)).await?;
-                update_entity_status(conn, a.as_str(), filament_core::models::EntityStatus::Closed).await?;
+                update_entity_status(
+                    conn,
+                    a.as_str(),
+                    filament_core::models::EntityStatus::Closed,
+                )
+                .await?;
                 let (b, _) = create_entity(conn, &task_req("Current Task", 1)).await?;
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
                 Ok(b)

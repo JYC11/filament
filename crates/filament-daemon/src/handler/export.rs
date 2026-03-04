@@ -28,7 +28,7 @@ pub async fn export_all(
 
 #[derive(Deserialize)]
 struct ImportParams {
-    data: filament_core::models::ExportData,
+    data: filament_core::dto::ExportData,
     #[serde(default = "default_true")]
     include_events: bool,
 }

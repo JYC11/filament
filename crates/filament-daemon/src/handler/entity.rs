@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
+use filament_core::dto::{CreateEntityRequest, ValidCreateEntityRequest};
 use filament_core::error::Result;
-use filament_core::models::{
-    CreateEntityRequest, EntityStatus, EntityType, ValidCreateEntityRequest,
-};
+use filament_core::models::{EntityStatus, EntityType};
 use filament_core::store;
 use serde::Deserialize;
 

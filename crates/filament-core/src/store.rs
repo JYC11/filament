@@ -1,13 +1,15 @@
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, SqliteConnection};
 
+use crate::dto::{
+    Escalation, EscalationKind, ExportData, ImportResult, ValidCreateEntityRequest,
+    ValidCreateRelationRequest, ValidSendMessageRequest,
+};
 use crate::error::{FilamentError, Result};
 use crate::models::{
     AgentRun, AgentRunId, AgentStatus, ContentRef, Entity, EntityCommon, EntityId, EntityStatus,
-    EntityType, Escalation, EscalationKind, Event, EventId, EventType, ExportData, ImportResult,
-    Message, MessageId, NonEmptyString, Priority, Relation, RelationId, Reservation, ReservationId,
-    ReservationMode, Slug, TtlSeconds, ValidCreateEntityRequest, ValidCreateRelationRequest,
-    ValidSendMessageRequest,
+    EntityType, Event, EventId, EventType, Message, MessageId, NonEmptyString, Priority, Relation,
+    RelationId, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
 };
 
 // ---------------------------------------------------------------------------
@@ -1208,10 +1210,9 @@ async fn import_entities(conn: &mut SqliteConnection, entities: &[Entity]) -> Re
         let c = entity.common();
         let key_facts =
             serde_json::to_string(&c.key_facts).expect("Value serialization is infallible");
-        let (content_path, content_hash) = c
-            .content
-            .as_ref()
-            .map_or((None, None), |cr| (Some(cr.path.as_str()), cr.hash.as_deref()));
+        let (content_path, content_hash) = c.content.as_ref().map_or((None, None), |cr| {
+            (Some(cr.path.as_str()), cr.hash.as_deref())
+        });
 
         // Use ON CONFLICT DO UPDATE to upsert entities without triggering
         // CASCADE deletes that INSERT OR REPLACE would cause on relations.

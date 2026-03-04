@@ -2,7 +2,8 @@ use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
 use filament_core::connection::FilamentConnection;
-use filament_core::models::{CreateEntityRequest, EntityType};
+use filament_core::dto::CreateEntityRequest;
+use filament_core::models::EntityType;
 use filament_core::schema::init_test_pool;
 use filament_core::store::FilamentStore;
 

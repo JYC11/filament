@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use filament_core::dto::{CreateRelationRequest, ValidCreateRelationRequest};
 use filament_core::error::Result;
-use filament_core::models::{CreateRelationRequest, RelationType, ValidCreateRelationRequest};
+use filament_core::models::RelationType;
 use filament_core::store;
 use serde::Deserialize;
 

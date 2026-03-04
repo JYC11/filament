@@ -24,10 +24,7 @@ pub async fn escalations(cli: &Cli) -> Result<()> {
     println!("{}", "-".repeat(90));
 
     for esc in &items {
-        let task = esc
-            .task_id
-            .as_deref()
-            .unwrap_or("-");
+        let task = esc.task_id.as_deref().unwrap_or("-");
         let body = if esc.body.chars().count() > 50 {
             let truncated: String = esc.body.chars().take(47).collect();
             format!("{truncated}...")

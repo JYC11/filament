@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
+use filament_core::dto::{
+    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
+};
 use filament_core::models::{
-    EntityId, EntityType, MessageType, NonEmptyString, Priority, RelationType,
-    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest, Weight,
+    EntityId, EntityType, MessageType, NonEmptyString, Priority, RelationType, Weight,
 };
 use filament_core::schema::init_test_pool;
 use filament_core::store::FilamentStore;

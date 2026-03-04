@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use clap::Args;
+use filament_core::dto::CreateEntityRequest;
 use filament_core::error::Result;
-use filament_core::models::{CreateEntityRequest, EntityType, Priority};
+use filament_core::models::{EntityType, Priority};
 
 use super::helpers::{connect, output_json, print_entity_list, print_relations, read_content_file};
 use crate::Cli;

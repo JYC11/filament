@@ -75,9 +75,7 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::ExportAll => export::export_all(params, state).await,
         Method::ImportData => export::import_data(params, state).await,
         // Escalation
-        Method::ListPendingEscalations => {
-            export::list_pending_escalations(params, state).await
-        }
+        Method::ListPendingEscalations => export::list_pending_escalations(params, state).await,
     }
 }
 

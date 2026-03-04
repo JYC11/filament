@@ -1,5 +1,6 @@
 pub mod config;
 pub mod dispatch;
+pub(crate) mod dto;
 pub mod handler;
 pub mod mcp;
 pub mod roles;
