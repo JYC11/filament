@@ -1213,9 +1213,22 @@ async fn import_entities(conn: &mut SqliteConnection, entities: &[Entity]) -> Re
             .as_ref()
             .map_or((None, None), |cr| (Some(cr.path.as_str()), cr.hash.as_deref()));
 
+        // Use ON CONFLICT DO UPDATE to upsert entities without triggering
+        // CASCADE deletes that INSERT OR REPLACE would cause on relations.
         sqlx::query(
-            "INSERT OR REPLACE INTO entities (id, slug, name, entity_type, summary, key_facts, content_path, content_hash, status, priority, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO entities (id, slug, name, entity_type, summary, key_facts, content_path, content_hash, status, priority, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+               slug = excluded.slug,
+               name = excluded.name,
+               entity_type = excluded.entity_type,
+               summary = excluded.summary,
+               key_facts = excluded.key_facts,
+               content_path = excluded.content_path,
+               content_hash = excluded.content_hash,
+               status = excluded.status,
+               priority = excluded.priority,
+               updated_at = excluded.updated_at",
         )
         .bind(c.id.as_str())
         .bind(c.slug.as_str())
@@ -1230,7 +1243,16 @@ async fn import_entities(conn: &mut SqliteConnection, entities: &[Entity]) -> Re
         .bind(c.created_at)
         .bind(c.updated_at)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(db_err) if db_err.message().contains("UNIQUE constraint failed: entities.slug") => {
+                FilamentError::Validation(format!(
+                    "import conflict: slug '{}' is already used by a different entity",
+                    c.slug,
+                ))
+            }
+            _ => FilamentError::from(e),
+        })?;
         count += 1;
     }
     Ok(count)
@@ -1254,7 +1276,16 @@ async fn import_relations(conn: &mut SqliteConnection, relations: &[Relation]) -
         .bind(&metadata)
         .bind(rel.created_at)
         .execute(&mut *conn)
-        .await?;
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(db_err) if db_err.message().contains("FOREIGN KEY constraint failed") => {
+                FilamentError::Validation(format!(
+                    "import error: relation '{}' references non-existent entity (source: {}, target: {})",
+                    rel.id, rel.source_id, rel.target_id,
+                ))
+            }
+            _ => FilamentError::from(e),
+        })?;
         if result.rows_affected() > 0 {
             count += 1;
         }
@@ -1392,12 +1423,19 @@ async fn escalations_from_agent_runs(pool: &Pool<Sqlite>) -> Result<Vec<Escalati
 
     Ok(rows
         .into_iter()
-        .map(|r| Escalation {
-            kind: EscalationKind::NeedsInput,
-            agent_name: r.agent_role,
-            task_id: Some(r.task_id),
-            body: format!("Agent run status: {}", r.status),
-            created_at: r.started_at,
+        .map(|r| {
+            let kind = if r.status == "blocked" {
+                EscalationKind::Blocker
+            } else {
+                EscalationKind::NeedsInput
+            };
+            Escalation {
+                kind,
+                agent_name: r.agent_role,
+                task_id: Some(r.task_id),
+                body: format!("Agent run status: {}", r.status),
+                created_at: r.started_at,
+            }
         })
         .collect())
 }

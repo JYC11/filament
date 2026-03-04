@@ -1354,8 +1354,8 @@ async fn import_twice_is_idempotent() {
     assert_eq!(result1.entities_imported, 2);
     assert_eq!(result1.relations_imported, 1);
 
-    // Second import — entities upserted (INSERT OR REPLACE cascades FK deletions,
-    // so relations are re-imported too). No duplicates created.
+    // Second import — entities upserted via ON CONFLICT DO UPDATE (no FK cascade).
+    // Relations already exist (INSERT OR IGNORE), so 0 new.
     let result2 = store
         .with_transaction(|conn| {
             let data = export_data.clone();
@@ -1364,7 +1364,7 @@ async fn import_twice_is_idempotent() {
         .await
         .unwrap();
     assert_eq!(result2.entities_imported, 2); // upsert counts all
-    assert_eq!(result2.relations_imported, 1); // re-imported after cascade
+    assert_eq!(result2.relations_imported, 0); // already exist, no cascade
 
     // No duplicates
     let entities = list_entities(store.pool(), None, None).await.unwrap();
@@ -1451,4 +1451,168 @@ async fn list_pending_escalations_excludes_read_messages() {
 
     let escalations = list_pending_escalations(store.pool()).await.unwrap();
     assert!(escalations.is_empty());
+}
+
+#[tokio::test]
+async fn list_pending_escalations_blocked_agent_run_has_blocker_kind() {
+    let store = test_db().await;
+
+    // Create a task and an agent run, then finish the run as blocked
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Blocked Task", 2);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let run_id = store
+        .with_transaction(|conn| {
+            let tid = task_id.to_string();
+            Box::pin(async move { create_agent_run(conn, &tid, "coder", None).await })
+        })
+        .await
+        .unwrap();
+
+    store
+        .with_transaction(|conn| {
+            let rid = run_id.to_string();
+            Box::pin(async move {
+                finish_agent_run(conn, &rid, AgentStatus::Blocked, None).await
+            })
+        })
+        .await
+        .unwrap();
+
+    let escalations = list_pending_escalations(store.pool()).await.unwrap();
+    assert_eq!(escalations.len(), 1);
+    assert_eq!(escalations[0].kind, EscalationKind::Blocker);
+}
+
+#[tokio::test]
+async fn list_pending_escalations_needs_input_agent_run_has_needs_input_kind() {
+    let store = test_db().await;
+
+    let (task_id, _) = store
+        .with_transaction(|conn| {
+            let req = task_req("Input Task", 2);
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let run_id = store
+        .with_transaction(|conn| {
+            let tid = task_id.to_string();
+            Box::pin(async move { create_agent_run(conn, &tid, "coder", None).await })
+        })
+        .await
+        .unwrap();
+
+    store
+        .with_transaction(|conn| {
+            let rid = run_id.to_string();
+            Box::pin(async move {
+                finish_agent_run(conn, &rid, AgentStatus::NeedsInput, None).await
+            })
+        })
+        .await
+        .unwrap();
+
+    let escalations = list_pending_escalations(store.pool()).await.unwrap();
+    assert_eq!(escalations.len(), 1);
+    assert_eq!(escalations[0].kind, EscalationKind::NeedsInput);
+}
+
+// ---------------------------------------------------------------------------
+// Import error handling
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn import_slug_conflict_returns_validation_error() {
+    let store = test_db().await;
+
+    // Create an entity with a known slug
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move { create_entity(conn, &task_req("Existing", 1)).await })
+        })
+        .await
+        .unwrap();
+
+    // Export to get the entity's slug
+    let export_data = export_all(store.pool(), false).await.unwrap();
+    let existing_slug = export_data.entities[0].slug().to_string();
+
+    // Build import data with a different UUID but the same slug
+    let mut conflict_data = export_data.clone();
+    let entity = conflict_data.entities[0].clone();
+    let mut common = entity.into_common();
+    common.id = EntityId::new(); // different ID, same slug
+    let conflict_entity = Entity::Task(common);
+    conflict_data.entities = vec![conflict_entity];
+
+    let result = store
+        .with_transaction(|conn| {
+            let data = conflict_data.clone();
+            Box::pin(async move { import_data(conn, &data, false).await })
+        })
+        .await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    match &err {
+        FilamentError::Validation(msg) => {
+            assert!(
+                msg.contains("slug") && msg.contains(&existing_slug),
+                "expected slug conflict message, got: {msg}"
+            );
+        }
+        other => panic!("expected Validation error, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn import_relation_with_missing_entity_returns_validation_error() {
+    let store = test_db().await;
+
+    // Build import data with a relation pointing to non-existent entities
+    let bad_relation = Relation {
+        id: RelationId::new(),
+        source_id: EntityId::new(),
+        target_id: EntityId::new(),
+        relation_type: RelationType::Owns,
+        weight: Weight::DEFAULT,
+        summary: String::new(),
+        metadata: serde_json::Value::Object(serde_json::Map::new()),
+        created_at: chrono::Utc::now(),
+    };
+
+    let import = ExportData {
+        version: 1,
+        exported_at: chrono::Utc::now(),
+        entities: vec![],
+        relations: vec![bad_relation],
+        messages: vec![],
+        events: vec![],
+    };
+
+    let result = store
+        .with_transaction(|conn| {
+            let data = import.clone();
+            Box::pin(async move { import_data(conn, &data, false).await })
+        })
+        .await;
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    match &err {
+        FilamentError::Validation(msg) => {
+            assert!(
+                msg.contains("non-existent entity"),
+                "expected FK error message, got: {msg}"
+            );
+        }
+        other => panic!("expected Validation error, got: {other:?}"),
+    }
 }

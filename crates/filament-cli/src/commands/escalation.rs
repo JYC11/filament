@@ -28,8 +28,9 @@ pub async fn escalations(cli: &Cli) -> Result<()> {
             .task_id
             .as_deref()
             .unwrap_or("-");
-        let body = if esc.body.len() > 50 {
-            format!("{}...", &esc.body[..47])
+        let body = if esc.body.chars().count() > 50 {
+            let truncated: String = esc.body.chars().take(47).collect();
+            format!("{truncated}...")
         } else {
             esc.body.clone()
         };

@@ -492,16 +492,21 @@ async fn route_single_message(
         in_reply_to: None,
         task_id: Some(task_id.to_string()),
     };
-    if let Ok(valid) = ValidSendMessageRequest::try_from(req) {
-        if let Err(e) = state
-            .store
-            .with_transaction(|conn| {
-                let valid = valid.clone();
-                Box::pin(async move { store::send_message(conn, &valid).await })
-            })
-            .await
-        {
-            warn!(run_id = %run_id, "failed to route message: {e}");
+    match ValidSendMessageRequest::try_from(req) {
+        Ok(valid) => {
+            if let Err(e) = state
+                .store
+                .with_transaction(|conn| {
+                    let valid = valid.clone();
+                    Box::pin(async move { store::send_message(conn, &valid).await })
+                })
+                .await
+            {
+                warn!(run_id = %run_id, "failed to route message: {e}");
+            }
+        }
+        Err(e) => {
+            warn!(run_id = %run_id, from = %from, to = %to, "message validation failed: {e}");
         }
     }
 }
