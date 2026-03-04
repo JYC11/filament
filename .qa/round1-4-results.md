@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-04
 **Binary**: `target/release/filament` v0.1.0
-**Total TCs executed**: 78 (of 99 planned; Round 3 TUI tests are manual/visual)
+**Total TCs executed**: 91 (of 99 planned; TC92 N/A — no Messages tab in TUI)
 
 ## Summary
 
@@ -29,6 +29,8 @@
 | NOTE-4 | TC32 | Semantic duplicate relations (A blocks B + B depends_on A) both created | Relations are stored independently; no semantic dedup. |
 | NOTE-5 | TC59 | Two agents can both be assigned_to same task | No single-assignee constraint. Last-write-wins for status. |
 | NOTE-6 | TC78 | `task ready` defaults to `--limit 20` | Configurable via `--limit N` flag. |
+| NOTE-7 | TC87 | TUI doesn't auto-fallback to direct mode when daemon dies | Shows error in status bar, stays in `[daemon]` mode. No crash, last-fetched data still visible. |
+| NOTE-8 | TC92 | TUI has no Messages tab | Only Tasks/Agents/Reservations tabs exist. Messages are CLI-only. **Future feature**: add Messages tab to TUI. |
 
 ## Round 1: CLI-Only (Direct DB)
 
@@ -108,9 +110,35 @@
 | 79 | 10x rapid create-then-query | PASS — all reads consistent |
 | 80 | CLI direct bypass on restart | PASS — daemon hydrates from DB |
 
-## Round 3: TUI (Manual/Visual)
+## Round 3: TUI Under Fire (via tmux)
 
-Skipped — TUI tests require manual visual inspection. All 8 TUI snapshot tests pass in automated suite.
+Tested using tmux sessions with `tmux capture-pane -p` for output verification.
+
+### R3-A: TUI Rendering Stress (TC81-TC88)
+
+| TC | Test | Result | Notes |
+|----|------|--------|-------|
+| 81 | Start TUI with empty database | PASS | Shows empty table with headers, `[direct]` mode, no crash |
+| 82 | Add 50 entities, then TUI shows all | PASS | All 50 shown sorted by priority, scrollable with j/k |
+| 83 | Entity with 200-char name — truncation | PASS | Name truncated to fit column width, no layout break |
+| 84 | Rapidly switch tabs (10x in <1s) | PASS | No flicker, no crash, correct data per tab |
+| 85 | Resize terminal to 20x10 (tiny) | PASS | Renders truncated columns, header/footer intact, no crash |
+| 86 | Resize terminal to 300x80 (huge) | PASS | Name column expands to fill space, no rendering artifacts |
+| 87 | Stop daemon while TUI running | PASS | Shows "Broken pipe" error in status bar, no crash, data still visible |
+| 88 | Start TUI without daemon | PASS | Connects directly to DB in `[direct]` mode |
+
+### R3-B: TUI + Concurrent Mutations (TC89-TC94)
+
+| TC | Test | Result | Notes |
+|----|------|--------|-------|
+| 89 | Close task via CLI, TUI refresh | PASS | Closed task disappears from `[filter: open]` list |
+| 90 | Dispatch agent, TUI Agents tab | PASS | Agent run recorded (failed quickly — no claude binary), TUI handles correctly |
+| 91 | Reserve file via CLI, TUI Reservations | PASS | New reservation visible with agent, glob, exclusive, TTL |
+| 92 | Send message, TUI Messages tab | N/A | TUI has 3 tabs (Tasks/Agents/Reservations), no Messages tab |
+| 93 | Close entity selected in TUI | PASS | Closed entity removed from list, selection moves, no crash |
+| 94 | 20 rapid parallel adds while TUI open | PASS | All 20 tasks created, TUI shows them after refresh, no crash |
+
+**Design Note (TC87)**: When daemon dies, TUI shows error in status bar but stays in `[daemon]` mode — does not auto-fallback to `[direct]`. Could be improved but is not a bug (no crash, data still visible from last fetch).
 
 ## Round 4: Scripted Stress
 
