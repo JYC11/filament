@@ -12,16 +12,32 @@ pub struct DispatchConfig {
     pub agent_command: String,
     /// Project root directory (for MCP config and working directory).
     pub project_root: PathBuf,
+    /// Graph context depth for agent prompts (default: 2). `FILAMENT_CONTEXT_DEPTH`.
+    pub context_depth: usize,
+    /// Auto-dispatch unblocked tasks on completion (default: false). `FILAMENT_AUTO_DISPATCH=1`.
+    pub auto_dispatch: bool,
+    /// Max auto-dispatched tasks per completion event (default: 3). `FILAMENT_MAX_AUTO_DISPATCH`.
+    pub max_auto_dispatch: usize,
 }
 
 impl DispatchConfig {
-    /// Create from project root, reading `FILAMENT_AGENT_COMMAND` env var.
+    /// Create from project root, reading env vars for overrides.
     #[must_use]
     pub fn from_project_root(root: &Path) -> Self {
         Self {
             agent_command: std::env::var("FILAMENT_AGENT_COMMAND")
                 .unwrap_or_else(|_| "claude".to_string()),
             project_root: root.to_path_buf(),
+            context_depth: std::env::var("FILAMENT_CONTEXT_DEPTH")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(2),
+            auto_dispatch: std::env::var("FILAMENT_AUTO_DISPATCH")
+                .is_ok_and(|v| v == "1" || v == "true"),
+            max_auto_dispatch: std::env::var("FILAMENT_MAX_AUTO_DISPATCH")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(3),
         }
     }
 }

@@ -7,9 +7,9 @@ use crate::error::{FilamentError, Result};
 use crate::graph::KnowledgeGraph;
 use crate::models::{
     CreateEntityRequest, CreateRelationRequest, Entity, EntityCommon, EntityId, EntityStatus,
-    EntityType, Event, Message, MessageId, Relation, RelationId, Reservation, ReservationId,
-    ReservationMode, SendMessageRequest, Slug, TtlSeconds, ValidCreateEntityRequest,
-    ValidCreateRelationRequest, ValidSendMessageRequest,
+    EntityType, Escalation, Event, ExportData, ImportResult, Message, MessageId, Relation,
+    RelationId, Reservation, ReservationId, ReservationMode, SendMessageRequest, Slug, TtlSeconds,
+    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
 };
 use crate::schema::init_pool;
 use crate::store::{self, FilamentStore};
@@ -521,6 +521,47 @@ impl FilamentConnection {
         match self {
             Self::Direct(s) => store::get_entity_events(s.pool(), entity_id).await,
             Self::Socket(c) => c.get_entity_events(entity_id).await,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Export / Import dispatch methods
+    // -----------------------------------------------------------------------
+
+    pub async fn export_all(&mut self, include_events: bool) -> Result<ExportData> {
+        match self {
+            Self::Direct(s) => store::export_all(s.pool(), include_events).await,
+            Self::Socket(c) => c.export_all(include_events).await,
+        }
+    }
+
+    pub async fn import_data(
+        &mut self,
+        data: &ExportData,
+        include_events: bool,
+    ) -> Result<ImportResult> {
+        match self {
+            Self::Direct(s) => {
+                let data = data.clone();
+                s.with_transaction(|conn| {
+                    Box::pin(
+                        async move { store::import_data(conn, &data, include_events).await },
+                    )
+                })
+                .await
+            }
+            Self::Socket(c) => c.import_data(data, include_events).await,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Escalation dispatch methods
+    // -----------------------------------------------------------------------
+
+    pub async fn list_pending_escalations(&mut self) -> Result<Vec<Escalation>> {
+        match self {
+            Self::Direct(s) => store::list_pending_escalations(s.pool()).await,
+            Self::Socket(c) => c.list_pending_escalations().await,
         }
     }
 }

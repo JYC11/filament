@@ -413,6 +413,188 @@ impl KnowledgeGraph {
             self.index.insert(self.graph[idx].entity_id.clone(), idx);
         }
     }
+
+    /// Walk upstream (`DependsOn` targets + `Blocks` sources) and collect summaries
+    /// of Closed tasks. These represent completed predecessor results.
+    #[must_use]
+    pub fn upstream_artifacts(&self, entity_id: &str) -> Vec<String> {
+        let Some(&start) = self.index.get(entity_id) else {
+            return Vec::new();
+        };
+
+        let mut results = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(start);
+        let mut stack = vec![start];
+
+        while let Some(node) = stack.pop() {
+            // Outgoing DependsOn: this node depends_on target → target is upstream
+            for edge in self.graph.edges_directed(node, Direction::Outgoing) {
+                if edge.weight().relation_type == RelationType::DependsOn
+                    && visited.insert(edge.target())
+                {
+                    let target = &self.graph[edge.target()];
+                    if target.status == EntityStatus::Closed {
+                        results.push(format!("[completed] {}: {}", target.name, target.summary));
+                    }
+                    stack.push(edge.target());
+                }
+            }
+            // Incoming Blocks: source blocks this node → source is upstream
+            for edge in self.graph.edges_directed(node, Direction::Incoming) {
+                if edge.weight().relation_type == RelationType::Blocks
+                    && visited.insert(edge.source())
+                {
+                    let source = &self.graph[edge.source()];
+                    if source.status == EntityStatus::Closed {
+                        results.push(format!("[completed] {}: {}", source.name, source.summary));
+                    }
+                    stack.push(edge.source());
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Build a rich context bundle for an entity, combining neighborhood context,
+    /// critical path, impact score, and upstream artifact summaries.
+    #[must_use]
+    pub fn build_context_bundle(&self, entity_id: &str, depth: usize) -> ContextBundle {
+        ContextBundle {
+            summaries: self.context_summaries(entity_id, depth),
+            critical_path: self.critical_path_names(entity_id),
+            impact_score: self.impact_score(entity_id),
+            upstream_artifacts: self.upstream_artifacts(entity_id),
+        }
+    }
+
+    /// Critical path but return entity names instead of IDs (for prompts).
+    fn critical_path_names(&self, entity_id: &str) -> Vec<String> {
+        self.critical_path(entity_id)
+            .into_iter()
+            .filter_map(|id| self.get_node(id.as_str()).map(|n| n.name.to_string()))
+            .collect()
+    }
+
+    /// Find tasks that become newly unblocked when `completed_entity_id` is completed.
+    ///
+    /// Returns entity IDs of Open tasks whose only remaining blocker was the given entity.
+    #[must_use]
+    pub fn newly_unblocked_by(&self, completed_entity_id: &str) -> Vec<EntityId> {
+        let Some(&completed_idx) = self.index.get(completed_entity_id) else {
+            return Vec::new();
+        };
+
+        let mut unblocked = Vec::new();
+
+        // Find tasks that depend on the completed entity:
+        // 1. Outgoing Blocks from completed → target is potentially unblocked
+        for edge in self
+            .graph
+            .edges_directed(completed_idx, Direction::Outgoing)
+        {
+            if edge.weight().relation_type == RelationType::Blocks {
+                let target = edge.target();
+                if self.is_newly_unblocked(target, completed_idx) {
+                    unblocked.push(self.graph[target].entity_id.clone());
+                }
+            }
+        }
+
+        // 2. Incoming DependsOn to completed → source depends on us
+        for edge in self
+            .graph
+            .edges_directed(completed_idx, Direction::Incoming)
+        {
+            if edge.weight().relation_type == RelationType::DependsOn {
+                let source = edge.source();
+                if self.is_newly_unblocked(source, completed_idx) {
+                    unblocked.push(self.graph[source].entity_id.clone());
+                }
+            }
+        }
+
+        unblocked
+    }
+
+    /// Check if a node would be unblocked if `just_completed` were closed.
+    /// The node must be Open and have no other non-closed blockers.
+    fn is_newly_unblocked(&self, node: NodeIndex, just_completed: NodeIndex) -> bool {
+        let n = &self.graph[node];
+        if n.entity_type != EntityType::Task || n.status != EntityStatus::Open {
+            return false;
+        }
+
+        // Check all blockers except `just_completed` — must all be closed
+        for edge in self.graph.edges_directed(node, Direction::Incoming) {
+            if edge.weight().relation_type == RelationType::Blocks {
+                let src = edge.source();
+                if src != just_completed && self.graph[src].status != EntityStatus::Closed {
+                    return false;
+                }
+            }
+        }
+        for edge in self.graph.edges_directed(node, Direction::Outgoing) {
+            if edge.weight().relation_type == RelationType::DependsOn {
+                let tgt = edge.target();
+                if tgt != just_completed && self.graph[tgt].status != EntityStatus::Closed {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Context bundle
+// ---------------------------------------------------------------------------
+
+/// Rich context for a dispatched agent — combines multiple graph queries.
+#[derive(Debug, Clone)]
+pub struct ContextBundle {
+    pub summaries: Vec<String>,
+    pub critical_path: Vec<String>,
+    pub impact_score: usize,
+    pub upstream_artifacts: Vec<String>,
+}
+
+impl ContextBundle {
+    /// Format as prompt lines for injection into agent system prompt.
+    #[must_use]
+    pub fn to_prompt_lines(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+
+        if !self.summaries.is_empty() {
+            lines.push("--- CONTEXT ---".to_string());
+            for s in &self.summaries {
+                lines.push(s.clone());
+            }
+        }
+
+        if !self.critical_path.is_empty() {
+            lines.push("--- CRITICAL PATH ---".to_string());
+            lines.push(self.critical_path.join(" → "));
+        }
+
+        if !self.upstream_artifacts.is_empty() {
+            lines.push("--- UPSTREAM RESULTS ---".to_string());
+            for a in &self.upstream_artifacts {
+                lines.push(a.clone());
+            }
+        }
+
+        if self.impact_score > 0 {
+            lines.push(format!(
+                "Impact: {} downstream dependents",
+                self.impact_score
+            ));
+        }
+
+        lines
+    }
 }
 
 impl Default for KnowledgeGraph {

@@ -447,3 +447,144 @@ async fn batch_impact_scores_returns_all_requested() {
     assert_eq!(scores[b_id.as_str()], 1);
     assert_eq!(scores[c_id.as_str()], 2);
 }
+
+// ---------------------------------------------------------------------------
+// Context bundle
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn build_context_bundle_includes_all_sections() {
+    let store = test_db().await;
+
+    // A blocks B, C depends_on B → B has context (A, C), critical path, impact
+    let b_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("Upstream A", 0)).await?;
+                let (b, _) = create_entity(conn, &task_req("Target B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("Downstream C", 2)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                create_relation(conn, &depends_on_req(c.as_str(), b.as_str())).await?;
+                Ok(b)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let bundle = graph.build_context_bundle(b_id.as_str(), 2);
+    assert!(!bundle.summaries.is_empty(), "should have context summaries");
+    assert!(bundle.impact_score > 0, "should have downstream dependents");
+}
+
+// ---------------------------------------------------------------------------
+// Upstream artifacts
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn upstream_artifacts_returns_closed_predecessors() {
+    let store = test_db().await;
+
+    // A (closed) blocks B (open) → B's upstream artifacts should include A
+    let b_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("Done Task", 0)).await?;
+                update_entity_status(conn, a.as_str(), filament_core::models::EntityStatus::Closed).await?;
+                let (b, _) = create_entity(conn, &task_req("Current Task", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                Ok(b)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let artifacts = graph.upstream_artifacts(b_id.as_str());
+    assert_eq!(artifacts.len(), 1);
+    assert!(artifacts[0].contains("Done Task"));
+    assert!(artifacts[0].contains("[completed]"));
+}
+
+#[tokio::test]
+async fn upstream_artifacts_excludes_open_predecessors() {
+    let store = test_db().await;
+
+    // A (open) blocks B (open) → B's upstream artifacts should be empty (A not closed)
+    let b_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("Pending", 0)).await?;
+                let (b, _) = create_entity(conn, &task_req("Current", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                Ok(b)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let artifacts = graph.upstream_artifacts(b_id.as_str());
+    assert!(artifacts.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Newly unblocked by
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn newly_unblocked_by_returns_sole_blocked_tasks() {
+    let store = test_db().await;
+
+    // A blocks B (A is sole blocker of B)
+    let (a_id, b_id) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("Blocker", 0)).await?;
+                let (b, _) = create_entity(conn, &task_req("Blocked", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                Ok((a, b))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let unblocked = graph.newly_unblocked_by(a_id.as_str());
+    assert_eq!(unblocked.len(), 1);
+    assert_eq!(unblocked[0].as_str(), b_id.as_str());
+}
+
+#[tokio::test]
+async fn newly_unblocked_empty_when_other_blockers_remain() {
+    let store = test_db().await;
+
+    // A blocks C, B blocks C → completing A leaves C still blocked by B
+    let a_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 0)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 0)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), c.as_str())).await?;
+                create_relation(conn, &blocks_req(b.as_str(), c.as_str())).await?;
+                Ok(a)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let unblocked = graph.newly_unblocked_by(a_id.as_str());
+    assert!(unblocked.is_empty(), "C should still be blocked by B");
+}

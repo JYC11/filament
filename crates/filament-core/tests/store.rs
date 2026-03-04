@@ -1247,3 +1247,208 @@ async fn acquire_reservation_rejects_whitespace_only_glob() {
         "expected Validation('cannot be empty'), got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Export / Import
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn export_empty_db_returns_valid_export_data() {
+    let store = test_db().await;
+    let data = export_all(store.pool(), true).await.unwrap();
+    assert_eq!(data.version, 1);
+    assert!(data.entities.is_empty());
+    assert!(data.relations.is_empty());
+    assert!(data.messages.is_empty());
+    assert!(data.events.is_empty());
+}
+
+#[tokio::test]
+async fn export_includes_entity_and_relation() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (id1, _) = create_entity(conn, &task_req("Task A", 1)).await?;
+                let (id2, _) = create_entity(conn, &task_req("Task B", 2)).await?;
+                create_relation(conn, &blocks_req(id1.as_str(), id2.as_str())).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let data = export_all(store.pool(), false).await.unwrap();
+    assert_eq!(data.entities.len(), 2);
+    assert_eq!(data.relations.len(), 1);
+    assert!(data.events.is_empty()); // no_events = true
+    assert_eq!(data.version, 1);
+}
+
+#[tokio::test]
+async fn import_into_empty_db_creates_entities_and_relations() {
+    let store = test_db().await;
+
+    // Create data in one store
+    let source_store = test_db().await;
+    source_store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (id1, _) = create_entity(conn, &task_req("Imported A", 1)).await?;
+                let (id2, _) = create_entity(conn, &task_req("Imported B", 2)).await?;
+                create_relation(conn, &blocks_req(id1.as_str(), id2.as_str())).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let export_data = export_all(source_store.pool(), true).await.unwrap();
+
+    // Import into the empty store
+    let result = store
+        .with_transaction(|conn| {
+            let data = export_data.clone();
+            Box::pin(async move { import_data(conn, &data, true).await })
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result.entities_imported, 2);
+    assert_eq!(result.relations_imported, 1);
+    assert!(result.events_imported > 0);
+
+    // Verify entities exist
+    let entities = list_entities(store.pool(), None, None).await.unwrap();
+    assert_eq!(entities.len(), 2);
+}
+
+#[tokio::test]
+async fn import_twice_is_idempotent() {
+    let store = test_db().await;
+
+    let source_store = test_db().await;
+    source_store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (id1, _) = create_entity(conn, &task_req("Alpha", 1)).await?;
+                let (id2, _) = create_entity(conn, &task_req("Beta", 2)).await?;
+                create_relation(conn, &blocks_req(id1.as_str(), id2.as_str())).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let export_data = export_all(source_store.pool(), false).await.unwrap();
+
+    // First import
+    let result1 = store
+        .with_transaction(|conn| {
+            let data = export_data.clone();
+            Box::pin(async move { import_data(conn, &data, false).await })
+        })
+        .await
+        .unwrap();
+    assert_eq!(result1.entities_imported, 2);
+    assert_eq!(result1.relations_imported, 1);
+
+    // Second import — entities upserted (INSERT OR REPLACE cascades FK deletions,
+    // so relations are re-imported too). No duplicates created.
+    let result2 = store
+        .with_transaction(|conn| {
+            let data = export_data.clone();
+            Box::pin(async move { import_data(conn, &data, false).await })
+        })
+        .await
+        .unwrap();
+    assert_eq!(result2.entities_imported, 2); // upsert counts all
+    assert_eq!(result2.relations_imported, 1); // re-imported after cascade
+
+    // No duplicates
+    let entities = list_entities(store.pool(), None, None).await.unwrap();
+    assert_eq!(entities.len(), 2);
+    let relations = list_all_relations(store.pool()).await.unwrap();
+    assert_eq!(relations.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// Escalation queries
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_pending_escalations_returns_blocker_messages() {
+    let store = test_db().await;
+
+    // Send a blocker message
+    store
+        .with_transaction(|conn| {
+            let req = ValidSendMessageRequest {
+                from_agent: NonEmptyString::new("agent-x").unwrap(),
+                to_agent: NonEmptyString::new("user").unwrap(),
+                body: NonEmptyString::new("I'm stuck").unwrap(),
+                msg_type: MessageType::Blocker,
+                in_reply_to: None,
+                task_id: None,
+            };
+            Box::pin(async move { send_message(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let escalations = list_pending_escalations(store.pool()).await.unwrap();
+    assert_eq!(escalations.len(), 1);
+    assert_eq!(escalations[0].kind, EscalationKind::Blocker);
+    assert_eq!(escalations[0].agent_name, "agent-x");
+}
+
+#[tokio::test]
+async fn list_pending_escalations_empty_when_no_blockers() {
+    let store = test_db().await;
+
+    // Send a normal text message (not a blocker)
+    store
+        .with_transaction(|conn| {
+            let req = sample_message_req();
+            Box::pin(async move { send_message(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let escalations = list_pending_escalations(store.pool()).await.unwrap();
+    assert!(escalations.is_empty());
+}
+
+#[tokio::test]
+async fn list_pending_escalations_excludes_read_messages() {
+    let store = test_db().await;
+
+    // Send a blocker message
+    let msg_id = store
+        .with_transaction(|conn| {
+            let req = ValidSendMessageRequest {
+                from_agent: NonEmptyString::new("agent-x").unwrap(),
+                to_agent: NonEmptyString::new("user").unwrap(),
+                body: NonEmptyString::new("blocked").unwrap(),
+                msg_type: MessageType::Blocker,
+                in_reply_to: None,
+                task_id: None,
+            };
+            Box::pin(async move { send_message(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // Mark it read
+    store
+        .with_transaction(|conn| {
+            let id = msg_id.to_string();
+            Box::pin(async move { mark_message_read(conn, &id).await })
+        })
+        .await
+        .unwrap();
+
+    let escalations = list_pending_escalations(store.pool()).await.unwrap();
+    assert!(escalations.is_empty());
+}

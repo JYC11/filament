@@ -1092,6 +1092,64 @@ pub struct AgentMessage {
 }
 
 // ---------------------------------------------------------------------------
+// Export / Import
+// ---------------------------------------------------------------------------
+
+/// Full graph export: all entities, relations, messages, and events.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ExportData {
+    /// Schema version (1 for forward compat).
+    pub version: u32,
+    pub exported_at: DateTime<Utc>,
+    pub entities: Vec<Entity>,
+    pub relations: Vec<Relation>,
+    pub messages: Vec<Message>,
+    pub events: Vec<Event>,
+}
+
+/// Summary of an import operation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ImportResult {
+    pub entities_imported: usize,
+    pub relations_imported: usize,
+    pub messages_imported: usize,
+    pub events_imported: usize,
+}
+
+// ---------------------------------------------------------------------------
+// Escalation
+// ---------------------------------------------------------------------------
+
+/// Something requiring human attention.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Escalation {
+    pub kind: EscalationKind,
+    pub agent_name: String,
+    pub task_id: Option<String>,
+    pub body: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Classification of an escalation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EscalationKind {
+    Blocker,
+    Question,
+    NeedsInput,
+}
+
+impl std::fmt::Display for EscalationKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Blocker => write!(f, "blocker"),
+            Self::Question => write!(f, "question"),
+            Self::NeedsInput => write!(f, "needs_input"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Validated DTOs (boundary validation via TryFrom)
 // ---------------------------------------------------------------------------
 

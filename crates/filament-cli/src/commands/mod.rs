@@ -1,5 +1,7 @@
 mod agent;
 mod entity;
+mod escalation;
+mod export;
 pub mod helpers;
 mod init;
 mod mcp;
@@ -75,6 +77,16 @@ pub enum Commands {
     /// Start the MCP stdio server (for AI agent integration).
     Mcp,
 
+    // -- Export / Import --
+    /// Export the full graph as JSON.
+    Export(export::ExportArgs),
+    /// Import entities, relations, and messages from JSON.
+    Import(export::ImportArgs),
+
+    // -- Escalation --
+    /// Show pending escalations (blockers, questions, needs-input).
+    Escalations,
+
     // -- TUI --
     /// Launch the interactive TUI.
     Tui,
@@ -101,6 +113,9 @@ impl Commands {
             Self::Reservations(args) => reserve::reservations(cli, args).await,
             Self::Serve(args) => serve::serve(cli, args).await,
             Self::Stop => serve::stop(cli).await,
+            Self::Export(args) => export::export(cli, args).await,
+            Self::Import(args) => export::import(cli, args).await,
+            Self::Escalations => escalation::escalations(cli).await,
             Self::Mcp => mcp::run().await,
             Self::Tui => tui::run().await,
         }

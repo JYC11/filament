@@ -112,6 +112,7 @@ pub struct App {
     pub task_filter: TaskFilter,
     pub last_refresh: DateTime<Utc>,
     pub status_message: Option<String>,
+    pub escalation_count: usize,
     last_tick: Instant,
 }
 
@@ -131,6 +132,7 @@ impl App {
             task_filter: TaskFilter::default(),
             last_refresh: Utc::now(),
             status_message: None,
+            escalation_count: 0,
             last_tick: Instant::now(),
         }
     }
@@ -143,6 +145,7 @@ impl App {
         self.refresh_tasks().await;
         self.refresh_agents().await;
         self.refresh_reservations().await;
+        self.refresh_escalation_count().await;
         self.last_refresh = Utc::now();
         self.last_tick = Instant::now();
     }
@@ -218,6 +221,13 @@ impl App {
             Err(e) => {
                 self.status_message = Some(format!("Error: {e}"));
             }
+        }
+    }
+
+    async fn refresh_escalation_count(&mut self) {
+        match self.conn.list_pending_escalations().await {
+            Ok(items) => self.escalation_count = items.len(),
+            Err(_) => self.escalation_count = 0,
         }
     }
 

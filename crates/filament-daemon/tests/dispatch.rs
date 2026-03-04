@@ -94,6 +94,9 @@ async fn start_test_daemon(
     let dispatch_config = DispatchConfig {
         agent_command: mock_script.to_str().unwrap().to_string(),
         project_root: tmp.path().to_path_buf(),
+        context_depth: 2,
+        auto_dispatch: false,
+        max_auto_dispatch: 3,
     };
 
     let cancel = CancellationToken::new();

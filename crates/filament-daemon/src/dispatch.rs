@@ -1,9 +1,13 @@
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 
 use filament_core::error::{FilamentError, Result};
+use filament_core::graph::ContextBundle;
 use filament_core::models::{
-    AgentResult, AgentRunId, AgentStatus, EntityStatus, SendMessageRequest, ValidSendMessageRequest,
+    AgentResult, AgentRunId, AgentStatus, EntityStatus, MessageType, SendMessageRequest,
+    ValidSendMessageRequest,
 };
 use filament_core::store;
 use std::process::Command;
@@ -81,13 +85,13 @@ pub fn build_mcp_config(run_id: &AgentRunId, project_root: &Path) -> Result<Path
     Ok(config_path)
 }
 
-/// Build the full system prompt: role prompt + task info + protocol instructions.
+/// Build the full system prompt: role prompt + task info + context bundle.
 #[must_use]
 pub fn build_system_prompt(
     role: AgentRole,
     task_name: &str,
     summary: &str,
-    context: &[String],
+    context: &ContextBundle,
 ) -> String {
     use std::fmt::Write;
 
@@ -97,9 +101,10 @@ pub fn build_system_prompt(
     if !summary.is_empty() {
         let _ = writeln!(prompt, "Summary: {summary}");
     }
-    if !context.is_empty() {
-        prompt.push_str("\n--- CONTEXT ---\n");
-        for line in context {
+    let lines = context.to_prompt_lines();
+    if !lines.is_empty() {
+        prompt.push('\n');
+        for line in &lines {
             prompt.push_str(line);
             prompt.push('\n');
         }
@@ -147,10 +152,10 @@ pub async fn dispatch_agent(
     // Build MCP config
     let mcp_config_path = build_mcp_config(&AgentRunId::new(), &config.project_root)?;
 
-    // Build system prompt with context
+    // Build system prompt with rich context bundle
     let context = {
         let graph = state.graph_read().await;
-        graph.context_summaries(&task_id, 2)
+        graph.build_context_bundle(&task_id, config.context_depth)
     };
     let system_prompt = build_system_prompt(role, &task_name, &summary, &context);
 
@@ -312,7 +317,19 @@ async fn monitor_agent(
     // Parse output
     match parse_agent_output(&stdout) {
         Ok(result) => {
-            route_result(state, run_id, task_id, agent_name, &result).await;
+            let unblocked = route_result(state, run_id, task_id, agent_name, &result).await;
+            // Auto-dispatch unblocked tasks using boxed futures to break the
+            // async type cycle (dispatch_agent → monitor_agent → dispatch_agent).
+            if !unblocked.is_empty() {
+                if let Some(config) = state.dispatch_config() {
+                    for slug in unblocked {
+                        let s = Arc::clone(state);
+                        let c = config.clone();
+                        let rid = run_id.clone();
+                        tokio::spawn(dispatch_agent_boxed(s, c, slug, rid));
+                    }
+                }
+            }
         }
         Err(e) => {
             warn!(run_id = %run_id, "failed to parse agent output: {e}");
@@ -356,13 +373,14 @@ pub fn parse_agent_output(stdout: &str) -> std::result::Result<AgentResult, Stri
 }
 
 /// Route a successful `AgentResult`: update run, send messages, update task status.
+/// Returns entity IDs of newly unblocked tasks (for auto-dispatch by caller).
 async fn route_result(
     state: &Arc<SharedState>,
     run_id: &AgentRunId,
     task_id: &str,
     agent_name: &str,
     result: &AgentResult,
-) {
+) -> Vec<String> {
     let result_json = serde_json::to_string(result).ok();
 
     // Finish the run
@@ -382,26 +400,17 @@ async fn route_result(
 
     // Route messages
     for msg in &result.messages {
-        let req = SendMessageRequest {
-            from_agent: agent_name.to_string(),
-            to_agent: msg.to_agent.to_string(),
-            body: msg.body.to_string(),
-            msg_type: Some(msg.msg_type.clone()),
-            in_reply_to: None,
-            task_id: Some(task_id.to_string()),
-        };
-        if let Ok(valid) = ValidSendMessageRequest::try_from(req) {
-            if let Err(e) = state
-                .store
-                .with_transaction(|conn| {
-                    let valid = valid.clone();
-                    Box::pin(async move { store::send_message(conn, &valid).await })
-                })
-                .await
-            {
-                warn!(run_id = %run_id, "failed to route message: {e}");
-            }
-        }
+        route_single_message(state, run_id, agent_name, task_id, msg.to_agent.as_str(), msg.body.as_str(), Some(msg.msg_type.clone())).await;
+    }
+
+    // Route blockers as messages to "user"
+    for blocker in &result.blockers {
+        route_single_message(state, run_id, agent_name, task_id, "user", blocker, Some(MessageType::Blocker)).await;
+    }
+
+    // Route questions as messages to "user"
+    for question in &result.questions {
+        route_single_message(state, run_id, agent_name, task_id, "user", question, Some(MessageType::Question)).await;
     }
 
     // Update task status based on agent result
@@ -447,12 +456,115 @@ async fn route_result(
         warn!(run_id = %run_id, "failed to refresh graph: {e}");
     }
 
+    // Collect newly unblocked tasks for auto-dispatch (caller handles dispatch
+    // to avoid async type cycle: dispatch_agent → monitor → route_result → dispatch_agent)
+    let unblocked = if result.status == AgentStatus::Completed {
+        collect_unblocked_for_dispatch(state, task_id, run_id).await
+    } else {
+        Vec::new()
+    };
+
     info!(
         run_id = %run_id,
         status = %result.status,
         summary = %result.summary,
         "agent result routed"
     );
+
+    unblocked
+}
+
+/// Route a single message through the store.
+async fn route_single_message(
+    state: &Arc<SharedState>,
+    run_id: &AgentRunId,
+    from: &str,
+    task_id: &str,
+    to: &str,
+    body: &str,
+    msg_type: Option<MessageType>,
+) {
+    let req = SendMessageRequest {
+        from_agent: from.to_string(),
+        to_agent: to.to_string(),
+        body: body.to_string(),
+        msg_type,
+        in_reply_to: None,
+        task_id: Some(task_id.to_string()),
+    };
+    if let Ok(valid) = ValidSendMessageRequest::try_from(req) {
+        if let Err(e) = state
+            .store
+            .with_transaction(|conn| {
+                let valid = valid.clone();
+                Box::pin(async move { store::send_message(conn, &valid).await })
+            })
+            .await
+        {
+            warn!(run_id = %run_id, "failed to route message: {e}");
+        }
+    }
+}
+
+/// Collect task slugs newly unblocked by a completed task, for auto-dispatch.
+/// Only returns slugs if `DispatchConfig.auto_dispatch` is enabled.
+async fn collect_unblocked_for_dispatch(
+    state: &Arc<SharedState>,
+    completed_task_id: &str,
+    run_id: &AgentRunId,
+) -> Vec<String> {
+    let config = match state.dispatch_config() {
+        Some(c) if c.auto_dispatch => c,
+        _ => return Vec::new(),
+    };
+
+    let unblocked = {
+        let graph = state.graph_read().await;
+        graph.newly_unblocked_by(completed_task_id)
+    };
+
+    if unblocked.is_empty() {
+        return Vec::new();
+    }
+
+    let limit = config.max_auto_dispatch;
+    info!(
+        run_id = %run_id,
+        count = unblocked.len(),
+        limit = limit,
+        "collecting unblocked tasks for auto-dispatch"
+    );
+
+    let mut slugs = Vec::new();
+    for entity_id in unblocked.into_iter().take(limit) {
+        match store::get_entity(state.store.pool(), entity_id.as_str()).await {
+            Ok(entity) => slugs.push(entity.common().slug.to_string()),
+            Err(e) => {
+                warn!(run_id = %run_id, entity_id = %entity_id, "failed to look up entity for auto-dispatch: {e}");
+            }
+        }
+    }
+    slugs
+}
+
+/// Boxed-future wrapper for `dispatch_agent` to break async type recursion.
+/// Used by auto-dispatch: `monitor_agent` → `route_result` → `dispatch_agent`.
+fn dispatch_agent_boxed(
+    state: Arc<SharedState>,
+    config: DispatchConfig,
+    slug: String,
+    parent_run_id: AgentRunId,
+) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    Box::pin(async move {
+        match dispatch_agent(&state, &config, &slug, AgentRole::Coder).await {
+            Ok(new_run_id) => {
+                info!(run_id = %parent_run_id, new_run_id = %new_run_id, task = %slug, "auto-dispatched agent");
+            }
+            Err(e) => {
+                warn!(run_id = %parent_run_id, task = %slug, "auto-dispatch failed: {e}");
+            }
+        }
+    })
 }
 
 /// Mark a run as failed, release reservations, revert task to open.
@@ -526,6 +638,7 @@ fn cleanup_mcp_config(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use filament_core::graph::ContextBundle;
 
     #[test]
     fn test_parse_agent_output_full_json() {
@@ -550,24 +663,43 @@ mod tests {
 
     #[test]
     fn test_build_system_prompt() {
+        let bundle = ContextBundle {
+            summaries: vec!["Module: auth".to_string(), "Depends: session".to_string()],
+            critical_path: vec!["fix-auth".to_string(), "deploy".to_string()],
+            impact_score: 3,
+            upstream_artifacts: vec!["[completed] setup-db: schema ready".to_string()],
+        };
         let prompt = build_system_prompt(
             AgentRole::Coder,
             "fix-bug",
             "Fix the login validation bug",
-            &["Module: auth".to_string(), "Depends: session".to_string()],
+            &bundle,
         );
         assert!(prompt.contains("Coder agent"));
         assert!(prompt.contains("fix-bug"));
         assert!(prompt.contains("Fix the login validation bug"));
         assert!(prompt.contains("Module: auth"));
+        assert!(prompt.contains("CRITICAL PATH"));
+        assert!(prompt.contains("fix-auth"));
+        assert!(prompt.contains("UPSTREAM RESULTS"));
+        assert!(prompt.contains("setup-db"));
+        assert!(prompt.contains("3 downstream"));
     }
 
     #[test]
     fn test_build_system_prompt_no_context() {
-        let prompt = build_system_prompt(AgentRole::Reviewer, "review-pr", "Review PR #42", &[]);
+        let bundle = ContextBundle {
+            summaries: vec![],
+            critical_path: vec![],
+            impact_score: 0,
+            upstream_artifacts: vec![],
+        };
+        let prompt = build_system_prompt(AgentRole::Reviewer, "review-pr", "Review PR #42", &bundle);
         assert!(prompt.contains("Reviewer agent"));
         assert!(prompt.contains("review-pr"));
         assert!(!prompt.contains("CONTEXT"));
+        assert!(!prompt.contains("CRITICAL PATH"));
+        assert!(!prompt.contains("UPSTREAM RESULTS"));
     }
 
     #[test]

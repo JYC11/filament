@@ -102,4 +102,11 @@ pub enum Method {
 
     // Event operations
     GetEntityEvents,
+
+    // Export / Import operations
+    ExportAll,
+    ImportData,
+
+    // Escalation operations
+    ListPendingEscalations,
 }

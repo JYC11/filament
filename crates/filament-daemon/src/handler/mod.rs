@@ -2,6 +2,7 @@ mod agent_run;
 mod dispatch;
 mod entity;
 mod event;
+mod export;
 mod graph;
 mod message;
 mod relation;
@@ -70,6 +71,13 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::BlockedByCounts => relation::blocked_by_counts(params, state).await,
         // Event
         Method::GetEntityEvents => event::get_events(params, state).await,
+        // Export / Import
+        Method::ExportAll => export::export_all(params, state).await,
+        Method::ImportData => export::import_data(params, state).await,
+        // Escalation
+        Method::ListPendingEscalations => {
+            export::list_pending_escalations(params, state).await
+        }
     }
 }
 

@@ -4,9 +4,10 @@ use sqlx::{Pool, Sqlite, SqliteConnection};
 use crate::error::{FilamentError, Result};
 use crate::models::{
     AgentRun, AgentRunId, AgentStatus, ContentRef, Entity, EntityCommon, EntityId, EntityStatus,
-    EntityType, Event, EventId, EventType, Message, MessageId, NonEmptyString, Priority, Relation,
-    RelationId, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
-    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
+    EntityType, Escalation, EscalationKind, Event, EventId, EventType, ExportData, ImportResult,
+    Message, MessageId, NonEmptyString, Priority, Relation, RelationId, Reservation, ReservationId,
+    ReservationMode, Slug, TtlSeconds, ValidCreateEntityRequest, ValidCreateRelationRequest,
+    ValidSendMessageRequest,
 };
 
 // ---------------------------------------------------------------------------
@@ -1102,4 +1103,301 @@ pub async fn ready_tasks(conn: &mut SqliteConnection) -> Result<Vec<Entity>> {
     .await?;
 
     Ok(rows.into_iter().map(Entity::from).collect())
+}
+
+// ---------------------------------------------------------------------------
+// Export / Import
+// ---------------------------------------------------------------------------
+
+/// List all relations in the database.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_all_relations(pool: &Pool<Sqlite>) -> Result<Vec<Relation>> {
+    Ok(
+        sqlx::query_as::<_, Relation>("SELECT * FROM relations ORDER BY created_at ASC")
+            .fetch_all(pool)
+            .await?,
+    )
+}
+
+/// List all messages in the database.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_all_messages(pool: &Pool<Sqlite>) -> Result<Vec<Message>> {
+    Ok(
+        sqlx::query_as::<_, Message>("SELECT * FROM messages ORDER BY created_at ASC")
+            .fetch_all(pool)
+            .await?,
+    )
+}
+
+/// List all events in the database.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_all_events(pool: &Pool<Sqlite>) -> Result<Vec<Event>> {
+    Ok(
+        sqlx::query_as::<_, Event>("SELECT * FROM events ORDER BY created_at ASC")
+            .fetch_all(pool)
+            .await?,
+    )
+}
+
+/// Export all data from the database.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn export_all(pool: &Pool<Sqlite>, include_events: bool) -> Result<ExportData> {
+    let entities = list_entities(pool, None, None).await?;
+    let relations = list_all_relations(pool).await?;
+    let messages = list_all_messages(pool).await?;
+    let events = if include_events {
+        list_all_events(pool).await?
+    } else {
+        Vec::new()
+    };
+
+    Ok(ExportData {
+        version: 1,
+        exported_at: Utc::now(),
+        entities,
+        relations,
+        messages,
+        events,
+    })
+}
+
+/// Import data into the database (upsert entities, skip-duplicate relations/messages/events).
+///
+/// Runs inside a single transaction for atomicity.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn import_data(
+    conn: &mut SqliteConnection,
+    data: &ExportData,
+    include_events: bool,
+) -> Result<ImportResult> {
+    let entities_imported = import_entities(conn, &data.entities).await?;
+    let relations_imported = import_relations(conn, &data.relations).await?;
+    let messages_imported = import_messages(conn, &data.messages).await?;
+    let events_imported = if include_events {
+        import_events(conn, &data.events).await?
+    } else {
+        0
+    };
+
+    Ok(ImportResult {
+        entities_imported,
+        relations_imported,
+        messages_imported,
+        events_imported,
+    })
+}
+
+async fn import_entities(conn: &mut SqliteConnection, entities: &[Entity]) -> Result<usize> {
+    let mut count = 0;
+    for entity in entities {
+        let c = entity.common();
+        let key_facts =
+            serde_json::to_string(&c.key_facts).expect("Value serialization is infallible");
+        let (content_path, content_hash) = c
+            .content
+            .as_ref()
+            .map_or((None, None), |cr| (Some(cr.path.as_str()), cr.hash.as_deref()));
+
+        sqlx::query(
+            "INSERT OR REPLACE INTO entities (id, slug, name, entity_type, summary, key_facts, content_path, content_hash, status, priority, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(c.id.as_str())
+        .bind(c.slug.as_str())
+        .bind(c.name.as_str())
+        .bind(entity.entity_type().as_str())
+        .bind(&c.summary)
+        .bind(&key_facts)
+        .bind(content_path)
+        .bind(content_hash)
+        .bind(c.status.as_str())
+        .bind(c.priority)
+        .bind(c.created_at)
+        .bind(c.updated_at)
+        .execute(&mut *conn)
+        .await?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+async fn import_relations(conn: &mut SqliteConnection, relations: &[Relation]) -> Result<usize> {
+    let mut count = 0;
+    for rel in relations {
+        let metadata =
+            serde_json::to_string(&rel.metadata).expect("Value serialization is infallible");
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO relations (id, source_id, target_id, relation_type, weight, summary, metadata, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(rel.id.as_str())
+        .bind(rel.source_id.as_str())
+        .bind(rel.target_id.as_str())
+        .bind(rel.relation_type.as_str())
+        .bind(rel.weight)
+        .bind(&rel.summary)
+        .bind(&metadata)
+        .bind(rel.created_at)
+        .execute(&mut *conn)
+        .await?;
+        if result.rows_affected() > 0 {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+async fn import_messages(conn: &mut SqliteConnection, messages: &[Message]) -> Result<usize> {
+    let mut count = 0;
+    for msg in messages {
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO messages (id, from_agent, to_agent, msg_type, body, status, in_reply_to, task_id, created_at, read_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(msg.id.as_str())
+        .bind(msg.from_agent.as_str())
+        .bind(msg.to_agent.as_str())
+        .bind(msg.msg_type.as_str())
+        .bind(msg.body.as_str())
+        .bind(msg.status.as_str())
+        .bind(&msg.in_reply_to)
+        .bind(&msg.task_id)
+        .bind(msg.created_at)
+        .bind(msg.read_at)
+        .execute(&mut *conn)
+        .await?;
+        if result.rows_affected() > 0 {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+async fn import_events(conn: &mut SqliteConnection, events: &[Event]) -> Result<usize> {
+    let mut count = 0;
+    for evt in events {
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO events (id, entity_id, event_type, actor, old_value, new_value, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(evt.id.as_str())
+        .bind(evt.entity_id.as_ref().map(EntityId::as_str))
+        .bind(evt.event_type.as_str())
+        .bind(&evt.actor)
+        .bind(&evt.old_value)
+        .bind(&evt.new_value)
+        .bind(evt.created_at)
+        .execute(&mut *conn)
+        .await?;
+        if result.rows_affected() > 0 {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+// ---------------------------------------------------------------------------
+// Escalation queries
+// ---------------------------------------------------------------------------
+
+/// List pending escalations: unread blocker/question messages + blocked/`needs_input` agent runs.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_pending_escalations(pool: &Pool<Sqlite>) -> Result<Vec<Escalation>> {
+    // Unread blocker/question messages
+    let mut escalations = escalations_from_messages(pool).await?;
+
+    // Blocked/needs_input agent runs
+    let run_escalations = escalations_from_agent_runs(pool).await?;
+    escalations.extend(run_escalations);
+
+    // Sort by created_at
+    escalations.sort_by_key(|e| e.created_at);
+
+    Ok(escalations)
+}
+
+async fn escalations_from_messages(pool: &Pool<Sqlite>) -> Result<Vec<Escalation>> {
+    #[derive(sqlx::FromRow)]
+    struct MsgRow {
+        from_agent: String,
+        task_id: Option<String>,
+        msg_type: String,
+        body: String,
+        created_at: chrono::DateTime<Utc>,
+    }
+
+    let rows = sqlx::query_as::<_, MsgRow>(
+        "SELECT from_agent, task_id, msg_type, body, created_at \
+         FROM messages \
+         WHERE status = 'unread' AND msg_type IN ('blocker', 'question') \
+         ORDER BY created_at ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let kind = if r.msg_type == "question" {
+                EscalationKind::Question
+            } else {
+                EscalationKind::Blocker
+            };
+            Escalation {
+                kind,
+                agent_name: r.from_agent,
+                task_id: r.task_id,
+                body: r.body,
+                created_at: r.created_at,
+            }
+        })
+        .collect())
+}
+
+async fn escalations_from_agent_runs(pool: &Pool<Sqlite>) -> Result<Vec<Escalation>> {
+    #[derive(sqlx::FromRow)]
+    struct RunRow {
+        agent_role: String,
+        task_id: String,
+        status: String,
+        started_at: chrono::DateTime<Utc>,
+    }
+
+    let rows = sqlx::query_as::<_, RunRow>(
+        "SELECT agent_role, task_id, status, started_at \
+         FROM agent_runs \
+         WHERE status IN ('blocked', 'needs_input') \
+         ORDER BY started_at ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| Escalation {
+            kind: EscalationKind::NeedsInput,
+            agent_name: r.agent_role,
+            task_id: Some(r.task_id),
+            body: format!("Agent run status: {}", r.status),
+            created_at: r.started_at,
+        })
+        .collect())
 }

@@ -5,8 +5,9 @@ use tokio::net::UnixStream;
 
 use crate::error::{FilamentError, Result};
 use crate::models::{
-    AgentRun, AgentRunId, Entity, EntityId, EntityStatus, EntityType, Event, Message, MessageId,
-    Relation, RelationId, Reservation, ReservationId, Slug,
+    AgentRun, AgentRunId, Entity, EntityId, EntityStatus, EntityType, Escalation, Event,
+    ExportData, ImportResult, Message, MessageId, Relation, RelationId, Reservation, ReservationId,
+    Slug,
 };
 use crate::protocol::{Method, Request, Response};
 
@@ -456,6 +457,41 @@ impl DaemonClient {
                 Method::GetEntityEvents,
                 serde_json::json!({ "entity_id": entity_id }),
             )
+            .await?;
+        Self::parse_result(result)
+    }
+
+    // -- Export / Import operations --
+
+    pub async fn export_all(&mut self, include_events: bool) -> Result<ExportData> {
+        let result = self
+            .call(
+                Method::ExportAll,
+                serde_json::json!({ "include_events": include_events }),
+            )
+            .await?;
+        Self::parse_result(result)
+    }
+
+    pub async fn import_data(
+        &mut self,
+        data: &ExportData,
+        include_events: bool,
+    ) -> Result<ImportResult> {
+        let result = self
+            .call(
+                Method::ImportData,
+                serde_json::json!({ "data": data, "include_events": include_events }),
+            )
+            .await?;
+        Self::parse_result(result)
+    }
+
+    // -- Escalation operations --
+
+    pub async fn list_pending_escalations(&mut self) -> Result<Vec<Escalation>> {
+        let result = self
+            .call(Method::ListPendingEscalations, serde_json::json!({}))
             .await?;
         Self::parse_result(result)
     }

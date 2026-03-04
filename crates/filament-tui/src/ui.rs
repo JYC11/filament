@@ -77,6 +77,18 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         .as_ref()
         .map_or_else(String::new, Clone::clone);
 
+    let escalation_span = if app.escalation_count > 0 {
+        Span::styled(
+            format!(" ! {} escalations ", app.escalation_count),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::raw("")
+    };
+
     let line = Line::from(vec![
         Span::styled(
             format!(" [{mode}] "),
@@ -85,6 +97,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 .bg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
+        escalation_span,
         Span::raw(format!(" refreshed {refresh_time} ")),
         Span::styled(status_text, Style::default().fg(Color::Yellow)),
         Span::raw(match app.active_tab {
