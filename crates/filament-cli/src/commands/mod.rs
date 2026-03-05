@@ -1,4 +1,5 @@
 mod agent;
+mod audit;
 mod completions;
 mod config;
 mod entity;
@@ -88,6 +89,8 @@ pub enum Commands {
 
     /// Seed the knowledge graph from existing project files (CLAUDE.md).
     Seed(seed::SeedArgs),
+    /// Snapshot the knowledge graph to a git audit branch.
+    Audit(audit::AuditArgs),
 
     // -- Export / Import --
     /// Export the full graph as JSON.
@@ -144,6 +147,7 @@ impl Commands {
             Self::Serve(args) => serve::serve(cli, args).await,
             Self::Stop => serve::stop(cli).await,
             Self::Seed(args) => seed::seed(cli, args).await,
+            Self::Audit(args) => audit::audit(cli, args).await,
             Self::Export(args) => export::export(cli, args).await,
             Self::Import(args) => export::import(cli, args).await,
             Self::Escalations => escalation::escalations(cli).await,
