@@ -87,18 +87,20 @@ Filament's core data model is a knowledge graph of **entities** connected by **r
 
 ### Entity Types
 
-| Type      | Purpose                                                   |
-| --------- | --------------------------------------------------------- |
-| `task`    | Work items with priority, status, and dependency tracking |
-| `module`  | Code modules or components                                |
-| `service` | Services or APIs                                          |
-| `agent`   | AI or human agents                                        |
-| `plan`    | Implementation plans                                      |
-| `doc`     | Documentation, ADRs, reference material                   |
+| Type      | Purpose | Lifecycle | Example |
+| --------- | ------- | --------- | ------- |
+| `task`    | **Work items** — the only type with full status workflow. Has priority, dependency tracking, ready-queue ranking, critical path, and impact scoring. | `open` → `in_progress` → `closed` (or `blocked`) | "Implement login endpoint", "Fix bug #42" |
+| `module`  | **Code structure** — crates, files, subsystems. Relate to tasks with `owns` or `relates_to` so agents know which code areas a task touches. | Structural (no workflow) | "filament-core", "auth module", "store.rs" |
+| `service` | **Runtime components** — running infrastructure, external dependencies. Distinguishes what runs from what's code. | Structural (no workflow) | "sqlite-db", "unix-socket-server", "redis-cache" |
+| `agent`   | **Actors** — AI agents or human operators. Required for `task assign`, `message send`, `reserve`. The dispatch system tracks who's working on what. | Structural (no workflow) | "planner-agent", "code-reviewer", "alice" |
+| `plan`    | **Planning documents** — group tasks via `owns` relations. Always use `--content` to point at the actual `.md` file. The entity summary is a 1-2 sentence description; the file is the source of truth. | Structural (no workflow) | "phase-3-plan", "architecture-overview" |
+| `doc`     | **Reference material** — ADRs, specs, runbooks, knowledge. Like plans, always use `--content` to reference the file on disk. The graph adds queryable structure; the file has the content. | Structural (no workflow) | "adr-003-unified-graph", "api-spec", "gotchas" |
+
+**Design principle**: The graph is lightweight. Entities store short summaries + pointers to files. For `doc` and `plan` types, always use `--content path/to/file.md` so the physical file remains the source of truth. The graph adds queryable relations, dependency tracking, and context queries on top.
 
 ### Entity Status
 
-All entities have a status: `open`, `in_progress`, `closed`, or `blocked`.
+All entities have a status field (`open`, `in_progress`, `closed`, `blocked`), but only **tasks** use the full status workflow. Other entity types are structural — they exist to give the graph shape for context queries, not to be "completed".
 
 ### Add an Entity
 
@@ -512,7 +514,8 @@ filament tui
 | Tasks        | `1` | Task list with status, priority, blocked count, impact score |
 | Agents       | `2` | Running agent processes with role, PID, duration             |
 | Reservations | `3` | Active file locks with TTL countdown                         |
-| Messages     | `4` | Escalations from agents (blockers, questions, needs_input)   |
+| Messages     | `4` | Messages with kind, agent, and body                          |
+| Graph        | `5` | ASCII dependency tree with status icons and priority         |
 
 ### Keyboard Shortcuts
 
@@ -521,7 +524,7 @@ filament tui
 | `q` / `Ctrl+C` | Quit                                                                            |
 | `Tab`          | Next tab                                                                        |
 | `Shift+Tab`    | Previous tab                                                                    |
-| `1` `2` `3` `4`| Jump to tab                                                                     |
+| `1`–`5`        | Jump to tab                                                                     |
 | `j` / `Down`   | Move selection down                                                             |
 | `k` / `Up`     | Move selection up                                                               |
 | `r`            | Force refresh                                                                   |

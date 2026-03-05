@@ -336,14 +336,18 @@ rm -rf /tmp/filament-sim
 
 ## Entity Types and When to Use Them
 
-| Type | Use For | Examples |
+| Type | Purpose | Examples |
 |------|---------|---------|
-| `task` | Work items with lifecycle | "implement daemon", "fix bug #42" |
-| `module` | Code modules/crates | "filament-core", "store.rs" |
-| `service` | Running services/components | "sqlite-db", "unix-socket-server" |
-| `agent` | AI agents or human actors | "planner-agent", "code-reviewer" |
-| `plan` | Planning documents | "phase-3-plan", "architecture-overview" |
-| `doc` | Reference documentation | "adr-003", "api-spec", "gotchas" |
+| `task` | **Work items** — the only type with full status workflow (open → in_progress → closed). Has priority, dependency tracking, ready-queue ranking, critical path. | "implement daemon", "fix bug #42" |
+| `module` | **Code structure** — crates, files, subsystems. Relate to tasks so agents know which code a task touches. | "filament-core", "store.rs" |
+| `service` | **Runtime components** — running infrastructure vs code. | "sqlite-db", "unix-socket-server" |
+| `agent` | **Actors** — required for `task assign`, `message send`, `reserve`. | "planner-agent", "code-reviewer" |
+| `plan` | **Planning docs** — group tasks via `owns`. Always use `--content path/to/plan.md` to point at the file. | "phase-3-plan", "architecture-overview" |
+| `doc` | **Reference material** — ADRs, specs, runbooks. Always use `--content path/to/doc.md` to point at the file. | "adr-003", "api-spec", "gotchas" |
+
+**Design principle**: The graph is lightweight — summaries + pointers, not content duplication.
+For `doc` and `plan` types, always use `--content` so the physical `.md` file remains the source of truth.
+The graph adds queryable structure (relations, dependencies, context queries) on top.
 
 ## Relation Types and Semantics
 
