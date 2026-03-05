@@ -93,6 +93,8 @@ pub enum Method {
     BatchImpactScores,
     ContextQuery,
     CheckCycle,
+    PageRank,
+    DegreeCentrality,
 
     // Batch entity operations
     BatchGetEntities,

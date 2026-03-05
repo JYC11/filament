@@ -58,6 +58,10 @@ pub enum Commands {
     // -- Query commands --
     /// Show context around an entity (graph neighborhood).
     Context(query::ContextArgs),
+    /// Compute `PageRank` scores for all entities.
+    Pagerank(query::PageRankArgs),
+    /// Show degree centrality for all entities.
+    Degree(query::DegreeCentralityArgs),
 
     // -- Message commands --
     /// Messaging commands.
@@ -127,6 +131,8 @@ impl Commands {
             Self::Task(cmd) => cmd.run(cli).await,
             Self::Agent(cmd) => cmd.run(cli).await,
             Self::Context(args) => query::context(cli, args).await,
+            Self::Pagerank(args) => query::pagerank(cli, args).await,
+            Self::Degree(args) => query::degree_centrality(cli, args).await,
             Self::Message(cmd) => cmd.run(cli).await,
             Self::Reserve(args) => reserve::reserve(cli, args).await,
             Self::Release(args) => reserve::release(cli, args).await,

@@ -68,9 +68,35 @@ pub async fn check_cycle(
     Ok(serde_json::json!({ "has_cycle": has_cycle }))
 }
 
+pub async fn pagerank(
+    params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let p: PageRankParam = parse_params(params)?;
+    let scores = state
+        .graph_read()
+        .await
+        .pagerank(p.damping.unwrap_or(0.85), p.iterations.unwrap_or(50));
+    Ok(serde_json::to_value(&scores).expect("infallible"))
+}
+
+pub async fn degree_centrality(
+    _params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let degrees = state.graph_read().await.degree_centrality();
+    Ok(serde_json::to_value(&degrees).expect("infallible"))
+}
+
 // ---------------------------------------------------------------------------
 // Param structs
 // ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct PageRankParam {
+    damping: Option<f64>,
+    iterations: Option<usize>,
+}
 
 #[derive(Deserialize)]
 struct BatchImpactScoresParam {

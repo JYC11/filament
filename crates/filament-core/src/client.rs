@@ -451,6 +451,29 @@ impl DaemonClient {
         Ok(has_cycle)
     }
 
+    pub async fn pagerank(
+        &mut self,
+        damping: Option<f64>,
+        iterations: Option<usize>,
+    ) -> Result<std::collections::HashMap<String, f64>> {
+        let result = self
+            .call(
+                Method::PageRank,
+                serde_json::json!({ "damping": damping, "iterations": iterations }),
+            )
+            .await?;
+        Self::parse_result(result)
+    }
+
+    pub async fn degree_centrality(
+        &mut self,
+    ) -> Result<std::collections::HashMap<String, (usize, usize, usize)>> {
+        let result = self
+            .call(Method::DegreeCentrality, serde_json::json!({}))
+            .await?;
+        Self::parse_result(result)
+    }
+
     pub async fn get_entity_events(&mut self, entity_id: &str) -> Result<Vec<Event>> {
         let result = self
             .call(

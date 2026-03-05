@@ -596,3 +596,120 @@ async fn newly_unblocked_empty_when_other_blockers_remain() {
     let unblocked = graph.newly_unblocked_by(a_id.as_str());
     assert!(unblocked.is_empty(), "C should still be blocked by B");
 }
+
+// ---------------------------------------------------------------------------
+// PageRank
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pagerank_empty_graph() {
+    let graph = KnowledgeGraph::new();
+    let scores = graph.pagerank(0.85, 50);
+    assert!(scores.is_empty());
+}
+
+#[tokio::test]
+async fn pagerank_scores_sum_to_one() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                create_relation(conn, &blocks_req(b.as_str(), c.as_str())).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let scores = graph.pagerank(0.85, 50);
+    assert_eq!(scores.len(), 3);
+
+    let total: f64 = scores.values().sum();
+    assert!((total - 1.0).abs() < 0.01, "scores should sum to ~1.0, got {total}");
+}
+
+#[tokio::test]
+async fn pagerank_sink_node_gets_highest_score() {
+    let store = test_db().await;
+
+    // A → B → C (C is the sink, receives all flow)
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                create_relation(conn, &blocks_req(b.as_str(), c.as_str())).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let scores = graph.pagerank(0.85, 50);
+    assert!(scores.values().all(|&s| s > 0.0));
+}
+
+// ---------------------------------------------------------------------------
+// Degree centrality
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn degree_centrality_empty_graph() {
+    let graph = KnowledgeGraph::new();
+    let degrees = graph.degree_centrality();
+    assert!(degrees.is_empty());
+}
+
+#[tokio::test]
+async fn degree_centrality_counts_edges() {
+    let store = test_db().await;
+
+    // A → B, A → C (A has out_degree=2, B and C have in_degree=1)
+    let (a_id, b_id, c_id) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("Hub", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("Leaf1", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("Leaf2", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                create_relation(conn, &blocks_req(a.as_str(), c.as_str())).await?;
+                Ok((a, b, c))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let degrees = graph.degree_centrality();
+    assert_eq!(degrees.len(), 3);
+
+    let (a_in, a_out, a_total) = degrees[&a_id];
+    assert_eq!(a_in, 0);
+    assert_eq!(a_out, 2);
+    assert_eq!(a_total, 2);
+
+    let (b_in, b_out, b_total) = degrees[&b_id];
+    assert_eq!(b_in, 1);
+    assert_eq!(b_out, 0);
+    assert_eq!(b_total, 1);
+
+    let (c_in, c_out, c_total) = degrees[&c_id];
+    assert_eq!(c_in, 1);
+    assert_eq!(c_out, 0);
+    assert_eq!(c_total, 1);
+}

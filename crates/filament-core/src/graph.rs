@@ -367,6 +367,74 @@ impl KnowledgeGraph {
             .collect()
     }
 
+    /// Compute `PageRank` scores for all nodes using power iteration.
+    ///
+    /// Returns a map of entity ID → score (scores sum to ~1.0).
+    /// `damping` is the damping factor (typically 0.85).
+    /// `iterations` is the number of power-iteration rounds (typically 20–100).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal graph state is inconsistent (edge target missing from node set).
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
+    pub fn pagerank(&self, damping: f64, iterations: usize) -> HashMap<EntityId, f64> {
+        let n = self.graph.node_count();
+        if n == 0 {
+            return HashMap::new();
+        }
+
+        let n_f = n as f64;
+        let mut scores: HashMap<NodeIndex, f64> =
+            self.graph.node_indices().map(|idx| (idx, 1.0 / n_f)).collect();
+
+        for _ in 0..iterations {
+            let mut next_scores: HashMap<NodeIndex, f64> =
+                self.graph.node_indices().map(|idx| (idx, (1.0 - damping) / n_f)).collect();
+
+            for idx in self.graph.node_indices() {
+                let out_degree = self.graph.edges_directed(idx, Direction::Outgoing).count();
+                if out_degree == 0 {
+                    // Dangling node: distribute evenly
+                    let share = scores[&idx] * damping / n_f;
+                    for val in next_scores.values_mut() {
+                        *val += share;
+                    }
+                } else {
+                    let share = scores[&idx] * damping / out_degree as f64;
+                    for edge in self.graph.edges_directed(idx, Direction::Outgoing) {
+                        *next_scores.get_mut(&edge.target()).expect("node exists") += share;
+                    }
+                }
+            }
+
+            scores = next_scores;
+        }
+
+        scores
+            .into_iter()
+            .map(|(idx, score)| (self.graph[idx].entity_id.clone(), score))
+            .collect()
+    }
+
+    /// Compute degree centrality for all nodes.
+    ///
+    /// Returns a map of entity ID → `(in_degree, out_degree, total_degree)`.
+    #[must_use]
+    pub fn degree_centrality(&self) -> HashMap<EntityId, (usize, usize, usize)> {
+        self.graph
+            .node_indices()
+            .map(|idx| {
+                let in_deg = self.graph.edges_directed(idx, Direction::Incoming).count();
+                let out_deg = self.graph.edges_directed(idx, Direction::Outgoing).count();
+                (
+                    self.graph[idx].entity_id.clone(),
+                    (in_deg, out_deg, in_deg + out_deg),
+                )
+            })
+            .collect()
+    }
+
     /// Check for cycles in the graph.
     #[must_use]
     pub fn has_cycle(&self) -> bool {

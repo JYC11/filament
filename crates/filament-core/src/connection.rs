@@ -509,6 +509,42 @@ impl FilamentConnection {
         }
     }
 
+    pub async fn pagerank(
+        &mut self,
+        damping: Option<f64>,
+        iterations: Option<usize>,
+    ) -> Result<std::collections::HashMap<EntityId, f64>> {
+        match self {
+            Self::Direct(s) => {
+                let mut graph = KnowledgeGraph::new();
+                graph.hydrate(s.pool()).await?;
+                Ok(graph.pagerank(damping.unwrap_or(0.85), iterations.unwrap_or(50)))
+            }
+            Self::Socket(c) => c.pagerank(damping, iterations).await.map(|m| {
+                m.into_iter()
+                    .map(|(k, v)| (EntityId::from(k.as_str()), v))
+                    .collect()
+            }),
+        }
+    }
+
+    pub async fn degree_centrality(
+        &mut self,
+    ) -> Result<std::collections::HashMap<EntityId, (usize, usize, usize)>> {
+        match self {
+            Self::Direct(s) => {
+                let mut graph = KnowledgeGraph::new();
+                graph.hydrate(s.pool()).await?;
+                Ok(graph.degree_centrality())
+            }
+            Self::Socket(c) => c.degree_centrality().await.map(|m| {
+                m.into_iter()
+                    .map(|(k, v)| (EntityId::from(k.as_str()), v))
+                    .collect()
+            }),
+        }
+    }
+
     pub async fn check_cycle(&mut self) -> Result<bool> {
         match self {
             Self::Direct(s) => {
