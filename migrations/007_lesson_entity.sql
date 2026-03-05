@@ -23,8 +23,10 @@ CREATE TABLE entities_new (
     CHECK (priority BETWEEN 0 AND 4)
 );
 
--- 2. Copy existing data
-INSERT INTO entities_new SELECT * FROM entities;
+-- 2. Copy existing data (explicit columns — old table has slug/version at end from ALTER TABLE)
+INSERT INTO entities_new (id, slug, name, entity_type, summary, key_facts, content_path, content_hash, status, priority, version, created_at, updated_at)
+SELECT id, slug, name, entity_type, summary, key_facts, content_path, content_hash, status, priority, version, created_at, updated_at
+FROM entities;
 
 -- 3. Drop old entity triggers (they reference the old table)
 DROP TRIGGER IF EXISTS trg_entity_insert;

@@ -77,6 +77,11 @@ Pitfalls discovered during implementation. Check here before debugging mysteriou
 - **`filament serve --foreground`** runs inline; bare `filament serve` re-execs detached.
 - **Exclusive reservation semantics** — exclusive conflicts with ALL other-agent reservations; non-exclusive only conflicts with exclusive.
 
+## SQLite migrations
+
+- **`SELECT *` breaks after `ALTER TABLE ADD COLUMN`** — SQLite's `ALTER TABLE ADD COLUMN` appends columns at the end of the physical row. When recreating a table (e.g., to modify a CHECK constraint), `INSERT INTO new_table SELECT * FROM old_table` maps columns by position, not by name. If the old table had columns added via ALTER TABLE, their physical positions won't match the new table's definition. Always use explicit column names in both INSERT and SELECT: `INSERT INTO new_table (col1, col2, ...) SELECT col1, col2, ... FROM old_table`.
+- **CHECK constraint changes require table recreation** — SQLite cannot ALTER CHECK constraints. Must: create new table → copy data → drop old triggers → drop old table → rename new → recreate indexes → recreate triggers.
+
 ## Clippy / Rust
 
 - **`pub(crate)` in private modules** — triggers `clippy::redundant_pub_crate`; use plain `pub` (module privacy is the real access control).
