@@ -205,8 +205,6 @@ pub struct Event {
     pub entity_id: Option<EntityId>,
     pub event_type: EventType,
     pub actor: String,
-    pub old_value: Option<String>,
-    pub new_value: Option<String>,
     pub diff: Option<String>,
     pub created_at: DateTime<Utc>,
 }

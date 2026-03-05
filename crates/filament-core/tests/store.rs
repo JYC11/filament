@@ -517,8 +517,7 @@ async fn event_recording() {
                     Some("e1"),
                     EventType::StatusChange,
                     "cli",
-                    Some("open"),
-                    Some("closed"),
+                    Some(r#"{"status":{"old":"open","new":"closed"}}"#),
                 )
                 .await?;
                 Ok(())
