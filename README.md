@@ -148,6 +148,7 @@ filament read a3kf92mx
 filament list                          # all entities
 filament list --type task              # only tasks
 filament list --status open            # only open entities
+filament list --status all             # all statuses (including closed)
 filament list --type module --status in_progress
 ```
 
@@ -511,6 +512,7 @@ filament tui
 | Tasks        | `1` | Task list with status, priority, blocked count, impact score |
 | Agents       | `2` | Running agent processes with role, PID, duration             |
 | Reservations | `3` | Active file locks with TTL countdown                         |
+| Messages     | `4` | Escalations from agents (blockers, questions, needs_input)   |
 
 ### Keyboard Shortcuts
 
@@ -519,7 +521,7 @@ filament tui
 | `q` / `Ctrl+C` | Quit                                                                            |
 | `Tab`          | Next tab                                                                        |
 | `Shift+Tab`    | Previous tab                                                                    |
-| `1` `2` `3`    | Jump to tab                                                                     |
+| `1` `2` `3` `4`| Jump to tab                                                                     |
 | `j` / `Down`   | Move selection down                                                             |
 | `k` / `Up`     | Move selection up                                                               |
 | `r`            | Force refresh                                                                   |
@@ -531,8 +533,70 @@ filament tui
 - **Tasks**: status is color-coded (green=open, yellow=in_progress, red=blocked, gray=closed). Impact scores are computed for up to 50 tasks.
 - **Agents**: shows live duration for running agents. Status colors: green=running, cyan=completed, red=failed, yellow=blocked, magenta=needs_input.
 - **Reservations**: TTL countdown with yellow warning under 5 minutes and red "EXPIRED" label. Expired rows are dimmed.
+- **Messages**: escalations color-coded by kind (red=blocker, yellow=question, magenta=needs_input).
 
 Auto-refreshes every 5 seconds. Status bar shows connection mode (daemon/direct) and last refresh time.
+
+---
+
+## Export / Import
+
+Export the entire knowledge graph (entities, relations, messages, events) as JSON for backup or transfer between projects.
+
+### Export
+
+```bash
+filament export                        # print to stdout
+filament export --output backup.json   # write to file
+filament export --no-events            # exclude event log
+```
+
+### Import
+
+```bash
+filament import --input backup.json    # read from file
+cat backup.json | filament import      # read from stdin
+filament import --input backup.json --no-events  # skip events
+```
+
+Import reports counts of entities, relations, messages, and events imported.
+
+---
+
+## Escalations
+
+View pending escalations — blockers, questions, and needs-input statuses from agent runs that require human attention.
+
+```bash
+filament escalations                   # human-readable table
+filament escalations --json            # structured JSON
+```
+
+Output shows kind, agent name, message body, and associated task (if any).
+
+---
+
+## Auto-Dispatch
+
+When `FILAMENT_AUTO_DISPATCH=1` is set, the daemon automatically dispatches agents to newly-unblocked tasks. When an agent closes a task, any downstream tasks that become unblocked are queued for dispatch.
+
+```bash
+FILAMENT_AUTO_DISPATCH=1 filament serve
+```
+
+---
+
+## Shell Completions
+
+Generate shell completions for your preferred shell:
+
+```bash
+filament completions bash > ~/.local/share/bash-completion/completions/filament
+filament completions zsh > ~/.zfunc/_filament
+filament completions fish > ~/.config/fish/completions/filament.fish
+```
+
+Supported shells: `bash`, `zsh`, `fish`, `elvish`, `powershell`.
 
 ---
 

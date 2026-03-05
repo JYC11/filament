@@ -1,4 +1,5 @@
 mod agent;
+mod completions;
 mod entity;
 mod escalation;
 mod export;
@@ -87,6 +88,10 @@ pub enum Commands {
     /// Show pending escalations (blockers, questions, needs-input).
     Escalations,
 
+    // -- Shell completions --
+    /// Generate shell completions (bash, zsh, fish, elvish, powershell).
+    Completions(completions::CompletionsArgs),
+
     // -- TUI --
     /// Launch the interactive TUI.
     Tui,
@@ -116,6 +121,10 @@ impl Commands {
             Self::Export(args) => export::export(cli, args).await,
             Self::Import(args) => export::import(cli, args).await,
             Self::Escalations => escalation::escalations(cli).await,
+            Self::Completions(args) => {
+                completions::run(args);
+                Ok(())
+            }
             Self::Mcp => mcp::run().await,
             Self::Tui => tui::run().await,
         }
