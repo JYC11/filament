@@ -110,6 +110,8 @@ messages TO `user`. They appear in the TUI escalation indicator and in `filament
 
 ```bash
 filament context --around <SLUG> --depth N [--limit N]  # BFS neighborhood
+filament pagerank [--damping 0.85] [--iterations 50] [--limit N]  # PageRank scores
+filament degree [--limit N]                              # degree centrality (in/out/total)
 ```
 
 ### Inter-Agent Messaging
@@ -144,6 +146,50 @@ filament import [--input PATH] [--no-events]     # import from JSON
 Export creates a complete snapshot (entities, relations, messages, reservations, events).
 Import performs upserts — existing entities are updated, new ones are inserted.
 
+### Configuration
+
+```bash
+filament config show                       # display resolved configuration
+filament config init                       # create filament.toml with defaults
+filament config path                       # print config file path
+```
+
+Config file (`filament.toml`) supports layered resolution: defaults → config → env → CLI.
+
+### Change Notifications
+
+```bash
+filament watch [--events entity_created,entity_updated,...]  # real-time change stream
+```
+
+Subscribes to daemon push notifications for entity/relation/message changes.
+
+### Git Hooks
+
+```bash
+filament hook install                      # install pre-commit reservation check
+filament hook uninstall                    # remove the hook
+filament hook check [--agent NAME]         # run the check manually
+```
+
+### Seed (auto-populate from project files)
+
+```bash
+filament seed [--dry-run]                  # parse CLAUDE.md sections into Doc entities
+```
+
+### Audit Trail (git-backed snapshots)
+
+```bash
+filament audit [--branch NAME] [--message "..."]  # snapshot graph to git branch
+```
+
+### Shell Completions
+
+```bash
+filament completions bash|zsh|fish|elvish|powershell
+```
+
 ### Daemon (multi-agent mode)
 
 ```bash
@@ -160,7 +206,7 @@ accessing SQLite directly. This enables concurrent multi-agent access.
 filament tui                               # launch ratatui terminal UI
 ```
 
-The TUI shows: task list, agent status, file reservations, and an escalation indicator.
+The TUI shows: task list, agent status, file reservations, messages, graph view, and an escalation indicator.
 
 ### MCP Server (AI agent integration)
 
@@ -345,3 +391,8 @@ Filament runs alongside traditional .md documentation:
 - `task list --status` and `--unblocked` cannot be combined
 - To create escalations: send `--type blocker` or `--type question` messages FROM an agent TO `user`
 - Auto-dispatch: set `FILAMENT_AUTO_DISPATCH=1` to chain agent runs on newly-unblocked tasks
+- `filament seed` bootstraps the knowledge graph from CLAUDE.md sections
+- `filament audit` snapshots the graph to a git branch for disaster recovery
+- `filament pagerank` and `filament degree` show graph analytics
+- `filament watch` streams real-time change notifications from the daemon
+- `filament config init` creates a `filament.toml` for project-level defaults

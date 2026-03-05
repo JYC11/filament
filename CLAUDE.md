@@ -150,7 +150,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**All 6 phases complete** (2026-03-04). 262 tests, zero clippy warnings.
+**All 6 phases + small features complete** (2026-03-05). 296 tests, zero clippy warnings.
 
 | Phase | What | Key details |
 |-------|------|-------------|
@@ -158,8 +158,9 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 | 2 | CLI | entity, task, relation, query, message, reserve, export, import, escalations |
 | 3 | Daemon | NDJSON Unix socket server + MCP server (16 tools via `rmcp`) |
 | 4 | Dispatch | subprocess management, roles (Coder/Reviewer/Planner/Dockeeper), death cleanup |
-| 5 | TUI | task list, agent status, reservation views, escalation indicator |
+| 5 | TUI | task list, agent status, reservation views, graph, messages, escalation indicator |
 | 6 | Integration | context bundles, auto-dispatch, escalation routing, export/import |
+| 7 | Small features | config file, watch, graph analytics, hooks, seed, audit, completions |
 
 Key architectural features:
 - **Slug identity** (ADR-019): 8-char `[a-z0-9]` slugs for human-facing identity
@@ -167,6 +168,12 @@ Key architectural features:
 - **CLI routes through daemon** when running (falls back to direct DB access)
 - **Auto-dispatch**: `FILAMENT_AUTO_DISPATCH=1` chains agent runs on newly-unblocked tasks
 - **Escalations**: blockers/questions from agents routed as messages to "user"
+- **Config file** (`filament.toml`): layered resolution (defaults → config → env → CLI)
+- **Socket notifications**: pub/sub via `filament watch` for real-time entity change events
+- **Graph analytics**: `PageRank` + degree centrality via `filament pagerank`/`filament degree`
+- **Pre-commit hooks**: `filament hook install` for reservation conflict checks
+- **Seed command**: `filament seed` parses CLAUDE.md sections into Doc entities
+- **Audit trail**: `filament audit` snapshots knowledge graph to a git branch
 
 ## Task Tracking with Filament
 
