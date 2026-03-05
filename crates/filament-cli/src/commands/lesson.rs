@@ -19,6 +19,7 @@ impl LessonCommand {
             LessonSubcommand::Add(args) => add(cli, args).await,
             LessonSubcommand::List(args) => list(cli, args).await,
             LessonSubcommand::Show(args) => show(cli, args).await,
+            LessonSubcommand::Delete(args) => delete(cli, args).await,
         }
     }
 }
@@ -31,6 +32,8 @@ enum LessonSubcommand {
     List(LessonListArgs),
     /// Show lesson details.
     Show(LessonShowArgs),
+    /// Delete a lesson.
+    Delete(LessonDeleteArgs),
 }
 
 #[derive(Args, Debug)]
@@ -66,6 +69,12 @@ struct LessonListArgs {
 
 #[derive(Args, Debug)]
 struct LessonShowArgs {
+    /// Lesson slug or ID.
+    slug: String,
+}
+
+#[derive(Args, Debug)]
+struct LessonDeleteArgs {
     /// Lesson slug or ID.
     slug: String,
 }
@@ -129,6 +138,20 @@ async fn list(cli: &Cli, args: &LessonListArgs) -> Result<()> {
     }
 
     print_entity_list(cli, &entities, "No lessons found.");
+    Ok(())
+}
+
+async fn delete(cli: &Cli, args: &LessonDeleteArgs) -> Result<()> {
+    let mut conn = connect().await?;
+    let entity = conn.resolve_lesson(&args.slug).await?;
+
+    conn.delete_entity(entity.id.as_str()).await?;
+
+    if cli.json {
+        output_json(&serde_json::json!({"deleted": entity.id.as_str()}));
+    } else {
+        println!("Deleted lesson: {} ({})", entity.name, entity.slug);
+    }
     Ok(())
 }
 
