@@ -66,6 +66,10 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
             app.active_tab = Tab::Messages;
             return;
         }
+        KeyCode::Char('5') => {
+            app.active_tab = Tab::Graph;
+            return;
+        }
         KeyCode::Char('r') => {
             app.refresh_all().await;
             return;

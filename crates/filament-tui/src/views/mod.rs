@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod graph;
 pub mod messages;
 pub mod reservations;
 pub mod tasks;

@@ -6,7 +6,9 @@ use ratatui::widgets::TableState;
 use filament_core::connection::FilamentConnection;
 use filament_core::dto::Escalation;
 use filament_core::error::Result;
-use filament_core::models::{AgentRun, Entity, EntityStatus, EntityType, Reservation};
+use filament_core::models::{AgentRun, Entity, EntityStatus, EntityType, Relation, Reservation};
+
+use crate::views::graph::GraphData;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -16,10 +18,17 @@ pub enum Tab {
     Agents,
     Reservations,
     Messages,
+    Graph,
 }
 
 impl Tab {
-    pub const ALL: [Self; 4] = [Self::Tasks, Self::Agents, Self::Reservations, Self::Messages];
+    pub const ALL: [Self; 5] = [
+        Self::Tasks,
+        Self::Agents,
+        Self::Reservations,
+        Self::Messages,
+        Self::Graph,
+    ];
 
     #[must_use]
     pub const fn next(self) -> Self {
@@ -27,17 +36,19 @@ impl Tab {
             Self::Tasks => Self::Agents,
             Self::Agents => Self::Reservations,
             Self::Reservations => Self::Messages,
-            Self::Messages => Self::Tasks,
+            Self::Messages => Self::Graph,
+            Self::Graph => Self::Tasks,
         }
     }
 
     #[must_use]
     pub const fn prev(self) -> Self {
         match self {
-            Self::Tasks => Self::Messages,
+            Self::Tasks => Self::Graph,
             Self::Agents => Self::Tasks,
             Self::Reservations => Self::Agents,
             Self::Messages => Self::Reservations,
+            Self::Graph => Self::Messages,
         }
     }
 
@@ -48,6 +59,7 @@ impl Tab {
             Self::Agents => "Agents",
             Self::Reservations => "Reservations",
             Self::Messages => "Messages",
+            Self::Graph => "Graph",
         }
     }
 
@@ -58,6 +70,7 @@ impl Tab {
             Self::Agents => 1,
             Self::Reservations => 2,
             Self::Messages => 3,
+            Self::Graph => 4,
         }
     }
 }
@@ -113,6 +126,7 @@ pub struct App {
     pub agent_runs: Vec<AgentRun>,
     pub reservations: Vec<Reservation>,
     pub messages: Vec<Escalation>,
+    pub graph_data: GraphData,
     pub task_table_state: TableState,
     pub agent_table_state: TableState,
     pub reservation_table_state: TableState,
@@ -135,6 +149,7 @@ impl App {
             agent_runs: Vec::new(),
             reservations: Vec::new(),
             messages: Vec::new(),
+            graph_data: GraphData::default(),
             task_table_state: TableState::default(),
             agent_table_state: TableState::default(),
             reservation_table_state: TableState::default(),
@@ -156,6 +171,7 @@ impl App {
         self.refresh_agents().await;
         self.refresh_reservations().await;
         self.refresh_messages().await;
+        self.refresh_graph().await;
         self.last_refresh = Utc::now();
         self.last_tick = Instant::now();
     }
@@ -244,6 +260,32 @@ impl App {
         }
     }
 
+    pub async fn refresh_graph(&mut self) {
+        // Fetch all non-closed entities and their relations
+        let entities = self
+            .conn
+            .list_entities(None, None)
+            .await
+            .unwrap_or_default();
+
+        let mut all_relations: Vec<Relation> = Vec::new();
+        for entity in &entities {
+            if let Ok(rels) = self.conn.list_relations(entity.id().as_str()).await {
+                for rel in rels {
+                    // Deduplicate: only add if not already present
+                    if !all_relations.iter().any(|r| r.id == rel.id) {
+                        all_relations.push(rel);
+                    }
+                }
+            }
+        }
+
+        self.graph_data = GraphData {
+            entities,
+            relations: all_relations,
+        };
+    }
+
     pub fn select_next(&mut self) {
         let len = self.current_list_len();
         if len == 0 {
@@ -274,6 +316,7 @@ impl App {
             Tab::Agents => self.agent_runs.len(),
             Tab::Reservations => self.reservations.len(),
             Tab::Messages => self.messages.len(),
+            Tab::Graph => 0, // Graph view is not table-based
         }
     }
 
@@ -282,7 +325,8 @@ impl App {
             Tab::Tasks => &mut self.task_table_state,
             Tab::Agents => &mut self.agent_table_state,
             Tab::Reservations => &mut self.reservation_table_state,
-            Tab::Messages => &mut self.message_table_state,
+            // Graph and Messages share a fallback to message table state
+            Tab::Messages | Tab::Graph => &mut self.message_table_state,
         }
     }
 
