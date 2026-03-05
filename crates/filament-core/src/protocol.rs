@@ -97,6 +97,9 @@ pub enum Method {
     PageRank,
     DegreeCentrality,
 
+    // Search operations
+    SearchEntities,
+
     // Batch entity operations
     BatchGetEntities,
 

@@ -91,6 +91,18 @@ impl std::fmt::Display for EscalationKind {
 }
 
 // ---------------------------------------------------------------------------
+// Search result
+// ---------------------------------------------------------------------------
+
+/// An entity with its BM25 relevance rank from full-text search.
+/// Lower rank values indicate higher relevance.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SearchResult {
+    pub entity: Entity,
+    pub rank: f64,
+}
+
+// ---------------------------------------------------------------------------
 // Entity changeset (optimistic conflict resolution)
 // ---------------------------------------------------------------------------
 

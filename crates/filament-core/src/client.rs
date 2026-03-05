@@ -190,6 +190,29 @@ impl DaemonClient {
         Ok(())
     }
 
+    // -- Search operations --
+
+    pub async fn search_entities(
+        &mut self,
+        query: &str,
+        entity_type: Option<EntityType>,
+        limit: u32,
+    ) -> Result<Vec<(Entity, f64)>> {
+        let result = self
+            .call(
+                Method::SearchEntities,
+                serde_json::json!({
+                    "query": query,
+                    "entity_type": entity_type.as_ref().map(EntityType::as_str),
+                    "limit": limit,
+                }),
+            )
+            .await?;
+        // Result is an array of { entity, rank }
+        let items: Vec<crate::dto::SearchResult> = Self::parse_result(result)?;
+        Ok(items.into_iter().map(|sr| (sr.entity, sr.rank)).collect())
+    }
+
     // -- Relation operations --
 
     pub async fn create_relation(&mut self, params: serde_json::Value) -> Result<RelationId> {

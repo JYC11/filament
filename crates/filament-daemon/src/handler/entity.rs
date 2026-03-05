@@ -182,6 +182,25 @@ pub async fn delete(
     Ok(serde_json::json!({ "ok": true }))
 }
 
+pub async fn search(
+    params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let p: SearchParam = parse_params(params)?;
+    let results = store::search_entities(
+        state.store.pool(),
+        &p.query,
+        p.entity_type.as_ref().map(EntityType::as_str),
+        p.limit.unwrap_or(20),
+    )
+    .await?;
+    let items: Vec<filament_core::dto::SearchResult> = results
+        .into_iter()
+        .map(|(entity, rank)| filament_core::dto::SearchResult { entity, rank })
+        .collect();
+    Ok(serde_json::to_value(&items).expect("infallible"))
+}
+
 // ---------------------------------------------------------------------------
 // Param structs
 // ---------------------------------------------------------------------------
@@ -218,4 +237,11 @@ struct UpdateStatusParam {
 struct UpdateSummaryParam {
     id: String,
     summary: String,
+}
+
+#[derive(Deserialize)]
+struct SearchParam {
+    query: String,
+    entity_type: Option<EntityType>,
+    limit: Option<u32>,
 }

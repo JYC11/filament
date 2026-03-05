@@ -1925,3 +1925,275 @@ async fn resolve_lesson_type_check() {
     let err = resolve_task(store.pool(), slug.as_str()).await.unwrap_err();
     assert!(matches!(err, FilamentError::TypeMismatch { .. }));
 }
+
+// ---------------------------------------------------------------------------
+// FTS5 Search
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn search_returns_matching_entities() {
+    let store = test_db().await;
+
+    let req1 = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Database migration guide").unwrap(),
+        entity_type: EntityType::Doc,
+        summary: "How to write safe SQLite migrations".to_string(),
+        key_facts: serde_json::json!({"topic": "migrations"}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+    let req2 = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Fix login bug").unwrap(),
+        entity_type: EntityType::Task,
+        summary: "Users cannot log in after password reset".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    store
+        .with_transaction(|conn| {
+            let r1 = req1.clone();
+            let r2 = req2.clone();
+            Box::pin(async move {
+                create_entity(conn, &r1).await?;
+                create_entity(conn, &r2).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // Search for "migration"
+    let results = search_entities(store.pool(), "migration", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name(), "Database migration guide");
+
+    // Search for "login" matches the task
+    let results = search_entities(store.pool(), "login", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name(), "Fix login bug");
+}
+
+#[tokio::test]
+async fn search_filters_by_entity_type() {
+    let store = test_db().await;
+
+    let doc = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Performance tuning").unwrap(),
+        entity_type: EntityType::Doc,
+        summary: "Guide to optimizing query performance".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+    let task = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Optimize slow queries").unwrap(),
+        entity_type: EntityType::Task,
+        summary: "Fix performance issues in dashboard".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    store
+        .with_transaction(|conn| {
+            let d = doc.clone();
+            let t = task.clone();
+            Box::pin(async move {
+                create_entity(conn, &d).await?;
+                create_entity(conn, &t).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // Without filter: both match "performance"
+    let all = search_entities(store.pool(), "performance", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 2);
+
+    // With type filter: only doc matches
+    let docs = search_entities(store.pool(), "performance", Some("doc"), 10)
+        .await
+        .unwrap();
+    assert_eq!(docs.len(), 1);
+    assert_eq!(docs[0].0.entity_type(), EntityType::Doc);
+}
+
+#[tokio::test]
+async fn search_respects_limit() {
+    let store = test_db().await;
+
+    for i in 0..5 {
+        let req = ValidCreateEntityRequest {
+            name: NonEmptyString::new(&format!("Rust feature {i}")).unwrap(),
+            entity_type: EntityType::Doc,
+            summary: format!("A Rust language feature number {i}"),
+            key_facts: serde_json::json!({}),
+            content_path: None,
+            priority: Priority::DEFAULT,
+        };
+        store
+            .with_transaction(|conn| {
+                let r = req.clone();
+                Box::pin(async move {
+                    create_entity(conn, &r).await?;
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+    }
+
+    let results = search_entities(store.pool(), "rust", None, 3)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 3);
+}
+
+#[tokio::test]
+async fn search_no_results_returns_empty() {
+    let store = test_db().await;
+
+    let req = sample_entity_req();
+    store
+        .with_transaction(|conn| {
+            let r = req.clone();
+            Box::pin(async move {
+                create_entity(conn, &r).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let results = search_entities(store.pool(), "nonexistent_xyzzy", None, 10)
+        .await
+        .unwrap();
+    assert!(results.is_empty());
+}
+
+#[tokio::test]
+async fn search_finds_text_in_key_facts() {
+    let store = test_db().await;
+
+    let req = common::lesson_req(
+        "SQLite gotcha",
+        "ALTER TABLE cannot add CHECK constraints",
+        "Recreate the table with the new constraint",
+        "Always recreate tables when changing CHECK constraints",
+    );
+
+    store
+        .with_transaction(|conn| {
+            let r = req.clone();
+            Box::pin(async move {
+                create_entity(conn, &r).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // Search for text that only appears in key_facts (the problem field)
+    let results = search_entities(store.pool(), "ALTER TABLE", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name(), "SQLite gotcha");
+}
+
+#[tokio::test]
+async fn search_reflects_updates() {
+    let store = test_db().await;
+
+    let req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Original name").unwrap(),
+        entity_type: EntityType::Task,
+        summary: "Original summary".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    let (id, _) = store
+        .with_transaction(|conn| {
+            let r = req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    // Update the summary to contain "refactored"
+    store
+        .with_transaction(|conn| {
+            let id = id.to_string();
+            Box::pin(async move {
+                update_entity_summary(conn, &id, "Refactored the authentication module").await
+            })
+        })
+        .await
+        .unwrap();
+
+    // Old term should no longer match
+    let old = search_entities(store.pool(), "Original summary", None, 10)
+        .await
+        .unwrap();
+    assert!(old.is_empty());
+
+    // New term should match
+    let new = search_entities(store.pool(), "refactored authentication", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(new.len(), 1);
+}
+
+#[tokio::test]
+async fn search_reflects_deletes() {
+    let store = test_db().await;
+
+    let req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Ephemeral doc").unwrap(),
+        entity_type: EntityType::Doc,
+        summary: "This will be deleted soon".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    let (id, _) = store
+        .with_transaction(|conn| {
+            let r = req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    // Verify it's searchable
+    let before = search_entities(store.pool(), "ephemeral", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(before.len(), 1);
+
+    // Delete it
+    store
+        .with_transaction(|conn| {
+            let id = id.to_string();
+            Box::pin(async move { delete_entity(conn, &id).await })
+        })
+        .await
+        .unwrap();
+
+    // Should no longer appear in search
+    let after = search_entities(store.pool(), "ephemeral", None, 10)
+        .await
+        .unwrap();
+    assert!(after.is_empty());
+}

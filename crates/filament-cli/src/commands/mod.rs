@@ -14,6 +14,7 @@ mod message;
 mod query;
 mod relation;
 mod reserve;
+mod search;
 mod seed;
 mod serve;
 mod task;
@@ -45,6 +46,10 @@ pub enum Commands {
     Read(entity::ReadArgs),
     /// List entities.
     List(entity::ListArgs),
+
+    // -- Search --
+    /// Full-text search across all entities (BM25 ranking).
+    Search(search::SearchArgs),
 
     // -- Relation commands (top-level) --
     /// Create a relation between two entities.
@@ -134,6 +139,7 @@ impl Commands {
     pub async fn run(&self, cli: &Cli) -> Result<()> {
         match self {
             Self::Init => init::run(cli).await,
+            Self::Search(args) => search::search(cli, args).await,
             Self::Add(args) => entity::add(cli, args).await,
             Self::Remove(args) => entity::remove(cli, args).await,
             Self::Update(args) => entity::update(cli, args).await,

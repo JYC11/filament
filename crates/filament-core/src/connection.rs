@@ -165,6 +165,26 @@ impl FilamentConnection {
         }
     }
 
+    pub async fn search_entities(
+        &mut self,
+        query: &str,
+        entity_type: Option<EntityType>,
+        limit: u32,
+    ) -> Result<Vec<(Entity, f64)>> {
+        match self {
+            Self::Direct(s) => {
+                store::search_entities(
+                    s.pool(),
+                    query,
+                    entity_type.as_ref().map(EntityType::as_str),
+                    limit,
+                )
+                .await
+            }
+            Self::Socket(c) => c.search_entities(query, entity_type, limit).await,
+        }
+    }
+
     pub async fn update_entity(
         &mut self,
         id: &str,

@@ -37,6 +37,14 @@ pub(crate) struct EntityRow {
     pub updated_at: chrono::DateTime<Utc>,
 }
 
+/// Row struct for FTS5 search results — entity fields + rank.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub(crate) struct SearchRow {
+    #[sqlx(flatten)]
+    pub entity: EntityRow,
+    pub rank: f64,
+}
+
 impl From<EntityRow> for Entity {
     fn from(row: EntityRow) -> Self {
         let content = row.content_path.map(|path| ContentRef {
@@ -260,6 +268,58 @@ pub async fn list_entities(
         .await?
         .into_iter()
         .map(Entity::from)
+        .collect())
+}
+
+/// Search entities using FTS5 full-text search with BM25 ranking.
+///
+/// Searches across `name`, `summary`, and `key_facts` fields.
+/// Optional `entity_type` filter restricts results to a specific type.
+/// Returns results ordered by relevance (best match first), limited to `limit`.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn search_entities(
+    pool: &Pool<Sqlite>,
+    query: &str,
+    entity_type: Option<&str>,
+    limit: u32,
+) -> Result<Vec<(Entity, f64)>> {
+    // FTS5 external-content join: match on FTS, join back to entities for full row
+    let sql = if entity_type.is_some() {
+        "SELECT e.id, e.slug, e.name, e.entity_type, e.summary, e.key_facts, \
+                e.content_path, e.content_hash, e.status, e.priority, e.version, \
+                e.created_at, e.updated_at, f.rank \
+         FROM entities_fts f \
+         JOIN entities e ON e.rowid = f.rowid \
+         WHERE entities_fts MATCH ? AND e.entity_type = ? \
+         ORDER BY f.rank \
+         LIMIT ?"
+    } else {
+        "SELECT e.id, e.slug, e.name, e.entity_type, e.summary, e.key_facts, \
+                e.content_path, e.content_hash, e.status, e.priority, e.version, \
+                e.created_at, e.updated_at, f.rank \
+         FROM entities_fts f \
+         JOIN entities e ON e.rowid = f.rowid \
+         WHERE entities_fts MATCH ? \
+         ORDER BY f.rank \
+         LIMIT ?"
+    };
+
+    let mut q = sqlx::query_as::<_, SearchRow>(sql).bind(query);
+    if let Some(et) = entity_type {
+        q = q.bind(et);
+    }
+    q = q.bind(limit);
+
+    Ok(q.fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row| {
+            let rank = row.rank;
+            (Entity::from(row.entity), rank)
+        })
         .collect())
 }
 
