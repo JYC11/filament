@@ -63,6 +63,7 @@ impl From<EntityRow> for Entity {
             EntityType::Agent => Self::Agent(common),
             EntityType::Plan => Self::Plan(common),
             EntityType::Doc => Self::Doc(common),
+            EntityType::Lesson => Self::Lesson(common),
         }
     }
 }
@@ -217,6 +218,15 @@ pub async fn resolve_task(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<Entit
 /// Returns `TypeMismatch` if the entity is not an agent.
 pub async fn resolve_agent(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<EntityCommon> {
     resolve_entity(pool, slug_or_id).await?.into_agent()
+}
+
+/// Resolve an entity and verify it is a lesson.
+///
+/// # Errors
+///
+/// Returns `TypeMismatch` if the entity is not a lesson.
+pub async fn resolve_lesson(pool: &Pool<Sqlite>, slug_or_id: &str) -> Result<EntityCommon> {
+    resolve_entity(pool, slug_or_id).await?.into_lesson()
 }
 
 /// List entities, optionally filtered by type and/or status.

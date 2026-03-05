@@ -25,7 +25,7 @@ filament/
 
 ## Architecture Decisions
 
-Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
+Full ADRs with rationale: `.plan/adr/` (001–021). Key choices:
 
 - **Hybrid daemon** — direct SQLite single-user, daemon for multi-agent (ADR-001)
 - **Unified graph** — all data as Entity nodes + Relation edges (ADR-003)
@@ -37,6 +37,7 @@ Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
 - **Value types** — Priority, Weight, NonEmptyString etc. make invalid states unrepresentable (ADR-018)
 - **Slug identity** — 8-char base36 slugs replace name-based lookup (ADR-019)
 - **Entity ADT** — tagged enum replaces flat struct, compile-time type safety (ADR-020)
+- **Lesson knowledge capture** — structured problem/solution/pattern/learned fields (ADR-021)
 
 ## Stack
 
@@ -55,7 +56,8 @@ Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
 
 ## Key Concepts
 
-- **Entity model**: `Entity` is a tagged enum (`Task | Module | Service | Agent | Plan | Doc`) wrapping `EntityCommon`. Each entity has a unique 8-char slug (`[a-z0-9]`) for human-facing identity, plus a UUID for internal use. Resolution: slug first, UUID fallback.
+- **Entity model**: `Entity` is a tagged enum (`Task | Module | Service | Agent | Plan | Doc | Lesson`) wrapping `EntityCommon`. Each entity has a unique 8-char slug (`[a-z0-9]`) for human-facing identity, plus a UUID for internal use. Resolution: slug first, UUID fallback.
+- **Lesson entities**: Gotchas, solutions, and recurring problems go in Lesson entities (not Doc). Structured fields (`problem`, `solution`, `pattern`, `learned`) stored in `key_facts` JSON, accessed via `LessonFields` struct. CLI: `filament lesson add/list/show`.
 - **Three-tier content**: summary (cheap traversal) → key_facts (LLM reasoning) → content_path (full reference material on disk)
 - **AgentResult protocol**: subprocesses (`claude -p`) emit JSON with status, artifacts, messages, blockers, questions. Filament parses and routes.
 - **Per-project storage**: `filament init` creates `.filament/` with SQLite DB, Unix socket, PID file, content dir.
@@ -100,7 +102,7 @@ Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
 
   | Element | Convention | Example |
   |---------|-----------|---------|
-  | Entity variants | PascalCase noun | `Task`, `Module`, `Agent` |
+  | Entity variants | PascalCase noun | `Task`, `Module`, `Agent`, `Lesson` |
   | CLI commands | verb-noun kebab | `task ready`, `agent dispatch` |
   | Store methods | `verb_noun` snake_case | `create_entity`, `get_entity` |
   | Handler functions | `handle_verb_noun` snake_case | `handle_create_entity` |
@@ -119,14 +121,15 @@ Full ADRs with rationale: `.plan/adr/` (001–020). Key choices:
   - tactical code is fine during exploration; clean up before the feature is "done"
 - if any of the development rules are not clear, ESCALATE = stop and ask the user before proceeding
 
-## Gotchas
+## Gotchas & Lessons
 
-See `.plan/gotchas.md` for the full list. Top hits:
+New gotchas and solutions should be recorded as **Lesson entities** (`filament lesson add`), not Doc entities. Legacy gotchas remain in `.plan/gotchas.md`. Top hits:
 
 - sqlx custom newtypes need `fn compatible()` override, not just `type_info()`
 - `thiserror` v2 treats fields named `source` as error sources
 - `with_transaction` requires `|conn| Box::pin(async move { ... })`
 - petgraph 0.7 requires `use petgraph::visit::EdgeRef` for edge methods
+- SQLite cannot ALTER CHECK constraints — must recreate table in migrations
 
 ## Dual-Track Project Management
 
@@ -139,7 +142,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 | Architecture | `.plan/adr/*.md` | `filament list --type doc`, `filament context --around <adr>` |
 | Code structure | This file's Project Layout section | `filament list --type module`, `filament context --around <module>` |
 | What's next | MEMORY.md "Next Steps" | `filament task ready` |
-| Gotchas | `.plan/gotchas.md` | `filament inspect gotchas`, `filament read gotchas` |
+| Gotchas & lessons | `.plan/gotchas.md` | `filament lesson list`, `filament lesson show <slug>` |
 
 **Rules:**
 - When creating/closing tasks, do it in filament AND update MEMORY.md
@@ -150,7 +153,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**All 6 phases + small features complete** (2026-03-05). 296 tests, zero clippy warnings.
+**All 6 phases + small features complete** (2026-03-05). 326 tests, zero clippy warnings.
 
 | Phase | What | Key details |
 |-------|------|-------------|
@@ -164,7 +167,8 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 Key architectural features:
 - **Slug identity** (ADR-019): 8-char `[a-z0-9]` slugs for human-facing identity
-- **Entity ADT** (ADR-020): tagged enum with typed variants, compile-time type safety
+- **Entity ADT** (ADR-020): tagged enum with 7 typed variants, compile-time type safety
+- **Lesson entities** (ADR-021): structured knowledge capture — gotchas, solutions, patterns
 - **CLI routes through daemon** when running (falls back to direct DB access)
 - **Auto-dispatch**: `FILAMENT_AUTO_DISPATCH=1` chains agent runs on newly-unblocked tasks
 - **Escalations**: blockers/questions from agents routed as messages to "user"

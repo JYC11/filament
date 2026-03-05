@@ -5,6 +5,7 @@ mod config;
 mod entity;
 mod escalation;
 mod export;
+mod lesson;
 pub mod helpers;
 mod hook;
 mod init;
@@ -54,6 +55,10 @@ pub enum Commands {
     // -- Task subgroup --
     /// Task management commands.
     Task(task::TaskCommand),
+
+    // -- Lesson subgroup --
+    /// Lesson management (gotchas, patterns, solutions).
+    Lesson(lesson::LessonCommand),
 
     // -- Agent subgroup --
     /// Agent dispatching and monitoring commands.
@@ -139,6 +144,7 @@ impl Commands {
             Self::Relate(args) => relation::relate(cli, args).await,
             Self::Unrelate(args) => relation::unrelate(cli, args).await,
             Self::Task(cmd) => cmd.run(cli).await,
+            Self::Lesson(cmd) => cmd.run(cli).await,
             Self::Agent(cmd) => cmd.run(cli).await,
             Self::Context(args) => query::context(cli, args).await,
             Self::Pagerank(args) => query::pagerank(cli, args).await,

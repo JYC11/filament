@@ -45,6 +45,7 @@ pub enum Entity {
     Agent(EntityCommon),
     Plan(EntityCommon),
     Doc(EntityCommon),
+    Lesson(EntityCommon),
 }
 
 impl Entity {
@@ -57,7 +58,8 @@ impl Entity {
             | Self::Service(c)
             | Self::Agent(c)
             | Self::Plan(c)
-            | Self::Doc(c) => c,
+            | Self::Doc(c)
+            | Self::Lesson(c) => c,
         }
     }
 
@@ -70,7 +72,8 @@ impl Entity {
             | Self::Service(c)
             | Self::Agent(c)
             | Self::Plan(c)
-            | Self::Doc(c) => c,
+            | Self::Doc(c)
+            | Self::Lesson(c) => c,
         }
     }
 
@@ -98,6 +101,7 @@ impl Entity {
             Self::Agent(_) => EntityType::Agent,
             Self::Plan(_) => EntityType::Plan,
             Self::Doc(_) => EntityType::Doc,
+            Self::Lesson(_) => EntityType::Lesson,
         }
     }
 
@@ -146,6 +150,71 @@ impl Entity {
                 slug: other.slug().clone(),
             }),
         }
+    }
+
+    /// Consume the entity, returning the inner `EntityCommon` if it is a Lesson.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TypeMismatch` if the entity is not a lesson.
+    pub fn into_lesson(self) -> Result<EntityCommon, FilamentError> {
+        match self {
+            Self::Lesson(c) => Ok(c),
+            other => Err(FilamentError::TypeMismatch {
+                expected: EntityType::Lesson,
+                actual: other.entity_type(),
+                slug: other.slug().clone(),
+            }),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Lesson structured fields (stored in key_facts JSON)
+// ---------------------------------------------------------------------------
+
+/// Typed access to the structured fields stored in a Lesson entity's `key_facts`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LessonFields {
+    pub problem: String,
+    pub solution: String,
+    pub pattern: Option<String>,
+    pub learned: String,
+}
+
+impl LessonFields {
+    /// Extract lesson fields from an entity's `key_facts` JSON.
+    /// Returns `None` if the entity is not a Lesson or fields are missing.
+    #[must_use]
+    pub fn from_entity(entity: &Entity) -> Option<Self> {
+        if entity.entity_type() != EntityType::Lesson {
+            return None;
+        }
+        Self::from_key_facts(&entity.common().key_facts)
+    }
+
+    /// Extract lesson fields from a `key_facts` JSON value.
+    #[must_use]
+    pub fn from_key_facts(kf: &serde_json::Value) -> Option<Self> {
+        Some(Self {
+            problem: kf.get("problem")?.as_str()?.to_string(),
+            solution: kf.get("solution")?.as_str()?.to_string(),
+            pattern: kf.get("pattern").and_then(|v| v.as_str()).map(String::from),
+            learned: kf.get("learned")?.as_str()?.to_string(),
+        })
+    }
+
+    /// Convert to a `key_facts` JSON value.
+    #[must_use]
+    pub fn to_key_facts(&self) -> serde_json::Value {
+        let mut obj = serde_json::Map::new();
+        obj.insert("problem".into(), self.problem.clone().into());
+        obj.insert("solution".into(), self.solution.clone().into());
+        if let Some(ref p) = self.pattern {
+            obj.insert("pattern".into(), p.clone().into());
+        }
+        obj.insert("learned".into(), self.learned.clone().into());
+        serde_json::Value::Object(obj)
     }
 }
 

@@ -124,6 +124,11 @@ impl FilamentConnection {
         self.resolve_entity(slug_or_id).await?.into_agent()
     }
 
+    /// Resolve an entity by slug/ID and verify it is a Lesson.
+    pub async fn resolve_lesson(&mut self, slug_or_id: &str) -> Result<EntityCommon> {
+        self.resolve_entity(slug_or_id).await?.into_lesson()
+    }
+
     /// Resolve entity by slug (first) or UUID fallback.
     pub async fn resolve_entity(&mut self, slug_or_id: &str) -> Result<Entity> {
         match self {

@@ -4,7 +4,7 @@ use clap::Args;
 use filament_core::config::FilamentConfig;
 use filament_core::dto::CreateEntityRequest;
 use filament_core::error::Result;
-use filament_core::models::{EntityType, Priority};
+use filament_core::models::{EntityType, LessonFields, Priority};
 
 use super::helpers::{
     connect, find_project_root, output_json, print_entity_list, print_relations, read_content_file,
@@ -15,7 +15,7 @@ use crate::Cli;
 pub struct AddArgs {
     /// Entity name.
     name: String,
-    /// Entity type (task, module, service, agent, plan, doc).
+    /// Entity type (task, module, service, agent, plan, doc, lesson).
     #[arg(long, rename_all = "snake_case")]
     r#type: EntityType,
     /// Short summary.
@@ -248,14 +248,23 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
         println!("Status:   {}", c.status);
         println!("Priority: {}", c.priority);
         println!("Version:  {}", c.version);
-        if !c.summary.is_empty() {
-            println!("Summary:  {}", c.summary);
-        }
-        if c.key_facts != serde_json::json!({}) {
-            println!(
-                "Facts:    {}",
-                serde_json::to_string_pretty(&c.key_facts).expect("JSON")
-            );
+        if let Some(fields) = LessonFields::from_entity(&entity) {
+            println!("Problem:  {}", fields.problem);
+            println!("Solution: {}", fields.solution);
+            if let Some(ref pat) = fields.pattern {
+                println!("Pattern:  {pat}");
+            }
+            println!("Learned:  {}", fields.learned);
+        } else {
+            if !c.summary.is_empty() {
+                println!("Summary:  {}", c.summary);
+            }
+            if c.key_facts != serde_json::json!({}) {
+                println!(
+                    "Facts:    {}",
+                    serde_json::to_string_pretty(&c.key_facts).expect("JSON")
+                );
+            }
         }
         if let Some(ref content) = c.content {
             println!("Content:  {}", content.path);

@@ -1,15 +1,17 @@
 ---
 name: filament
 description: >
-  Use the filament CLI for project knowledge management, task tracking, and inter-agent
-  coordination. Filament stores entities (tasks, modules, services, agents, plans, docs),
-  relations between them, messages, and file reservations in a local SQLite database.
-  Use when: managing project context, tracking tasks, recording architecture decisions,
-  creating knowledge graph entries, coordinating agent work, or querying project structure.
-  Triggers on: "filament", "add entity", "add task", "track this", "create a task",
-  "relate these", "what blocks", "critical path", "ready tasks", "project graph",
-  "knowledge graph", "file reservation", "agent message", "what's next", "dispatch agent",
-  "escalations", "export", "import", "daemon", "tui".
+  Use the filament CLI for project knowledge management, task tracking, lesson capture,
+  and inter-agent coordination. Filament stores entities (tasks, modules, services, agents,
+  plans, docs, lessons), relations between them, messages, and file reservations in a local
+  SQLite database. Use when: managing project context, tracking tasks, recording gotchas
+  and lessons, recording architecture decisions, creating knowledge graph entries,
+  coordinating agent work, or querying project structure.
+  Triggers on: "filament", "add entity", "add task", "add lesson", "track this",
+  "create a task", "gotcha", "lesson", "record a lesson", "relate these", "what blocks",
+  "critical path", "ready tasks", "project graph", "knowledge graph", "file reservation",
+  "agent message", "what's next", "dispatch agent", "escalations", "export", "import",
+  "daemon", "tui".
 ---
 
 # Filament CLI — Project Knowledge Management
@@ -33,7 +35,7 @@ filament init                              # creates .filament/ with SQLite DB
 
 ### Entity CRUD (the core building block)
 
-Entities are nodes in the knowledge graph. Types: `task`, `module`, `service`, `agent`, `plan`, `doc`.
+Entities are nodes in the knowledge graph. Types: `task`, `module`, `service`, `agent`, `plan`, `doc`, `lesson`.
 
 ```bash
 # Create — returns the entity's slug
@@ -76,6 +78,20 @@ filament task close <SLUG>                 # sets status=closed
 filament task assign <SLUG> --to <AGENT>   # creates assigned_to relation
 filament task critical-path <SLUG>         # longest dependency chain
 ```
+
+### Lessons (knowledge capture — gotchas, patterns, solutions)
+
+Lessons are entities with type=lesson. They capture reusable knowledge with structured fields.
+**Gotchas, recurring problems, and solutions should ALWAYS be recorded as Lesson entities** (not Doc).
+
+```bash
+filament lesson add <TITLE> --problem "what was failing" --solution "how to fix" --learned "key insight" [--pattern "pattern-name"] [--priority N]
+filament lesson list [--pattern NAME] [--status all|open|closed]
+filament lesson show <SLUG>                # structured display of problem/solution/pattern/learned
+```
+
+Lesson fields are stored in `key_facts` JSON. The `--learned` value is also used as the entity summary.
+Pattern names enable cross-project knowledge transfer (e.g., "n-plus-one-fix", "circuit-breaker").
 
 ### Agent Dispatch (subprocess management)
 
@@ -236,6 +252,16 @@ filament add phase-1-core --type plan --summary "Phase 1: Core library" --conten
 filament relate project-plan owns phase-1-core
 ```
 
+### Record a gotcha / lesson learned
+
+```bash
+filament lesson add "SQLite CHECK constraint" \
+  --problem "INSERT fails when new entity_type not in CHECK list" \
+  --solution "Recreate table with updated CHECK constraint in migration" \
+  --learned "SQLite cannot ALTER CHECK constraints — must recreate table" \
+  --pattern "sqlite-check-migration"
+```
+
 ### Track architecture decisions
 
 ```bash
@@ -343,11 +369,12 @@ rm -rf /tmp/filament-sim
 | `service` | **Runtime components** — running infrastructure vs code. | "sqlite-db", "unix-socket-server" |
 | `agent` | **Actors** — required for `task assign`, `message send`, `reserve`. | "planner-agent", "code-reviewer" |
 | `plan` | **Planning docs** — group tasks via `owns`. Always use `--content path/to/plan.md` to point at the file. | "phase-3-plan", "architecture-overview" |
-| `doc` | **Reference material** — ADRs, specs, runbooks. Always use `--content path/to/doc.md` to point at the file. | "adr-003", "api-spec", "gotchas" |
+| `doc` | **Reference material** — ADRs, specs, runbooks. Always use `--content path/to/doc.md` to point at the file. | "adr-003", "api-spec" |
+| `lesson` | **Knowledge capture** — gotchas, recurring problems, solutions, patterns. Use `filament lesson add` with `--problem`, `--solution`, `--learned`. | "sqlx-check-gotcha", "n-plus-one-fix" |
 
 **Design principle**: The graph is lightweight — summaries + pointers, not content duplication.
 For `doc` and `plan` types, always use `--content` so the physical `.md` file remains the source of truth.
-The graph adds queryable structure (relations, dependencies, context queries) on top.
+**Gotchas and lessons** should ALWAYS use the `lesson` type (not `doc`) so they have structured problem/solution/learned fields.
 
 ## Relation Types and Semantics
 

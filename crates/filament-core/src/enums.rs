@@ -53,6 +53,7 @@ pub enum EntityType {
     Agent,
     Plan,
     Doc,
+    Lesson,
 }
 
 impl_enum_str!(EntityType {
@@ -62,6 +63,7 @@ impl_enum_str!(EntityType {
     Agent => "agent",
     Plan => "plan",
     Doc => "doc",
+    Lesson => "lesson",
 });
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]

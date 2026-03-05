@@ -1790,3 +1790,138 @@ async fn reconcile_stale_runs_does_not_revert_closed_tasks() {
     let entity = get_entity(store.pool(), task_id.as_str()).await.unwrap();
     assert_eq!(*entity.status(), EntityStatus::Closed);
 }
+
+// ---------------------------------------------------------------------------
+// Lesson entity
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn lesson_create_and_retrieve() {
+    let store = test_db().await;
+    let req = common::lesson_req(
+        "SQLite CHECK gotcha",
+        "INSERT fails with CHECK constraint violation",
+        "Recreate table with updated CHECK constraint in migration",
+        "SQLite cannot ALTER CHECK constraints — must recreate table",
+    );
+
+    let (id, slug) = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let entity = get_entity(store.pool(), id.as_str()).await.unwrap();
+    assert_eq!(entity.entity_type(), EntityType::Lesson);
+    assert_eq!(entity.name().as_str(), "SQLite CHECK gotcha");
+
+    // Verify lesson fields round-trip through key_facts
+    let fields = LessonFields::from_entity(&entity).unwrap();
+    assert_eq!(fields.problem, "INSERT fails with CHECK constraint violation");
+    assert_eq!(
+        fields.solution,
+        "Recreate table with updated CHECK constraint in migration"
+    );
+    assert!(fields.pattern.is_none());
+    assert_eq!(
+        fields.learned,
+        "SQLite cannot ALTER CHECK constraints — must recreate table"
+    );
+
+    // Verify slug lookup works
+    let by_slug = get_entity_by_slug(store.pool(), slug.as_str()).await.unwrap();
+    assert_eq!(by_slug.entity_type(), EntityType::Lesson);
+}
+
+#[tokio::test]
+async fn lesson_with_pattern() {
+    let store = test_db().await;
+    let fields = LessonFields {
+        problem: "N+1 query on task list".to_string(),
+        solution: "Use batch WHERE IN query".to_string(),
+        pattern: Some("n-plus-one-fix".to_string()),
+        learned: "Always check query count with tracing".to_string(),
+    };
+    let req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("N+1 query fix").unwrap(),
+        entity_type: EntityType::Lesson,
+        summary: fields.learned.clone(),
+        key_facts: fields.to_key_facts(),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    let (id, _) = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let entity = get_entity(store.pool(), id.as_str()).await.unwrap();
+    let round_tripped = LessonFields::from_entity(&entity).unwrap();
+    assert_eq!(round_tripped.pattern.as_deref(), Some("n-plus-one-fix"));
+}
+
+#[tokio::test]
+async fn lesson_listed_by_type_filter() {
+    let store = test_db().await;
+
+    // Create a task and a lesson
+    let task_req = common::task_req("Some task", 1);
+    let lesson_req = common::lesson_req(
+        "A gotcha",
+        "problem",
+        "solution",
+        "learned",
+    );
+
+    store
+        .with_transaction(|conn| {
+            let t = task_req.clone();
+            let l = lesson_req.clone();
+            Box::pin(async move {
+                create_entity(conn, &t).await?;
+                create_entity(conn, &l).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // List only lessons
+    let lessons = list_entities(store.pool(), Some("lesson"), None)
+        .await
+        .unwrap();
+    assert_eq!(lessons.len(), 1);
+    assert_eq!(lessons[0].entity_type(), EntityType::Lesson);
+
+    // List all should include both
+    let all = list_entities(store.pool(), None, None).await.unwrap();
+    assert_eq!(all.len(), 2);
+}
+
+#[tokio::test]
+async fn resolve_lesson_type_check() {
+    let store = test_db().await;
+    let req = common::lesson_req("Test lesson", "p", "s", "l");
+
+    let (_, slug) = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    // resolve_lesson succeeds
+    let common = resolve_lesson(store.pool(), slug.as_str()).await.unwrap();
+    assert_eq!(common.name.as_str(), "Test lesson");
+
+    // resolve_task on a lesson fails with TypeMismatch
+    let err = resolve_task(store.pool(), slug.as_str()).await.unwrap_err();
+    assert!(matches!(err, FilamentError::TypeMismatch { .. }));
+}
