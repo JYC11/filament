@@ -71,6 +71,10 @@ ci: ## Run full CI pipeline: fmt check, clippy, tests
 	@echo "=== Tests ==="
 	@bash util-scripts/test.sh all
 
+.PHONY: install
+install: ## Build and install filament to ~/.local/bin (usage: make install [DEST=/usr/local/bin])
+	@bash util-scripts/install.sh $(DEST)
+
 .PHONY: help
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
