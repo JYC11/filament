@@ -1,11 +1,14 @@
 use chrono::Utc;
 use sqlx::{Pool, Sqlite, SqliteConnection};
 
+use std::collections::HashSet;
+
+use crate::diff::{fields_in_diff, DiffBuilder};
 use crate::dto::{
-    Escalation, EscalationKind, ExportData, ImportResult, ValidCreateEntityRequest,
-    ValidCreateRelationRequest, ValidSendMessageRequest,
+    EntityChangeset, Escalation, EscalationKind, ExportData, ImportResult,
+    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
 };
-use crate::error::{FilamentError, Result};
+use crate::error::{FieldConflict, FilamentError, Result};
 use crate::models::{
     AgentRun, AgentRunId, AgentStatus, ContentRef, Entity, EntityCommon, EntityId, EntityStatus,
     EntityType, Event, EventId, EventType, Message, MessageId, NonEmptyString, Priority, Relation,
@@ -29,6 +32,7 @@ pub(crate) struct EntityRow {
     pub content_hash: Option<String>,
     pub status: EntityStatus,
     pub priority: Priority,
+    pub version: i64,
     pub created_at: chrono::DateTime<Utc>,
     pub updated_at: chrono::DateTime<Utc>,
 }
@@ -48,6 +52,7 @@ impl From<EntityRow> for Entity {
             content,
             status: row.status,
             priority: row.priority,
+            version: row.version,
             created_at: row.created_at,
             updated_at: row.updated_at,
         };
@@ -147,13 +152,22 @@ pub async fn create_entity(
     .execute(&mut *conn)
     .await?;
 
-    record_event(
+    let create_diff = DiffBuilder::create()
+        .value("name", req.name.as_str())
+        .value("entity_type", req.entity_type.as_str())
+        .value("summary", &req.summary)
+        .value("priority", &req.priority.to_string())
+        .build();
+    let diff_str = create_diff.as_ref().map(std::string::ToString::to_string);
+
+    record_event_with_diff(
         conn,
         Some(id.as_str()),
         EventType::EntityCreated,
         "system",
         None,
         Some(req.name.as_str()),
+        diff_str.as_deref(),
     )
     .await?;
 
@@ -330,6 +344,275 @@ pub async fn update_entity_status(
     .await?;
 
     Ok(())
+}
+
+/// Unified entity update with optimistic conflict resolution.
+///
+/// If `changeset.expected_version` is `None`, applies all changes unconditionally (LWW).
+/// If it matches the current version, applies changes and bumps the version.
+/// If there is a version mismatch, attempts auto-merge on non-overlapping fields.
+/// If overlapping fields conflict, returns `VersionConflict`.
+///
+/// # Errors
+///
+/// Returns `EntityNotFound` if the entity doesn't exist.
+/// Returns `VersionConflict` if concurrent changes overlap.
+/// Returns `Validation` if the changeset is empty.
+pub async fn update_entity(
+    conn: &mut SqliteConnection,
+    id: &str,
+    changeset: &EntityChangeset,
+) -> Result<Entity> {
+    if changeset.is_empty() {
+        return Err(FilamentError::Validation(
+            "changeset has no fields to update".to_string(),
+        ));
+    }
+
+    // Read current state
+    let row: EntityRow =
+        sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .ok_or_else(|| FilamentError::EntityNotFound { id: id.to_string() })?;
+
+    let current_version = row.version;
+
+    // Version check + merge
+    if changeset.expected_version != current_version {
+        try_auto_merge(
+            conn,
+            id,
+            changeset.expected_version,
+            current_version,
+            changeset,
+        )
+        .await?;
+    }
+
+    let diff_json = build_changeset_diff(&row, changeset);
+    let diff_str = diff_json.as_ref().map(std::string::ToString::to_string);
+
+    // Apply changes via dynamic SQL
+    let now = Utc::now();
+    let new_version = current_version + 1;
+    let new_name = changeset.name.as_ref().unwrap_or(&row.name);
+    let new_summary = changeset.summary.as_deref().unwrap_or(&row.summary);
+    let new_status = changeset.status.as_ref().unwrap_or(&row.status);
+    let new_priority = changeset.priority.unwrap_or(row.priority);
+    let old_key_facts_str = serde_json::to_string(&row.key_facts).unwrap_or_default();
+    let new_key_facts = changeset
+        .key_facts
+        .as_deref()
+        .unwrap_or(&old_key_facts_str);
+    let new_content_path = changeset
+        .content_path
+        .as_deref()
+        .or(row.content_path.as_deref());
+
+    sqlx::query(
+        "UPDATE entities SET name = ?, summary = ?, status = ?, priority = ?, \
+         key_facts = ?, content_path = ?, version = ?, updated_at = ? \
+         WHERE id = ?",
+    )
+    .bind(new_name.as_str())
+    .bind(new_summary)
+    .bind(new_status.as_str())
+    .bind(new_priority)
+    .bind(new_key_facts)
+    .bind(new_content_path)
+    .bind(new_version)
+    .bind(now)
+    .bind(id)
+    .execute(&mut *conn)
+    .await?;
+
+    // Record event with both legacy and diff columns
+    let legacy_new = changeset
+        .summary
+        .as_deref()
+        .or_else(|| changeset.status.as_ref().map(EntityStatus::as_str));
+    record_event_with_diff(
+        conn,
+        Some(id),
+        EventType::EntityUpdated,
+        "system",
+        None,
+        legacy_new,
+        diff_str.as_deref(),
+    )
+    .await?;
+
+    // Re-fetch and return updated entity
+    let updated = sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE id = ?")
+        .bind(id)
+        .fetch_one(&mut *conn)
+        .await?;
+    Ok(Entity::from(updated))
+}
+
+/// Attempt auto-merge when version mismatch detected.
+///
+/// Looks at events since the caller's expected version to find which fields
+/// were changed remotely. If the changeset's fields don't overlap with
+/// remotely changed fields, the merge succeeds silently. If they overlap,
+/// returns `VersionConflict` with all conflicting fields.
+async fn try_auto_merge(
+    conn: &mut SqliteConnection,
+    entity_id: &str,
+    expected_version: i64,
+    current_version: i64,
+    changeset: &EntityChangeset,
+) -> Result<()> {
+    // Get events since the expected version.
+    // We use the entity's events with diffs to determine which fields changed.
+    let events: Vec<Event> = sqlx::query_as::<_, Event>(
+        "SELECT * FROM events WHERE entity_id = ? AND diff IS NOT NULL ORDER BY created_at ASC",
+    )
+    .bind(entity_id)
+    .fetch_all(&mut *conn)
+    .await?;
+
+    // Collect all remotely changed fields from diffs since the expected version.
+    // We take the last N events where N = current_version - expected_version,
+    // since each update bumps the version by 1.
+    let version_diff = current_version.saturating_sub(expected_version);
+    let events_since = usize::try_from(version_diff).unwrap_or(usize::MAX);
+    let recent_events: Vec<&Event> = events.iter().rev().take(events_since).collect();
+
+    let mut remotely_changed: HashSet<String> = HashSet::new();
+
+    if recent_events.is_empty() {
+        // No diff events found — conservatively assume all fields changed
+        // (events recorded before migration have diff = NULL)
+        return Err(FilamentError::VersionConflict {
+            entity_id: entity_id.to_string(),
+            current_version,
+            conflicts: build_conflict_list(conn, entity_id, changeset).await?,
+        });
+    }
+
+    for event in &recent_events {
+        if let Some(ref diff_str) = event.diff {
+            if let Ok(diff_val) = serde_json::from_str(diff_str) {
+                remotely_changed.extend(fields_in_diff(&diff_val));
+            }
+        } else {
+            // NULL-diff event in the range — treat conservatively
+            return Err(FilamentError::VersionConflict {
+                entity_id: entity_id.to_string(),
+                current_version,
+                conflicts: build_conflict_list(conn, entity_id, changeset).await?,
+            });
+        }
+    }
+
+    // Check for overlap
+    let local_fields: HashSet<String> = changeset
+        .changed_field_names()
+        .into_iter()
+        .map(String::from)
+        .collect();
+
+    let overlapping: HashSet<&String> = local_fields.intersection(&remotely_changed).collect();
+
+    if overlapping.is_empty() {
+        // No overlap — auto-merge succeeds, proceed with update
+        Ok(())
+    } else {
+        Err(FilamentError::VersionConflict {
+            entity_id: entity_id.to_string(),
+            current_version,
+            conflicts: build_conflict_list(conn, entity_id, changeset).await?,
+        })
+    }
+}
+
+/// Build a JSON diff from the old row state and the changeset.
+fn build_changeset_diff(
+    row: &EntityRow,
+    changeset: &EntityChangeset,
+) -> Option<crate::diff::EventDiff> {
+    let mut b = DiffBuilder::new();
+    if let Some(ref v) = changeset.name {
+        b = b.field("name", row.name.as_str(), v.as_str());
+    }
+    if let Some(ref v) = changeset.summary {
+        b = b.field("summary", &row.summary, v);
+    }
+    if let Some(ref v) = changeset.status {
+        b = b.field("status", row.status.as_str(), v.as_str());
+    }
+    if let Some(ref v) = changeset.priority {
+        b = b.field("priority", &row.priority.to_string(), &v.to_string());
+    }
+    if let Some(ref v) = changeset.key_facts {
+        let old = serde_json::to_string(&row.key_facts).unwrap_or_default();
+        b = b.field("key_facts", &old, v);
+    }
+    if let Some(ref v) = changeset.content_path {
+        b = b.field("content_path", row.content_path.as_deref().unwrap_or(""), v);
+    }
+    b.build()
+}
+
+/// Build the list of `FieldConflict` entries for all fields in the changeset
+/// that conflict with current DB values.
+async fn build_conflict_list(
+    conn: &mut SqliteConnection,
+    entity_id: &str,
+    changeset: &EntityChangeset,
+) -> Result<Vec<FieldConflict>> {
+    let row: EntityRow = sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE id = ?")
+        .bind(entity_id)
+        .fetch_one(&mut *conn)
+        .await?;
+
+    let mut conflicts = Vec::new();
+    if let Some(ref yours) = changeset.name {
+        conflicts.push(FieldConflict {
+            field: "name".to_string(),
+            your_value: yours.to_string(),
+            their_value: row.name.to_string(),
+        });
+    }
+    if let Some(ref yours) = changeset.summary {
+        conflicts.push(FieldConflict {
+            field: "summary".to_string(),
+            your_value: yours.clone(),
+            their_value: row.summary.clone(),
+        });
+    }
+    if let Some(ref yours) = changeset.status {
+        conflicts.push(FieldConflict {
+            field: "status".to_string(),
+            your_value: yours.to_string(),
+            their_value: row.status.to_string(),
+        });
+    }
+    if let Some(yours) = changeset.priority {
+        conflicts.push(FieldConflict {
+            field: "priority".to_string(),
+            your_value: yours.to_string(),
+            their_value: row.priority.to_string(),
+        });
+    }
+    if let Some(ref yours) = changeset.key_facts {
+        conflicts.push(FieldConflict {
+            field: "key_facts".to_string(),
+            your_value: yours.clone(),
+            their_value: serde_json::to_string(&row.key_facts).unwrap_or_default(),
+        });
+    }
+    if let Some(ref yours) = changeset.content_path {
+        conflicts.push(FieldConflict {
+            field: "content_path".to_string(),
+            your_value: yours.clone(),
+            their_value: row.content_path.unwrap_or_default(),
+        });
+    }
+    Ok(conflicts)
 }
 
 /// Delete an entity.
@@ -1037,7 +1320,9 @@ pub async fn reconcile_stale_agent_runs(conn: &mut SqliteConnection) -> Result<u
 // Event log
 // ---------------------------------------------------------------------------
 
-/// Record an event.
+/// Record an event with optional structured diff.
+///
+/// Writes both legacy `old_value`/`new_value` and new `diff` JSON column.
 ///
 /// # Errors
 ///
@@ -1050,12 +1335,29 @@ pub async fn record_event(
     old_value: Option<&str>,
     new_value: Option<&str>,
 ) -> Result<EventId> {
+    record_event_with_diff(conn, entity_id, event_type, actor, old_value, new_value, None).await
+}
+
+/// Record an event with a structured JSON diff.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn record_event_with_diff(
+    conn: &mut SqliteConnection,
+    entity_id: Option<&str>,
+    event_type: EventType,
+    actor: &str,
+    old_value: Option<&str>,
+    new_value: Option<&str>,
+    diff: Option<&str>,
+) -> Result<EventId> {
     let id = EventId::new();
     let now = Utc::now();
 
     sqlx::query(
-        "INSERT INTO events (id, entity_id, event_type, actor, old_value, new_value, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO events (id, entity_id, event_type, actor, old_value, new_value, diff, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id.as_str())
     .bind(entity_id)
@@ -1063,6 +1365,7 @@ pub async fn record_event(
     .bind(actor)
     .bind(old_value)
     .bind(new_value)
+    .bind(diff)
     .bind(now)
     .execute(conn)
     .await?;

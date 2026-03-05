@@ -475,6 +475,7 @@ fn sample_common() -> EntityCommon {
         content: None,
         status: EntityStatus::Open,
         priority: Priority::DEFAULT,
+        version: 0,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     }

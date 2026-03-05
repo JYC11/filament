@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use filament_core::dto::{CreateEntityRequest, ValidCreateEntityRequest};
+use filament_core::dto::{CreateEntityRequest, EntityChangeset, ValidCreateEntityRequest};
 use filament_core::error::Result;
 use filament_core::models::{EntityStatus, EntityType};
 use filament_core::protocol::Notification;
@@ -64,6 +64,32 @@ pub async fn list(
     )
     .await?;
     Ok(serde_json::to_value(&entities).expect("infallible"))
+}
+
+pub async fn update(
+    params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let p: UpdateEntityParam = parse_params(params)?;
+    let entity = state
+        .store
+        .with_transaction(|conn| {
+            let id = p.id.clone();
+            let changeset = p.changeset.clone();
+            Box::pin(async move { store::update_entity(conn, &id, &changeset).await })
+        })
+        .await?;
+
+    // Update in-memory graph
+    state.graph_write().await.add_node_from_entity(&entity);
+
+    state.notify(Notification {
+        event_type: "entity_updated".to_string(),
+        entity_id: Some(p.id.clone()),
+        detail: Some(serde_json::json!({ "version": entity.common().version })),
+    });
+
+    Ok(serde_json::to_value(&entity).expect("infallible"))
 }
 
 pub async fn update_summary(
@@ -174,6 +200,12 @@ struct ListEntitiesParam {
 #[derive(Deserialize)]
 struct BatchGetParam {
     ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct UpdateEntityParam {
+    id: String,
+    changeset: EntityChangeset,
 }
 
 #[derive(Deserialize)]

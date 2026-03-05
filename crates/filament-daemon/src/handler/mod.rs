@@ -34,6 +34,7 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::GetEntity => entity::get(params, state).await,
         Method::GetEntityBySlug => entity::get_by_slug(params, state).await,
         Method::ListEntities => entity::list(params, state).await,
+        Method::UpdateEntity => entity::update(params, state).await,
         Method::UpdateEntitySummary => entity::update_summary(params, state).await,
         Method::UpdateEntityStatus => entity::update_status(params, state).await,
         Method::DeleteEntity => entity::delete(params, state).await,

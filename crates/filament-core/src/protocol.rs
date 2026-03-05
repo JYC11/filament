@@ -55,6 +55,7 @@ pub enum Method {
     GetEntity,
     GetEntityBySlug,
     ListEntities,
+    UpdateEntity,
     UpdateEntitySummary,
     UpdateEntityStatus,
     DeleteEntity,

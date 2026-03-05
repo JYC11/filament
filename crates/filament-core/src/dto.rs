@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::FilamentError;
 use crate::models::{
-    AgentStatus, Entity, EntityId, EntityType, Event, Message, MessageId, MessageType,
-    NonEmptyString, Priority, Relation, Weight,
+    AgentStatus, Entity, EntityId, EntityStatus, EntityType, Event, Message, MessageId,
+    MessageType, NonEmptyString, Priority, Relation, Weight,
 };
 
 // ---------------------------------------------------------------------------
@@ -76,6 +76,7 @@ pub enum EscalationKind {
     Blocker,
     Question,
     NeedsInput,
+    Conflict,
 }
 
 impl std::fmt::Display for EscalationKind {
@@ -84,7 +85,65 @@ impl std::fmt::Display for EscalationKind {
             Self::Blocker => write!(f, "blocker"),
             Self::Question => write!(f, "question"),
             Self::NeedsInput => write!(f, "needs_input"),
+            Self::Conflict => write!(f, "conflict"),
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Entity changeset (optimistic conflict resolution)
+// ---------------------------------------------------------------------------
+
+/// Captures which fields are being changed in an entity update.
+///
+/// `None` means "don't change this field"; `Some(v)` means "set to v".
+/// `expected_version` is always required — callers must read the entity first.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityChangeset {
+    pub name: Option<NonEmptyString>,
+    pub summary: Option<String>,
+    pub status: Option<EntityStatus>,
+    pub priority: Option<Priority>,
+    pub key_facts: Option<String>,
+    pub content_path: Option<String>,
+    pub expected_version: i64,
+}
+
+impl EntityChangeset {
+    /// Returns the names of fields that have values set (i.e., are being changed).
+    #[must_use]
+    pub fn changed_field_names(&self) -> Vec<&str> {
+        let mut fields = Vec::new();
+        if self.name.is_some() {
+            fields.push("name");
+        }
+        if self.summary.is_some() {
+            fields.push("summary");
+        }
+        if self.status.is_some() {
+            fields.push("status");
+        }
+        if self.priority.is_some() {
+            fields.push("priority");
+        }
+        if self.key_facts.is_some() {
+            fields.push("key_facts");
+        }
+        if self.content_path.is_some() {
+            fields.push("content_path");
+        }
+        fields
+    }
+
+    /// Returns true if no fields are being changed.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.name.is_none()
+            && self.summary.is_none()
+            && self.status.is_none()
+            && self.priority.is_none()
+            && self.key_facts.is_none()
+            && self.content_path.is_none()
     }
 }
 

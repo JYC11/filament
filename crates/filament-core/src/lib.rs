@@ -1,6 +1,7 @@
 pub mod client;
 pub mod config;
 pub mod connection;
+pub mod diff;
 pub mod dto;
 pub mod enums;
 pub mod error;

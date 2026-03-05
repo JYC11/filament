@@ -48,12 +48,32 @@ pub struct UpdateArgs {
     /// New status: open, closed, `in_progress`, blocked.
     #[arg(long)]
     status: Option<filament_core::models::EntityStatus>,
+    /// Expected version for conflict detection.
+    ///
+    /// If omitted, the current version is read automatically.
+    #[arg(long)]
+    version: Option<i64>,
 }
 
 #[derive(Args, Debug)]
 pub struct InspectArgs {
     /// Entity slug or ID.
     slug: String,
+}
+
+#[derive(Args, Debug)]
+pub struct ResolveArgs {
+    /// Entity slug or ID.
+    slug: String,
+    /// Accept all current (theirs) values, resolving the conflict.
+    #[arg(long)]
+    theirs: bool,
+    /// Override summary during resolve.
+    #[arg(long)]
+    summary: Option<String>,
+    /// Override status during resolve.
+    #[arg(long)]
+    status: Option<filament_core::models::EntityStatus>,
 }
 
 #[derive(Args, Debug)]
@@ -144,21 +164,61 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     let mut conn = connect().await?;
     let entity = conn.resolve_entity(&args.slug).await?;
     let id = entity.id().clone();
+    let expected_version = args.version.unwrap_or_else(|| entity.common().version);
 
-    if let Some(summary) = &args.summary {
-        conn.update_entity_summary(id.as_str(), summary).await?;
-    }
-    if let Some(status) = &args.status {
-        conn.update_entity_status(id.as_str(), status.clone())
-            .await?;
-    }
+    let changeset = filament_core::dto::EntityChangeset {
+        name: None,
+        summary: args.summary.clone(),
+        status: args.status.clone(),
+        priority: None,
+        key_facts: None,
+        content_path: None,
+        expected_version,
+    };
 
-    if cli.json {
-        output_json(&serde_json::json!({"updated": id.as_str()}));
-    } else {
-        println!("Updated entity: {} ({})", entity.name(), entity.slug());
+    match conn.update_entity(id.as_str(), &changeset).await {
+        Ok(updated) => {
+            if cli.json {
+                output_json(
+                    &serde_json::json!({"updated": id.as_str(), "version": updated.common().version}),
+                );
+            } else {
+                println!("Updated entity: {} ({})", entity.name(), entity.slug());
+            }
+            Ok(())
+        }
+        Err(filament_core::error::FilamentError::VersionConflict {
+            ref entity_id,
+            current_version,
+            ref conflicts,
+        }) => {
+            if cli.json {
+                output_json(&serde_json::json!({
+                    "error": "VERSION_CONFLICT",
+                    "entity_id": entity_id,
+                    "current_version": current_version,
+                    "conflicts": conflicts,
+                }));
+            } else {
+                eprintln!(
+                    "Conflict on entity {} (version {current_version}):",
+                    entity.slug()
+                );
+                eprintln!("  {:<15} {:<25} {:<25}", "Field", "Yours", "Theirs");
+                for c in conflicts {
+                    eprintln!("  {:<15} {:<25} {:<25}", c.field, c.your_value, c.their_value);
+                }
+                eprintln!();
+                eprintln!("Re-read the entity and retry, or use: filament resolve {}", entity.slug());
+            }
+            Err(filament_core::error::FilamentError::VersionConflict {
+                entity_id: entity_id.clone(),
+                current_version,
+                conflicts: conflicts.clone(),
+            })
+        }
+        Err(e) => Err(e),
     }
-    Ok(())
 }
 
 pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
@@ -181,6 +241,7 @@ pub async fn inspect(cli: &Cli, args: &InspectArgs) -> Result<()> {
         println!("Type:     {}", entity.entity_type());
         println!("Status:   {}", c.status);
         println!("Priority: {}", c.priority);
+        println!("Version:  {}", c.version);
         if !c.summary.is_empty() {
             println!("Summary:  {}", c.summary);
         }
@@ -242,5 +303,75 @@ pub async fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
         .await?;
 
     print_entity_list(cli, &entities, "No entities found.");
+    Ok(())
+}
+
+pub async fn resolve(cli: &Cli, args: &ResolveArgs) -> Result<()> {
+    let mut conn = connect().await?;
+    let entity = conn.resolve_entity(&args.slug).await?;
+    let c = entity.common();
+
+    if args.theirs {
+        // Accept current DB values — no actual update needed, just acknowledge
+        if cli.json {
+            output_json(&serde_json::json!({
+                "resolved": c.id.as_str(),
+                "strategy": "theirs",
+                "version": c.version,
+            }));
+        } else {
+            println!(
+                "Resolved conflict on {} ({}) — accepted current values (version {})",
+                c.name, c.slug, c.version
+            );
+        }
+        return Ok(());
+    }
+
+    // Apply user-specified overrides at the current version
+    if args.summary.is_none() && args.status.is_none() {
+        if !cli.json {
+            println!("Current state of {} ({}):", c.name, c.slug);
+            println!("  Status:   {}", c.status);
+            println!("  Priority: {}", c.priority);
+            println!("  Version:  {}", c.version);
+            if !c.summary.is_empty() {
+                println!("  Summary:  {}", c.summary);
+            }
+            println!();
+            println!("To resolve, specify new values:");
+            println!(
+                "  filament resolve {} --summary \"...\" --status <status>",
+                c.slug
+            );
+            println!("  filament resolve {} --theirs", c.slug);
+        }
+        return Ok(());
+    }
+
+    let changeset = filament_core::dto::EntityChangeset {
+        name: None,
+        summary: args.summary.clone(),
+        status: args.status.clone(),
+        priority: None,
+        key_facts: None,
+        content_path: None,
+        expected_version: c.version,
+    };
+
+    let updated = conn.update_entity(c.id.as_str(), &changeset).await?;
+    let uc = updated.common();
+
+    if cli.json {
+        output_json(&serde_json::json!({
+            "resolved": uc.id.as_str(),
+            "version": uc.version,
+        }));
+    } else {
+        println!(
+            "Resolved conflict on {} ({}) — now at version {}",
+            uc.name, uc.slug, uc.version
+        );
+    }
     Ok(())
 }

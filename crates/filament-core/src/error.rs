@@ -3,6 +3,14 @@ use thiserror::Error;
 
 use crate::models::{EntityType, Slug};
 
+/// A single field where two concurrent changes conflict.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FieldConflict {
+    pub field: String,
+    pub your_value: String,
+    pub their_value: String,
+}
+
 /// All errors in the filament system.
 #[derive(Error, Debug)]
 pub enum FilamentError {
@@ -46,6 +54,13 @@ pub enum FilamentError {
     #[error("Task {task_id} already has a running agent")]
     AgentAlreadyRunning { task_id: String },
 
+    #[error("Version conflict on entity {entity_id} (current version {current_version})")]
+    VersionConflict {
+        entity_id: String,
+        current_version: i64,
+        conflicts: Vec<FieldConflict>,
+    },
+
     #[error("Validation: {0}")]
     Validation(String),
 
@@ -75,6 +90,7 @@ impl FilamentError {
             Self::ReservationExpired => "RESERVATION_EXPIRED",
             Self::AgentDispatchFailed { .. } => "AGENT_DISPATCH_FAILED",
             Self::AgentAlreadyRunning { .. } => "AGENT_ALREADY_RUNNING",
+            Self::VersionConflict { .. } => "VERSION_CONFLICT",
             Self::Validation(_) => "VALIDATION_ERROR",
             Self::Database(_) => "DATABASE_ERROR",
             Self::Protocol(_) => "PROTOCOL_ERROR",
@@ -86,7 +102,10 @@ impl FilamentError {
     pub const fn is_retryable(&self) -> bool {
         matches!(
             self,
-            Self::Database(_) | Self::Io(_) | Self::AgentDispatchFailed { .. }
+            Self::Database(_)
+                | Self::Io(_)
+                | Self::AgentDispatchFailed { .. }
+                | Self::VersionConflict { .. }
         )
     }
 
@@ -131,6 +150,9 @@ impl FilamentError {
             Self::AgentAlreadyRunning { task_id } => Some(format!(
                 "Wait for the running agent to finish, or check status with `filament agent history {task_id}`"
             )),
+            Self::VersionConflict { entity_id, .. } => Some(format!(
+                "Re-read the entity or resolve conflicts with `filament resolve {entity_id}`"
+            )),
             Self::Validation(msg) => Some(format!("Fix input: {msg}")),
             _ => None,
         }
@@ -146,7 +168,10 @@ impl FilamentError {
             | Self::MessageAlreadyRead { .. }
             | Self::AgentRunNotFound { .. }
             | Self::ReservationNotFound { .. } => 3,
-            Self::Validation(_) | Self::Protocol(_) | Self::TypeMismatch { .. } => 4,
+            Self::Validation(_)
+            | Self::Protocol(_)
+            | Self::TypeMismatch { .. }
+            | Self::VersionConflict { .. } => 4,
             Self::CycleDetected { .. } => 5,
             Self::FileReserved { .. } | Self::ReservationExpired => 6,
             Self::Io(_) => 7,

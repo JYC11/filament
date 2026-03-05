@@ -160,6 +160,26 @@ impl FilamentConnection {
         }
     }
 
+    pub async fn update_entity(
+        &mut self,
+        id: &str,
+        changeset: &crate::dto::EntityChangeset,
+    ) -> Result<Entity> {
+        match self {
+            Self::Direct(s) => {
+                let id = id.to_string();
+                let changeset = changeset.clone();
+                s.with_transaction(|conn| {
+                    let id = id.clone();
+                    let changeset = changeset.clone();
+                    Box::pin(async move { store::update_entity(conn, &id, &changeset).await })
+                })
+                .await
+            }
+            Self::Socket(c) => c.update_entity(id, changeset).await,
+        }
+    }
+
     pub async fn update_entity_summary(&mut self, id: &str, summary: &str) -> Result<()> {
         match self {
             Self::Direct(s) => {

@@ -30,6 +30,7 @@ pub struct EntityCommon {
     pub content: Option<ContentRef>,
     pub status: EntityStatus,
     pub priority: Priority,
+    pub version: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -206,5 +207,6 @@ pub struct Event {
     pub actor: String,
     pub old_value: Option<String>,
     pub new_value: Option<String>,
+    pub diff: Option<String>,
     pub created_at: DateTime<Utc>,
 }

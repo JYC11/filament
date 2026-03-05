@@ -149,6 +149,23 @@ impl DaemonClient {
         Self::parse_result(result)
     }
 
+    pub async fn update_entity(
+        &mut self,
+        id: &str,
+        changeset: &crate::dto::EntityChangeset,
+    ) -> Result<Entity> {
+        let result = self
+            .call(
+                Method::UpdateEntity,
+                serde_json::json!({ "id": id, "changeset": changeset }),
+            )
+            .await?;
+        let entity: Entity = serde_json::from_value(result).map_err(|e| {
+            FilamentError::Protocol(format!("failed to parse update_entity response: {e}"))
+        })?;
+        Ok(entity)
+    }
+
     pub async fn update_entity_summary(&mut self, id: &str, summary: &str) -> Result<()> {
         self.call(
             Method::UpdateEntitySummary,

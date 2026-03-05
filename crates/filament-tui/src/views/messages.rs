@@ -66,6 +66,7 @@ fn kind_color(kind: &EscalationKind) -> Style {
         EscalationKind::Blocker => Style::default().fg(Color::Red),
         EscalationKind::Question => Style::default().fg(Color::Yellow),
         EscalationKind::NeedsInput => Style::default().fg(Color::Magenta),
+        EscalationKind::Conflict => Style::default().fg(Color::LightRed),
     }
 }
 

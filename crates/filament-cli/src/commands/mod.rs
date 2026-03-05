@@ -38,6 +38,8 @@ pub enum Commands {
     Update(entity::UpdateArgs),
     /// Inspect an entity (show details and key facts).
     Inspect(entity::InspectArgs),
+    /// Resolve a version conflict on an entity.
+    Resolve(entity::ResolveArgs),
     /// Read an entity's full content file.
     Read(entity::ReadArgs),
     /// List entities.
@@ -131,6 +133,7 @@ impl Commands {
             Self::Remove(args) => entity::remove(cli, args).await,
             Self::Update(args) => entity::update(cli, args).await,
             Self::Inspect(args) => entity::inspect(cli, args).await,
+            Self::Resolve(args) => entity::resolve(cli, args).await,
             Self::Read(args) => entity::read(cli, args).await,
             Self::List(args) => entity::list(cli, args).await,
             Self::Relate(args) => relation::relate(cli, args).await,
