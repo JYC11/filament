@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use ratatui::widgets::TableState;
 
 use filament_core::connection::FilamentConnection;
+use filament_core::dto::Escalation;
 use filament_core::error::Result;
 use filament_core::models::{AgentRun, Entity, EntityStatus, EntityType, Reservation};
 
@@ -14,26 +15,29 @@ pub enum Tab {
     Tasks,
     Agents,
     Reservations,
+    Messages,
 }
 
 impl Tab {
-    pub const ALL: [Self; 3] = [Self::Tasks, Self::Agents, Self::Reservations];
+    pub const ALL: [Self; 4] = [Self::Tasks, Self::Agents, Self::Reservations, Self::Messages];
 
     #[must_use]
     pub const fn next(self) -> Self {
         match self {
             Self::Tasks => Self::Agents,
             Self::Agents => Self::Reservations,
-            Self::Reservations => Self::Tasks,
+            Self::Reservations => Self::Messages,
+            Self::Messages => Self::Tasks,
         }
     }
 
     #[must_use]
     pub const fn prev(self) -> Self {
         match self {
-            Self::Tasks => Self::Reservations,
+            Self::Tasks => Self::Messages,
             Self::Agents => Self::Tasks,
             Self::Reservations => Self::Agents,
+            Self::Messages => Self::Reservations,
         }
     }
 
@@ -43,6 +47,7 @@ impl Tab {
             Self::Tasks => "Tasks",
             Self::Agents => "Agents",
             Self::Reservations => "Reservations",
+            Self::Messages => "Messages",
         }
     }
 
@@ -52,6 +57,7 @@ impl Tab {
             Self::Tasks => 0,
             Self::Agents => 1,
             Self::Reservations => 2,
+            Self::Messages => 3,
         }
     }
 }
@@ -106,9 +112,11 @@ pub struct App {
     pub tasks: Vec<TaskRow>,
     pub agent_runs: Vec<AgentRun>,
     pub reservations: Vec<Reservation>,
+    pub messages: Vec<Escalation>,
     pub task_table_state: TableState,
     pub agent_table_state: TableState,
     pub reservation_table_state: TableState,
+    pub message_table_state: TableState,
     pub task_filter: TaskFilter,
     pub last_refresh: DateTime<Utc>,
     pub status_message: Option<String>,
@@ -126,9 +134,11 @@ impl App {
             tasks: Vec::new(),
             agent_runs: Vec::new(),
             reservations: Vec::new(),
+            messages: Vec::new(),
             task_table_state: TableState::default(),
             agent_table_state: TableState::default(),
             reservation_table_state: TableState::default(),
+            message_table_state: TableState::default(),
             task_filter: TaskFilter::default(),
             last_refresh: Utc::now(),
             status_message: None,
@@ -145,7 +155,7 @@ impl App {
         self.refresh_tasks().await;
         self.refresh_agents().await;
         self.refresh_reservations().await;
-        self.refresh_escalation_count().await;
+        self.refresh_messages().await;
         self.last_refresh = Utc::now();
         self.last_tick = Instant::now();
     }
@@ -224,10 +234,13 @@ impl App {
         }
     }
 
-    async fn refresh_escalation_count(&mut self) {
-        match self.conn.list_pending_escalations().await {
-            Ok(items) => self.escalation_count = items.len(),
-            Err(_) => self.escalation_count = 0,
+    pub async fn refresh_messages(&mut self) {
+        if let Ok(items) = self.conn.list_pending_escalations().await {
+            self.escalation_count = items.len();
+            self.messages = items;
+        } else {
+            self.escalation_count = 0;
+            self.messages = Vec::new();
         }
     }
 
@@ -260,6 +273,7 @@ impl App {
             Tab::Tasks => self.tasks.len(),
             Tab::Agents => self.agent_runs.len(),
             Tab::Reservations => self.reservations.len(),
+            Tab::Messages => self.messages.len(),
         }
     }
 
@@ -268,6 +282,7 @@ impl App {
             Tab::Tasks => &mut self.task_table_state,
             Tab::Agents => &mut self.agent_table_state,
             Tab::Reservations => &mut self.reservation_table_state,
+            Tab::Messages => &mut self.message_table_state,
         }
     }
 

@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::{App, Tab};
-use crate::views::{agents, reservations, tasks};
+use crate::views::{agents, messages, reservations, tasks};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
@@ -59,6 +59,11 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
                 area,
             );
             app.reservation_table_state = state;
+        }
+        Tab::Messages => {
+            let mut state = app.message_table_state.clone();
+            messages::render_message_table_stateful(&app.messages, &mut state, frame, area);
+            app.message_table_state = state;
         }
     }
 }

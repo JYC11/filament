@@ -49,6 +49,10 @@ async fn task_view_empty() {
         "should show tab bar with Reservations"
     );
     assert!(
+        output.contains("Messages"),
+        "should show tab bar with Messages"
+    );
+    assert!(
         output.contains("Slug"),
         "should show task table header Slug"
     );
@@ -153,15 +157,46 @@ async fn reservation_view_empty() {
     );
 }
 
+#[tokio::test]
+async fn message_view_empty() {
+    let conn = test_conn().await;
+    let mut app = App::new(conn);
+    app.active_tab = Tab::Messages;
+    app.refresh_all().await;
+
+    let backend = TestBackend::new(80, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
+        .unwrap();
+
+    let output = buffer_to_string(&terminal);
+    assert!(
+        output.contains("Kind"),
+        "should show message table header Kind"
+    );
+    assert!(
+        output.contains("Agent"),
+        "should show message table header Agent"
+    );
+    assert!(
+        output.contains("Body"),
+        "should show message table header Body"
+    );
+}
+
 #[test]
 fn tab_switching() {
     assert_eq!(Tab::Tasks.next(), Tab::Agents);
     assert_eq!(Tab::Agents.next(), Tab::Reservations);
-    assert_eq!(Tab::Reservations.next(), Tab::Tasks);
+    assert_eq!(Tab::Reservations.next(), Tab::Messages);
+    assert_eq!(Tab::Messages.next(), Tab::Tasks);
 
-    assert_eq!(Tab::Tasks.prev(), Tab::Reservations);
+    assert_eq!(Tab::Tasks.prev(), Tab::Messages);
     assert_eq!(Tab::Agents.prev(), Tab::Tasks);
     assert_eq!(Tab::Reservations.prev(), Tab::Agents);
+    assert_eq!(Tab::Messages.prev(), Tab::Reservations);
 }
 
 #[tokio::test]
