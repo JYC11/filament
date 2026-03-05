@@ -1,20 +1,31 @@
 # Git Worktree Dispatch Plan
 
 **Epic:** `dsxj4re0` — git-worktree-dispatch
-**Status:** Planning
+**Status:** Planning (revised 2026-03-05)
 **Date:** 2026-03-05
 
 ## Problem
 
 When multiple agents are dispatched concurrently, they all work in the same working directory.
-This causes file conflicts even with advisory reservations — agents can still `git checkout`,
-run builds, or modify shared files (Cargo.lock, target/, etc.) and step on each other.
+This causes conflicts in three categories:
+
+1. **File edits** — two agents modify the same file (advisory reservations help but don't prevent)
+2. **Build artifacts** — concurrent builds corrupt shared `target/`, `node_modules/`, etc.
+3. **Git state** — agents can't commit to separate branches from the same checkout
+
+Reservations solve (1) for simple edits. Only worktrees solve (2) and (3).
 
 ## Solution
 
-Use `git worktree` to give each dispatched agent an isolated copy of the repo. Each agent
-gets its own checkout on a dedicated branch, works independently, and the results are merged
-back when the agent completes.
+Two dispatch modes based on task scope, not project structure:
+
+| Mode | Flag | When to use | Cost |
+|------|------|-------------|------|
+| **Shared workspace** | (default) | Quick edits, docs, single-file changes, review | Zero |
+| **Worktree isolation** | `--worktree` | Features, bug fixes, anything needing build/test/commit | Disk + cold build |
+
+Shared mode uses existing reservations. Worktree mode gives each agent an isolated checkout
+on a dedicated branch with full autonomy to build, test, and commit.
 
 ## Current Dispatch Flow (what changes)
 
@@ -27,12 +38,12 @@ dispatch_agent()
   5. Spawn: Command::new("claude").arg("-p")... [cwd = project_root]  <-- CHANGES
   6. ChildGuard wraps subprocess
   7. Transaction: create agent_run record
-  8. Update task status → in_progress
+  8. Update task status -> in_progress
   9. tokio::spawn(monitor_agent)
   10. Return run_id
 ```
 
-Step 5 changes: subprocess cwd becomes the worktree path instead of project_root.
+Step 5 changes: if `use_worktree`, subprocess cwd becomes the worktree path.
 Steps 9-10 change: monitor_agent handles worktree cleanup on completion.
 
 ## Design Decisions
@@ -43,42 +54,62 @@ Steps 9-10 change: monitor_agent handles worktree cleanup on completion.
 ### Branch naming
 `filament/{run_id}` — namespaced, unique, no conflicts. Created from HEAD at dispatch time.
 
-### When to create/destroy
-- **Create**: In `dispatch_agent()`, after pre-flight checks pass, before subprocess spawn.
-- **Destroy**: In `monitor_agent()`, after result routing completes (success or failure).
-- **Orphan cleanup**: In `reconcile_stale_agent_runs()` on daemon startup.
+### .filament/ access from worktrees
+Worktrees are separate checkouts. `.filament/` is gitignored so it does NOT appear in worktrees.
+All MCP config and socket paths must use **absolute paths** pointing back to the main repo's
+`.filament/` directory. The MCP server connects to the same `filament.db` — agents in worktrees
+talk to the same daemon/DB as agents in the main repo.
 
-### MCP config path
-The MCP config currently lives at `.filament/mcp-{run_id}.json` in the main repo.
-The worktree shares `.filament/` (it's gitignored), so the MCP config path stays the same.
-The MCP server connects to the same `.filament/filament.db` — no change needed.
+### Branch preservation on cleanup
+Agent work must not be silently destroyed:
+- **Successful run with commits**: remove worktree dir, **keep branch** (user merges manually or via future `filament agent merge`)
+- **Successful run, no commits**: remove worktree dir, delete branch
+- **Failed/timed-out run**: remove worktree dir, delete branch
+- Always log the branch tip SHA before any branch deletion
 
-### What about .filament/ itself?
-Worktrees are separate checkouts but share the same `.git` dir. `.filament/` is gitignored
-so it won't appear in worktrees. The MCP server path in the config will point to the
-main repo's `.filament/` directory (absolute path), so agents in worktrees still talk to
-the same daemon/DB.
+The `agent_runs` row stores `worktree_branch` so the user can find agent branches after cleanup.
+
+### Cleanup safety
+`git worktree remove --force` destroys uncommitted changes. Before force-removing:
+1. Check `git -C <worktree> status --porcelain` for uncommitted changes
+2. If changes exist, log a warning with the worktree path (don't silently destroy)
+3. Force-remove anyway (agent is done, changes were not committed = not important enough to save)
 
 ### Opt-in vs default
 Start as **opt-in**: `filament agent dispatch <task> --worktree`. Default behavior unchanged.
-Can become default later once proven stable.
+Projects can set `dispatch.use_worktree = true` in `filament.toml` to make it the default.
+
+### Concurrent worktree creation
+Git locks `.git/worktrees` during `git worktree add`. Two concurrent dispatches may race.
+`create_worktree()` retries once after a short delay on lock failure, then errors.
+
+### Detached HEAD guard
+If the main repo is in detached HEAD state (mid-rebase, bisect), `create_worktree()` warns
+and creates the branch from the detached commit. This is intentional — agents should work
+from whatever state the repo is in.
 
 ## Tasks
 
 ### Phase 1: Core worktree management (no dispatch integration yet)
 
 1. **[T1] Worktree lifecycle module** — `crates/filament-daemon/src/worktree.rs`
-   - `create_worktree(project_root, run_id) -> Result<PathBuf>`
+   - `create_worktree(project_root, run_id) -> Result<WorktreeInfo>`
      - `git worktree add .filament/worktrees/{run_id} -b filament/{run_id}`
-   - `remove_worktree(project_root, run_id) -> Result<()>`
+     - Returns `WorktreeInfo { path, branch }`
+     - Retry once on lock failure
+   - `remove_worktree(project_root, run_id, preserve_branch: bool) -> Result<CleanupReport>`
+     - Check for uncommitted changes (log warning if found)
      - `git worktree remove .filament/worktrees/{run_id} --force`
-     - `git branch -D filament/{run_id}`
-   - `cleanup_stale_worktrees(project_root) -> Result<Vec<String>>`
-     - `git worktree list --porcelain` → find filament/* worktrees with no matching running agent
-     - Remove each + delete branch
-   - Tests: create, remove, cleanup stale, idempotent remove
+     - If `!preserve_branch`: `git branch -D filament/{run_id}` (log tip SHA first)
+     - Returns `CleanupReport { had_uncommitted_changes, branch_preserved, tip_sha }`
+   - `has_commits_ahead(project_root, branch) -> Result<bool>`
+     - `git log HEAD..filament/{run_id} --oneline` — any output = commits exist
+   - `cleanup_stale_worktrees(project_root, active_run_ids: &[String]) -> Result<Vec<String>>`
+     - `git worktree list --porcelain` -> find `filament/*` worktrees not in active list
+     - Remove each, preserve branches with commits, delete empty branches
+   - Tests: create, remove, cleanup stale, idempotent remove, branch preservation, uncommitted changes warning
    - **Deps:** none
-   - **Files:** `crates/filament-daemon/src/worktree.rs`, `crates/filament-daemon/src/lib.rs` (mod declaration)
+   - **Files:** `crates/filament-daemon/src/worktree.rs`, `crates/filament-daemon/src/lib.rs`
 
 ### Phase 2: Dispatch integration
 
@@ -93,14 +124,17 @@ Can become default later once proven stable.
    - If `use_worktree`:
      - After pre-flight checks, call `create_worktree()`
      - Set subprocess cwd to worktree path
-     - Store worktree path in DispatchContext (passed to monitor)
-   - Add `worktree_path` column to `agent_runs` table (nullable TEXT) — migration 009
+     - Store worktree info in DispatchContext (passed to monitor)
+   - Migration 009: add `worktree_path` and `worktree_branch` columns to `agent_runs` (nullable TEXT)
    - **Deps:** T1, T2
    - **Files:** `crates/filament-daemon/src/dispatch.rs`, `crates/filament-core/src/store.rs`, `crates/filament-core/src/models.rs`, `migrations/0009_agent_run_worktree.sql`
 
 4. **[T4] Worktree cleanup in monitor_agent()**
-   - After `route_result()` or `finish_run_failed()`, call `remove_worktree()` if path is set
-   - Handle cleanup failure gracefully (log warning, don't fail the result routing)
+   - After `route_result()` or `finish_run_failed()`, if worktree path is set:
+     1. Check `has_commits_ahead()` for the branch
+     2. Call `remove_worktree(preserve_branch: has_commits)`
+     3. Update `agent_runs` row with `CleanupReport` info (tip SHA, branch preserved)
+   - Handle cleanup failure gracefully (log warning, don't fail result routing)
    - **Deps:** T3
    - **Files:** `crates/filament-daemon/src/dispatch.rs`
 
@@ -108,9 +142,9 @@ Can become default later once proven stable.
 
 5. **[T5] Stale worktree cleanup on daemon startup**
    - In `serve_with_dispatch()`, after `reconcile_stale_agent_runs()`:
-     - Call `cleanup_stale_worktrees()`
-     - Cross-reference with `agent_runs` table to find orphaned worktrees
-   - **Deps:** T4
+     - Query `agent_runs` for active run_ids
+     - Call `cleanup_stale_worktrees(project_root, &active_run_ids)`
+   - **Deps:** T3 (needs worktree_path column, not T4)
    - **Files:** `crates/filament-daemon/src/lib.rs`
 
 6. **[T6] dispatch-all --worktree support**
@@ -132,20 +166,45 @@ Can become default later once proven stable.
 8. **[T8] Update skill + CLAUDE.md**
    - Add worktree dispatch to filament skill
    - Update CLAUDE.md with new flag/config
+   - Document two dispatch modes and when to use each
    - **Deps:** T7
 
 ## Dependency Graph
 
 ```
-T1 (worktree module) ──┐
-                       ├── T3 (dispatch integration) ── T4 (cleanup in monitor) ── T5 (startup cleanup)
-T2 (CLI + protocol) ───┘                            └── T6 (dispatch-all)
-                                                     └── T7 (config) ── T8 (docs)
+T1 (worktree module) --+
+                       +-- T3 (dispatch integration) -- T4 (cleanup in monitor)
+T2 (CLI + protocol) ---+                            +-- T5 (startup cleanup)
+                                                     +-- T6 (dispatch-all)
+                                                     +-- T7 (config) -- T8 (docs)
 ```
+
+Note: T5 depends on T3 (not T4) — startup cleanup only needs the DB column, not monitor cleanup.
+T4, T5, T6, T7 can all proceed in parallel after T3.
 
 ## Risk / Open Questions
 
-- **Large repos**: `git worktree add` is fast (no clone), but disk usage doubles per agent. Acceptable for typical projects.
-- **Build cache**: Each worktree has its own `target/` — first build in a worktree is cold. Could symlink `target/` but that risks build conflicts. Start without symlink, optimize later if needed.
-- **Uncommitted changes**: `git worktree add` creates from HEAD. If the main repo has uncommitted changes, the worktree won't have them. This is actually desirable — agents work from clean state.
-- **Merge conflicts**: Out of scope for v1. Agents work on branches; human merges. Could add `filament agent merge <run_id>` later.
+### Disk usage (large repos)
+Each worktree gets its own build artifacts (`target/`, `node_modules/`, etc.).
+For a large Rust project this can be 10-20GB per worktree.
+- Mitigations: recommend `sccache` + shared `CARGO_TARGET_DIR` in docs (not enforced by filament)
+- Future: `--max-worktrees N` guard to prevent accidental disk exhaustion
+- First-time `--worktree` use could log a one-time advisory about disk cost
+
+### Build cache (out of scope for v1)
+Cold builds in worktrees are slow. Possible future optimizations:
+- Shared `CARGO_TARGET_DIR` with `sccache` (Rust)
+- Symlinked `node_modules/` (JS — risky with concurrent installs)
+- These are project-specific and should be documented recommendations, not filament features
+
+### Uncommitted changes in main repo
+`git worktree add` creates from HEAD. If the main repo has uncommitted changes, the worktree
+won't have them. This is desirable — agents work from clean committed state.
+
+### Merge conflicts (out of scope for v1)
+Agents work on branches; the human merges. Could add `filament agent merge <run_id>` later.
+For now, `git merge filament/{run_id}` works manually.
+
+### Non-git projects
+Worktree dispatch requires a git repo. For non-git projects, `--worktree` should error
+with a clear message: "Worktree dispatch requires a git repository."
