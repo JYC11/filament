@@ -9,7 +9,7 @@ use crate::models::{
     AgentRun, AgentRunId, Entity, EntityId, EntityStatus, EntityType, Event, Message, MessageId,
     Relation, RelationId, Reservation, ReservationId, Slug,
 };
-use crate::protocol::{Method, Request, Response};
+use crate::protocol::{Method, Notification, Request, Response, SubscribeParams};
 
 /// Client for communicating with the filament daemon over a Unix socket.
 pub struct DaemonClient {
@@ -494,5 +494,57 @@ impl DaemonClient {
             .call(Method::ListPendingEscalations, serde_json::json!({}))
             .await?;
         Self::parse_result(result)
+    }
+
+    // -- Subscription operations --
+
+    /// Subscribe to change notifications. Sends the subscribe request and
+    /// returns a `SubscriptionStream` that yields notifications as NDJSON lines.
+    /// Subscribe to change notifications from the daemon.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `SubscribeParams` serialization fails (infallible).
+    pub async fn subscribe(
+        &mut self,
+        params: SubscribeParams,
+    ) -> Result<SubscriptionStream<'_>> {
+        let _result = self
+            .call(
+                Method::Subscribe,
+                serde_json::to_value(&params).expect("infallible"),
+            )
+            .await?;
+        Ok(SubscriptionStream {
+            reader: &mut self.reader,
+        })
+    }
+}
+
+/// A stream of change notifications from the daemon.
+pub struct SubscriptionStream<'a> {
+    reader: &'a mut tokio::io::Lines<BufReader<tokio::net::unix::OwnedReadHalf>>,
+}
+
+impl SubscriptionStream<'_> {
+    /// Read the next notification. Returns `None` on disconnection.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FilamentError::Protocol` on parse errors.
+    pub async fn next(&mut self) -> Result<Option<Notification>> {
+        let line = self
+            .reader
+            .next_line()
+            .await
+            .map_err(FilamentError::Io)?;
+        match line {
+            None => Ok(None),
+            Some(text) => {
+                let notification: Notification = serde_json::from_str(&text)
+                    .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+                Ok(Some(notification))
+            }
+        }
     }
 }

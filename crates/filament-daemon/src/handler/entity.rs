@@ -3,6 +3,7 @@ use std::sync::Arc;
 use filament_core::dto::{CreateEntityRequest, ValidCreateEntityRequest};
 use filament_core::error::Result;
 use filament_core::models::{EntityStatus, EntityType};
+use filament_core::protocol::Notification;
 use filament_core::store;
 use serde::Deserialize;
 
@@ -26,6 +27,12 @@ pub async fn create(
     // Update in-memory graph
     let entity = store::get_entity(state.store.pool(), entity_id.as_str()).await?;
     state.graph_write().await.add_node_from_entity(&entity);
+
+    state.notify(Notification {
+        event_type: "entity_created".to_string(),
+        entity_id: Some(entity_id.to_string()),
+        detail: Some(serde_json::json!({ "slug": slug.as_str() })),
+    });
 
     Ok(serde_json::json!({ "id": entity_id, "slug": slug.as_str() }))
 }
@@ -77,6 +84,12 @@ pub async fn update_summary(
     let entity = store::get_entity(state.store.pool(), &p.id).await?;
     state.graph_write().await.add_node_from_entity(&entity);
 
+    state.notify(Notification {
+        event_type: "entity_updated".to_string(),
+        entity_id: Some(p.id.clone()),
+        detail: None,
+    });
+
     Ok(serde_json::json!({ "ok": true }))
 }
 
@@ -98,6 +111,12 @@ pub async fn update_status(
     // Update in-memory graph
     let entity = store::get_entity(state.store.pool(), &p.id).await?;
     state.graph_write().await.add_node_from_entity(&entity);
+
+    state.notify(Notification {
+        event_type: "status_change".to_string(),
+        entity_id: Some(p.id.clone()),
+        detail: Some(serde_json::json!({ "status": p.status.as_str() })),
+    });
 
     Ok(serde_json::json!({ "ok": true }))
 }
@@ -127,6 +146,12 @@ pub async fn delete(
 
     // Update in-memory graph
     state.graph_write().await.remove_node(&p.id);
+
+    state.notify(Notification {
+        event_type: "entity_deleted".to_string(),
+        entity_id: Some(p.id.clone()),
+        detail: None,
+    });
 
     Ok(serde_json::json!({ "ok": true }))
 }

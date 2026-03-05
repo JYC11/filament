@@ -14,6 +14,7 @@ mod reserve;
 mod serve;
 mod task;
 mod tui;
+mod watch;
 
 use clap::Subcommand;
 use filament_core::error::Result;
@@ -97,6 +98,10 @@ pub enum Commands {
     /// Generate shell completions (bash, zsh, fish, elvish, powershell).
     Completions(completions::CompletionsArgs),
 
+    // -- Watch --
+    /// Watch for real-time change notifications (requires daemon).
+    Watch(watch::WatchArgs),
+
     // -- TUI --
     /// Launch the interactive TUI.
     Tui,
@@ -131,6 +136,7 @@ impl Commands {
                 completions::run(args);
                 Ok(())
             }
+            Self::Watch(args) => watch::watch(cli, args).await,
             Self::Mcp => mcp::run().await,
             Self::Tui => tui::run().await,
         }

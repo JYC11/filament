@@ -47,7 +47,7 @@ impl Response {
 }
 
 /// All operations supported by the protocol.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Method {
     // Entity operations
@@ -109,4 +109,26 @@ pub enum Method {
 
     // Escalation operations
     ListPendingEscalations,
+
+    // Subscription operations
+    Subscribe,
+}
+
+/// An unsolicited notification pushed from server to subscribed clients.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Notification {
+    pub event_type: String,
+    /// Entity ID if applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<serde_json::Value>,
+}
+
+/// Subscription filter — clients specify which events they want.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SubscribeParams {
+    /// Filter by event types (empty = all).
+    pub event_types: Vec<String>,
 }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use filament_core::dto::{SendMessageRequest, ValidSendMessageRequest};
 use filament_core::error::Result;
+use filament_core::protocol::Notification;
 use filament_core::store;
 use serde::Deserialize;
 
@@ -21,6 +22,12 @@ pub async fn send(
             Box::pin(async move { store::send_message(conn, &valid).await })
         })
         .await?;
+    state.notify(Notification {
+        event_type: "message_sent".to_string(),
+        entity_id: None,
+        detail: Some(serde_json::json!({ "id": msg_id })),
+    });
+
     Ok(serde_json::json!({ "id": msg_id }))
 }
 

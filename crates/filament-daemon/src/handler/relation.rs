@@ -3,6 +3,7 @@ use std::sync::Arc;
 use filament_core::dto::{CreateRelationRequest, ValidCreateRelationRequest};
 use filament_core::error::Result;
 use filament_core::models::RelationType;
+use filament_core::protocol::Notification;
 use filament_core::store;
 use serde::Deserialize;
 
@@ -34,6 +35,12 @@ pub async fn create(
             .hydrate(state.store.pool())
             .await?;
     }
+
+    state.notify(Notification {
+        event_type: "relation_created".to_string(),
+        entity_id: None,
+        detail: Some(serde_json::json!({ "id": relation_id })),
+    });
 
     Ok(serde_json::json!({ "id": relation_id }))
 }
@@ -71,6 +78,12 @@ pub async fn delete(
         .graph_write()
         .await
         .remove_edge(&p.source_id, &p.target_id, &p.relation_type);
+
+    state.notify(Notification {
+        event_type: "relation_deleted".to_string(),
+        entity_id: None,
+        detail: None,
+    });
 
     Ok(serde_json::json!({ "ok": true }))
 }

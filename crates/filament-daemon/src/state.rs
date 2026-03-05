@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use filament_core::config::FilamentConfig;
 use filament_core::error::Result;
 use filament_core::graph::KnowledgeGraph;
+use filament_core::protocol::Notification;
 use filament_core::store::{self, FilamentStore};
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 
 /// Configuration for agent dispatch.
 #[derive(Debug, Clone)]
@@ -36,19 +37,25 @@ impl DispatchConfig {
     }
 }
 
+/// Channel capacity for change notifications — old events are dropped if subscribers lag.
+const NOTIFY_CAPACITY: usize = 256;
+
 /// Shared state accessible by all connection handlers.
 pub struct SharedState {
     pub store: FilamentStore,
     graph: RwLock<KnowledgeGraph>,
     dispatch_config: Option<DispatchConfig>,
+    notify_tx: broadcast::Sender<Notification>,
 }
 
 impl SharedState {
     pub fn new(store: FilamentStore, graph: KnowledgeGraph) -> Self {
+        let (notify_tx, _) = broadcast::channel(NOTIFY_CAPACITY);
         Self {
             store,
             graph: RwLock::new(graph),
             dispatch_config: None,
+            notify_tx,
         }
     }
 
@@ -58,10 +65,12 @@ impl SharedState {
         graph: KnowledgeGraph,
         config: DispatchConfig,
     ) -> Self {
+        let (notify_tx, _) = broadcast::channel(NOTIFY_CAPACITY);
         Self {
             store,
             graph: RwLock::new(graph),
             dispatch_config: Some(config),
+            notify_tx,
         }
     }
 
@@ -69,6 +78,17 @@ impl SharedState {
     #[must_use]
     pub fn dispatch_config(&self) -> Option<DispatchConfig> {
         self.dispatch_config.clone()
+    }
+
+    /// Emit a change notification to all subscribers.
+    pub fn notify(&self, notification: Notification) {
+        // Ignore send errors — no subscribers is fine
+        let _ = self.notify_tx.send(notification);
+    }
+
+    /// Subscribe to change notifications.
+    pub fn subscribe(&self) -> broadcast::Receiver<Notification> {
+        self.notify_tx.subscribe()
     }
 
     pub async fn graph_read(&self) -> tokio::sync::RwLockReadGuard<'_, KnowledgeGraph> {

@@ -76,6 +76,8 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::ImportData => export::import_data(params, state).await,
         // Escalation
         Method::ListPendingEscalations => export::list_pending_escalations(params, state).await,
+        // Subscribe — handled at server level, not here
+        Method::Subscribe => Ok(serde_json::json!({ "subscribed": true })),
     }
 }
 

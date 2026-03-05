@@ -1382,3 +1382,85 @@ async fn invalid_request_returns_error() {
 
     cancel.cancel();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn subscribe_receives_entity_notifications() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Create a second client for subscribing
+    let socket_path = _tmp.path().join(".filament").join("filament.sock");
+    let mut sub_client = DaemonClient::connect(&socket_path).await.unwrap();
+
+    let mut stream = sub_client
+        .subscribe(filament_core::protocol::SubscribeParams::default())
+        .await
+        .unwrap();
+
+    // Give subscriber a moment to be ready
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Create an entity via the regular client
+    let params = serde_json::json!({
+        "name": "watch-test",
+        "entity_type": "task",
+        "summary": "testing notifications",
+        "priority": 2,
+    });
+    client.create_entity(params).await.unwrap();
+
+    // Read the notification with a timeout
+    let notification = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("timeout waiting for notification")
+        .expect("read notification")
+        .expect("notification should not be None");
+
+    assert_eq!(notification.event_type, "entity_created");
+    assert!(notification.entity_id.is_some());
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn subscribe_with_filter_only_receives_matching() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    let socket_path = _tmp.path().join(".filament").join("filament.sock");
+    let mut sub_client = DaemonClient::connect(&socket_path).await.unwrap();
+
+    // Subscribe only to status_change events
+    let mut stream = sub_client
+        .subscribe(filament_core::protocol::SubscribeParams {
+            event_types: vec!["status_change".to_string()],
+        })
+        .await
+        .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Create entity (should NOT trigger for this subscriber)
+    let params = serde_json::json!({
+        "name": "filter-test",
+        "entity_type": "task",
+        "summary": "testing filter",
+        "priority": 2,
+    });
+    let (id, _slug) = client.create_entity(params).await.unwrap();
+
+    // Update status (SHOULD trigger)
+    client
+        .update_entity_status(id.as_str(), EntityStatus::InProgress)
+        .await
+        .unwrap();
+
+    // Read notification — should be the status_change, not entity_created
+    let notification = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .expect("timeout")
+        .expect("read")
+        .expect("not None");
+
+    assert_eq!(notification.event_type, "status_change");
+
+    cancel.cancel();
+}
