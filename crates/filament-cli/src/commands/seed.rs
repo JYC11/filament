@@ -32,7 +32,6 @@ pub async fn seed(cli: &Cli, args: &SeedArgs) -> Result<()> {
         items.extend(parse_claude_md(&root));
     }
 
-
     if items.is_empty() {
         if !cli.quiet {
             println!("No seed data found.");
@@ -150,7 +149,6 @@ fn parse_claude_md(root: &Path) -> Vec<SeedItem> {
 
     items
 }
-
 
 fn extract_summary(body: &str) -> String {
     let trimmed = body.trim();

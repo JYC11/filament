@@ -633,7 +633,10 @@ async fn pagerank_scores_sum_to_one() {
     assert_eq!(scores.len(), 3);
 
     let total: f64 = scores.values().sum();
-    assert!((total - 1.0).abs() < 0.01, "scores should sum to ~1.0, got {total}");
+    assert!(
+        (total - 1.0).abs() < 0.01,
+        "scores should sum to ~1.0, got {total}"
+    );
 }
 
 #[tokio::test]

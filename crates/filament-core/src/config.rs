@@ -38,10 +38,10 @@ impl FilamentConfig {
     #[must_use]
     pub fn load(project_root: &Path) -> Self {
         let config_path = project_root.join(".filament").join("config.toml");
-        std::fs::read_to_string(&config_path)
-            .map_or_else(|_| Self::default(), |contents| {
-                toml::from_str(&contents).unwrap_or_default()
-            })
+        std::fs::read_to_string(&config_path).map_or_else(
+            |_| Self::default(),
+            |contents| toml::from_str(&contents).unwrap_or_default(),
+        )
     }
 
     /// Whether JSON output is the default format.

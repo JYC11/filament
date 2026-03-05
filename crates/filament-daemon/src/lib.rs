@@ -68,13 +68,14 @@ pub async fn serve_with_dispatch(
     let store_tmp = FilamentStore::new(pool.clone());
     let reconciled = store_tmp
         .with_transaction(|conn| {
-            Box::pin(
-                async move { filament_core::store::reconcile_stale_agent_runs(conn).await },
-            )
+            Box::pin(async move { filament_core::store::reconcile_stale_agent_runs(conn).await })
         })
         .await?;
     if reconciled > 0 {
-        info!(count = reconciled, "reconciled stale agent runs from previous session");
+        info!(
+            count = reconciled,
+            "reconciled stale agent runs from previous session"
+        );
     }
 
     // Use provided dispatch config or derive from project root
@@ -190,7 +191,10 @@ async fn reap_orphan_agents(state: &SharedState) {
             .status()
             .is_ok_and(|s| s.success());
         if alive {
-            warn!(pid = pid, "agent process did not exit after SIGTERM, sending SIGKILL");
+            warn!(
+                pid = pid,
+                "agent process did not exit after SIGTERM, sending SIGKILL"
+            );
             let _ = std::process::Command::new("kill")
                 .arg("-9")
                 .arg(pid.to_string())

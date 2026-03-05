@@ -27,11 +27,8 @@ fn build_graph_lines(data: &GraphData) -> Vec<Line<'static>> {
         return vec![Line::from("  No entities to display.")];
     }
 
-    let entity_map: HashMap<&str, &Entity> = data
-        .entities
-        .iter()
-        .map(|e| (e.id().as_str(), e))
-        .collect();
+    let entity_map: HashMap<&str, &Entity> =
+        data.entities.iter().map(|e| (e.id().as_str(), e)).collect();
 
     // Build adjacency: source blocks target → target depends on source
     // We'll show "blocks" edges as parent → child
@@ -114,12 +111,11 @@ fn render_tree<'a>(
         // Cycle guard
         if let Some(entity) = entities.get(id) {
             let connector = if is_last { "└─ " } else { "├─ " };
-            let label = format!(
-                "{prefix}{connector}↻ {} [{}]",
-                entity.name(),
-                entity.slug()
-            );
-            lines.push(Line::from(Span::styled(label, Style::default().fg(Color::Red))));
+            let label = format!("{prefix}{connector}↻ {} [{}]", entity.name(), entity.slug());
+            lines.push(Line::from(Span::styled(
+                label,
+                Style::default().fg(Color::Red),
+            )));
         }
         return;
     }
@@ -140,7 +136,15 @@ fn render_tree<'a>(
         };
         for (i, child) in kids.iter().enumerate() {
             let child_is_last = i == kids.len() - 1;
-            render_tree(child, entities, children, visited, lines, &child_prefix, child_is_last);
+            render_tree(
+                child,
+                entities,
+                children,
+                visited,
+                lines,
+                &child_prefix,
+                child_is_last,
+            );
         }
     }
 }
@@ -162,10 +166,7 @@ fn format_entity_line(prefix: &str, entity: &Entity) -> Line<'static> {
 
     Line::from(vec![
         Span::raw(prefix.to_string()),
-        Span::styled(
-            format!("{status_icon} "),
-            status_style,
-        ),
+        Span::styled(format!("{status_icon} "), status_style),
         Span::styled(
             entity.slug().to_string(),
             Style::default().add_modifier(Modifier::BOLD),

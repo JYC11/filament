@@ -20,8 +20,8 @@ pub async fn audit(cli: &Cli, args: &AuditArgs) -> Result<()> {
 
     // Export current state
     let data = conn.export_all(true).await?;
-    let json = serde_json::to_string_pretty(&data)
-        .map_err(|e| FilamentError::Protocol(e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(&data).map_err(|e| FilamentError::Protocol(e.to_string()))?;
 
     // Write export to a file in the project root
     let audit_file = root.join(".filament").join("audit-snapshot.json");
@@ -61,23 +61,15 @@ pub async fn audit(cli: &Cli, args: &AuditArgs) -> Result<()> {
     }
 
     // Stage the audit file
-    run_git(
-        &root,
-        &[
-            "add",
-            "-f",
-            ".filament/audit-snapshot.json",
-        ],
-    )?;
+    run_git(&root, &["add", "-f", ".filament/audit-snapshot.json"])?;
 
     // Commit
     let entity_count = data.entities.len();
     let relation_count = data.relations.len();
-    let msg = args.message.clone().unwrap_or_else(|| {
-        format!(
-            "audit: {entity_count} entities, {relation_count} relations"
-        )
-    });
+    let msg = args
+        .message
+        .clone()
+        .unwrap_or_else(|| format!("audit: {entity_count} entities, {relation_count} relations"));
     run_git(&root, &["commit", "-m", &msg, "--allow-empty"])?;
 
     // Switch back to original branch

@@ -36,10 +36,7 @@ pub async fn watch(cli: &Cli, args: &WatchArgs) -> Result<()> {
         if cli.json {
             helpers::output_json(&notification);
         } else {
-            let entity = notification
-                .entity_id
-                .as_deref()
-                .unwrap_or("-");
+            let entity = notification.entity_id.as_deref().unwrap_or("-");
             let detail = notification
                 .detail
                 .map_or_else(String::new, |v| format!(" {v}"));

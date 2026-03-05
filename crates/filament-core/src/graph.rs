@@ -385,12 +385,18 @@ impl KnowledgeGraph {
         }
 
         let n_f = n as f64;
-        let mut scores: HashMap<NodeIndex, f64> =
-            self.graph.node_indices().map(|idx| (idx, 1.0 / n_f)).collect();
+        let mut scores: HashMap<NodeIndex, f64> = self
+            .graph
+            .node_indices()
+            .map(|idx| (idx, 1.0 / n_f))
+            .collect();
 
         for _ in 0..iterations {
-            let mut next_scores: HashMap<NodeIndex, f64> =
-                self.graph.node_indices().map(|idx| (idx, (1.0 - damping) / n_f)).collect();
+            let mut next_scores: HashMap<NodeIndex, f64> = self
+                .graph
+                .node_indices()
+                .map(|idx| (idx, (1.0 - damping) / n_f))
+                .collect();
 
             for idx in self.graph.node_indices() {
                 let out_degree = self.graph.edges_directed(idx, Direction::Outgoing).count();

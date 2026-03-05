@@ -206,10 +206,16 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
                 );
                 eprintln!("  {:<15} {:<25} {:<25}", "Field", "Yours", "Theirs");
                 for c in conflicts {
-                    eprintln!("  {:<15} {:<25} {:<25}", c.field, c.your_value, c.their_value);
+                    eprintln!(
+                        "  {:<15} {:<25} {:<25}",
+                        c.field, c.your_value, c.their_value
+                    );
                 }
                 eprintln!();
-                eprintln!("Re-read the entity and retry, or use: filament resolve {}", entity.slug());
+                eprintln!(
+                    "Re-read the entity and retry, or use: filament resolve {}",
+                    entity.slug()
+                );
             }
             Err(filament_core::error::FilamentError::VersionConflict {
                 entity_id: entity_id.clone(),

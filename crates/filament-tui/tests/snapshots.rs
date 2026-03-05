@@ -52,10 +52,7 @@ async fn task_view_empty() {
         output.contains("Messages"),
         "should show tab bar with Messages"
     );
-    assert!(
-        output.contains("Graph"),
-        "should show tab bar with Graph"
-    );
+    assert!(output.contains("Graph"), "should show tab bar with Graph");
     assert!(
         output.contains("Slug"),
         "should show task table header Slug"
@@ -220,10 +217,7 @@ async fn graph_view_empty() {
         .unwrap();
 
     let output = buffer_to_string(&terminal);
-    assert!(
-        output.contains("Graph"),
-        "should show Graph block title"
-    );
+    assert!(output.contains("Graph"), "should show Graph block title");
     assert!(
         output.contains("No entities"),
         "should show empty graph message"

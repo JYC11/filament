@@ -102,9 +102,7 @@ async fn handle_subscription(
     loop {
         match rx.recv().await {
             Ok(notification) => {
-                if !event_filter.is_empty()
-                    && !event_filter.contains(&notification.event_type)
-                {
+                if !event_filter.is_empty() && !event_filter.contains(&notification.event_type) {
                     continue;
                 }
                 if let Err(e) = write_notification(writer, &notification).await {

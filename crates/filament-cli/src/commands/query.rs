@@ -76,7 +76,10 @@ pub async fn pagerank(cli: &Cli, args: &PageRankArgs) -> Result<()> {
         let ids: Vec<String> = limited.iter().map(|(id, _)| id.to_string()).collect();
         let entities = conn.batch_get_entities(&ids).await.unwrap_or_default();
 
-        println!("PageRank (damping={}, iterations={}):", args.damping, args.iterations);
+        println!(
+            "PageRank (damping={}, iterations={}):",
+            args.damping, args.iterations
+        );
         for (id, score) in &limited {
             let name = entities
                 .get(&id.to_string())

@@ -512,8 +512,7 @@ async fn tool_filtering_blocks_disallowed() {
     let (conn, _tmp) = test_connection().await;
 
     // Only allow inspect and list — not add, delete, reserve, etc.
-    let client =
-        start_mcp_client_filtered(conn, &["filament_inspect", "filament_list"]).await;
+    let client = start_mcp_client_filtered(conn, &["filament_inspect", "filament_list"]).await;
     let peer = client.peer();
 
     // Allowed tool should work (list returns empty but no error)

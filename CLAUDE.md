@@ -196,3 +196,6 @@ The `.filament/` directory is gitignored (local per-user DB). The task list here
   - https://github.com/affaan-m/everything-claude-code
   - https://github.com/VoltAgent/awesome-claude-code-subagents
   - https://github.com/obra/superpowers
+- Cool ideas to implement
+  - https://github.com/openai/symphony
+  - https://github.com/sleeplesslord/runes

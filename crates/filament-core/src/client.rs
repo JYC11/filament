@@ -545,10 +545,7 @@ impl DaemonClient {
     /// # Panics
     ///
     /// Panics if `SubscribeParams` serialization fails (infallible).
-    pub async fn subscribe(
-        &mut self,
-        params: SubscribeParams,
-    ) -> Result<SubscriptionStream<'_>> {
+    pub async fn subscribe(&mut self, params: SubscribeParams) -> Result<SubscriptionStream<'_>> {
         let _result = self
             .call(
                 Method::Subscribe,
@@ -573,11 +570,7 @@ impl SubscriptionStream<'_> {
     ///
     /// Returns `FilamentError::Protocol` on parse errors.
     pub async fn next(&mut self) -> Result<Option<Notification>> {
-        let line = self
-            .reader
-            .next_line()
-            .await
-            .map_err(FilamentError::Io)?;
+        let line = self.reader.next_line().await.map_err(FilamentError::Io)?;
         match line {
             None => Ok(None),
             Some(text) => {

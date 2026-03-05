@@ -3,7 +3,7 @@ use sqlx::{Pool, Sqlite, SqliteConnection};
 
 use std::collections::HashSet;
 
-use crate::diff::{fields_in_diff, DiffBuilder};
+use crate::diff::fields_in_diff;
 use crate::dto::{
     EntityChangeset, Escalation, EscalationKind, ExportData, ImportResult,
     ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
@@ -11,8 +11,8 @@ use crate::dto::{
 use crate::error::{FieldConflict, FilamentError, Result};
 use crate::models::{
     AgentRun, AgentRunId, AgentStatus, ContentRef, Entity, EntityCommon, EntityId, EntityStatus,
-    EntityType, Event, EventId, EventType, Message, MessageId, NonEmptyString, Priority, Relation,
-    RelationId, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
+    EntityType, Event, Message, MessageId, NonEmptyString, Priority, Relation, RelationId,
+    Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
 };
 
 // ---------------------------------------------------------------------------
@@ -152,23 +152,6 @@ pub async fn create_entity(
     .execute(&mut *conn)
     .await?;
 
-    let create_diff = DiffBuilder::create()
-        .value("name", req.name.as_str())
-        .value("entity_type", req.entity_type.as_str())
-        .value("summary", &req.summary)
-        .value("priority", &req.priority.to_string())
-        .build();
-    let diff_str = create_diff.as_ref().map(std::string::ToString::to_string);
-
-    record_event(
-        conn,
-        Some(id.as_str()),
-        EventType::EntityCreated,
-        "system",
-        diff_str.as_deref(),
-    )
-    .await?;
-
     Ok((id, slug))
 }
 
@@ -296,11 +279,6 @@ pub async fn update_entity_summary(
         return Err(FilamentError::EntityNotFound { id: id.to_string() });
     }
 
-    let diff = serde_json::json!({ "summary": { "old": null, "new": summary } });
-    let diff_str = diff.to_string();
-
-    record_event(conn, Some(id), EventType::EntityUpdated, "system", Some(&diff_str)).await?;
-
     Ok(())
 }
 
@@ -330,11 +308,6 @@ pub async fn update_entity_status(
         return Err(FilamentError::EntityNotFound { id: id.to_string() });
     }
 
-    let diff = serde_json::json!({ "status": { "old": null, "new": status.as_str() } });
-    let diff_str = diff.to_string();
-
-    record_event(conn, Some(id), EventType::StatusChange, "system", Some(&diff_str)).await?;
-
     Ok(())
 }
 
@@ -362,12 +335,11 @@ pub async fn update_entity(
     }
 
     // Read current state
-    let row: EntityRow =
-        sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&mut *conn)
-            .await?
-            .ok_or_else(|| FilamentError::EntityNotFound { id: id.to_string() })?;
+    let row: EntityRow = sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or_else(|| FilamentError::EntityNotFound { id: id.to_string() })?;
 
     let current_version = row.version;
 
@@ -383,9 +355,6 @@ pub async fn update_entity(
         .await?;
     }
 
-    let diff_json = build_changeset_diff(&row, changeset);
-    let diff_str = diff_json.as_ref().map(std::string::ToString::to_string);
-
     // Apply changes via dynamic SQL
     let now = Utc::now();
     let new_version = current_version + 1;
@@ -394,10 +363,7 @@ pub async fn update_entity(
     let new_status = changeset.status.as_ref().unwrap_or(&row.status);
     let new_priority = changeset.priority.unwrap_or(row.priority);
     let old_key_facts_str = serde_json::to_string(&row.key_facts).unwrap_or_default();
-    let new_key_facts = changeset
-        .key_facts
-        .as_deref()
-        .unwrap_or(&old_key_facts_str);
+    let new_key_facts = changeset.key_facts.as_deref().unwrap_or(&old_key_facts_str);
     let new_content_path = changeset
         .content_path
         .as_deref()
@@ -419,8 +385,6 @@ pub async fn update_entity(
     .bind(id)
     .execute(&mut *conn)
     .await?;
-
-    record_event(conn, Some(id), EventType::EntityUpdated, "system", diff_str.as_deref()).await?;
 
     // Re-fetch and return updated entity
     let updated = sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE id = ?")
@@ -507,34 +471,6 @@ async fn try_auto_merge(
     }
 }
 
-/// Build a JSON diff from the old row state and the changeset.
-fn build_changeset_diff(
-    row: &EntityRow,
-    changeset: &EntityChangeset,
-) -> Option<crate::diff::EventDiff> {
-    let mut b = DiffBuilder::new();
-    if let Some(ref v) = changeset.name {
-        b = b.field("name", row.name.as_str(), v.as_str());
-    }
-    if let Some(ref v) = changeset.summary {
-        b = b.field("summary", &row.summary, v);
-    }
-    if let Some(ref v) = changeset.status {
-        b = b.field("status", row.status.as_str(), v.as_str());
-    }
-    if let Some(ref v) = changeset.priority {
-        b = b.field("priority", &row.priority.to_string(), &v.to_string());
-    }
-    if let Some(ref v) = changeset.key_facts {
-        let old = serde_json::to_string(&row.key_facts).unwrap_or_default();
-        b = b.field("key_facts", &old, v);
-    }
-    if let Some(ref v) = changeset.content_path {
-        b = b.field("content_path", row.content_path.as_deref().unwrap_or(""), v);
-    }
-    b.build()
-}
-
 /// Build the list of `FieldConflict` entries for all fields in the changeset
 /// that conflict with current DB values.
 async fn build_conflict_list(
@@ -609,8 +545,6 @@ pub async fn delete_entity(conn: &mut SqliteConnection, id: &str) -> Result<()> 
         return Err(FilamentError::EntityNotFound { id: id.to_string() });
     }
 
-    record_event(conn, Some(id), EventType::EntityDeleted, "system", None).await?;
-
     Ok(())
 }
 
@@ -659,21 +593,6 @@ pub async fn create_relation(
         }
     }
     insert_result?;
-
-    let detail = serde_json::json!({
-        "source_id": req.source_id.as_str(),
-        "target_id": req.target_id.as_str(),
-        "relation_type": req.relation_type.as_str(),
-    });
-    let diff_str = detail.to_string();
-    record_event(
-        conn,
-        Some(req.source_id.as_str()),
-        EventType::RelationCreated,
-        "system",
-        Some(&diff_str),
-    )
-    .await?;
 
     Ok(id)
 }
@@ -733,21 +652,6 @@ pub async fn delete_relation_by_endpoints(
         });
     }
 
-    let detail = serde_json::json!({
-        "source_id": source_id,
-        "target_id": target_id,
-        "relation_type": relation_type,
-    });
-    let diff_str = detail.to_string();
-    record_event(
-        conn,
-        Some(source_id),
-        EventType::RelationDeleted,
-        "system",
-        Some(&diff_str),
-    )
-    .await?;
-
     Ok(())
 }
 
@@ -780,17 +684,6 @@ pub async fn send_message(
     .bind(&req.task_id)
     .bind(now)
     .execute(&mut *conn)
-    .await?;
-
-    let diff = serde_json::json!({ "to_agent": req.to_agent.as_str() });
-    let diff_str = diff.to_string();
-    record_event(
-        conn,
-        req.task_id.as_ref().map(EntityId::as_str),
-        EventType::MessageSent,
-        req.from_agent.as_str(),
-        Some(&diff_str),
-    )
     .await?;
 
     Ok(id)
@@ -838,10 +731,6 @@ pub async fn mark_message_read(conn: &mut SqliteConnection, id: &str) -> Result<
             Err(FilamentError::MessageNotFound { id: id.to_string() })
         };
     }
-
-    let diff = serde_json::json!({ "message_id": id });
-    let diff_str = diff.to_string();
-    record_event(conn, None, EventType::MessageRead, "system", Some(&diff_str)).await?;
 
     Ok(())
 }
@@ -907,17 +796,6 @@ pub async fn acquire_reservation(
     .execute(&mut *conn)
     .await?;
 
-    let diff = serde_json::json!({ "file_glob": file_glob });
-    let diff_str = diff.to_string();
-    record_event(
-        conn,
-        None,
-        EventType::ReservationAcquired,
-        agent_name,
-        Some(&diff_str),
-    )
-    .await?;
-
     Ok(id)
 }
 
@@ -935,17 +813,6 @@ pub async fn release_reservation(conn: &mut SqliteConnection, id: &str) -> Resul
     if result.rows_affected() == 0 {
         return Err(FilamentError::ReservationNotFound { id: id.to_string() });
     }
-
-    let diff = serde_json::json!({ "reservation_id": id });
-    let diff_str = diff.to_string();
-    record_event(
-        conn,
-        None,
-        EventType::ReservationReleased,
-        "system",
-        Some(&diff_str),
-    )
-    .await?;
 
     Ok(())
 }
@@ -1044,17 +911,6 @@ pub async fn create_agent_run(
     .execute(&mut *conn)
     .await?;
 
-    let diff = serde_json::json!({ "agent_run_id": id.as_str() });
-    let diff_str = diff.to_string();
-    record_event(
-        conn,
-        Some(task_id),
-        EventType::AgentStarted,
-        agent_role,
-        Some(&diff_str),
-    )
-    .await?;
-
     Ok(id)
 }
 
@@ -1071,12 +927,15 @@ pub async fn finish_agent_run(
 ) -> Result<()> {
     let now = Utc::now();
 
-    // Look up the run to get task_id and agent_role for the event
-    let run: AgentRun = sqlx::query_as::<_, AgentRun>("SELECT * FROM agent_runs WHERE id = ?")
+    // Verify the run exists before updating
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_runs WHERE id = ?)")
         .bind(id)
-        .fetch_optional(&mut *conn)
-        .await?
-        .ok_or_else(|| FilamentError::AgentRunNotFound { id: id.to_string() })?;
+        .fetch_one(&mut *conn)
+        .await?;
+
+    if !exists {
+        return Err(FilamentError::AgentRunNotFound { id: id.to_string() });
+    }
 
     sqlx::query("UPDATE agent_runs SET status = ?, result_json = ?, finished_at = ? WHERE id = ?")
         .bind(status.as_str())
@@ -1085,17 +944,6 @@ pub async fn finish_agent_run(
         .bind(id)
         .execute(&mut *conn)
         .await?;
-
-    let diff = serde_json::json!({ "status": status.as_str() });
-    let diff_str = diff.to_string();
-    record_event(
-        conn,
-        Some(run.task_id.as_str()),
-        EventType::AgentFinished,
-        run.agent_role.as_str(),
-        Some(&diff_str),
-    )
-    .await?;
 
     Ok(())
 }
@@ -1265,11 +1113,10 @@ pub async fn reconcile_stale_agent_runs(conn: &mut SqliteConnection) -> Result<u
     let now = Utc::now();
 
     // Collect task IDs before updating, so we can revert their status
-    let stale_task_ids: Vec<(String,)> = sqlx::query_as(
-        "SELECT DISTINCT task_id FROM agent_runs WHERE status = 'running'",
-    )
-    .fetch_all(&mut *conn)
-    .await?;
+    let stale_task_ids: Vec<(String,)> =
+        sqlx::query_as("SELECT DISTINCT task_id FROM agent_runs WHERE status = 'running'")
+            .fetch_all(&mut *conn)
+            .await?;
 
     let rows = sqlx::query(
         "UPDATE agent_runs SET status = 'failed', \
@@ -1302,37 +1149,6 @@ pub async fn reconcile_stale_agent_runs(conn: &mut SqliteConnection) -> Result<u
 // Event log
 // ---------------------------------------------------------------------------
 
-/// Record an event with an optional structured JSON diff.
-///
-/// # Errors
-///
-/// Returns `FilamentError::Database` on SQL failure.
-pub async fn record_event(
-    conn: &mut SqliteConnection,
-    entity_id: Option<&str>,
-    event_type: EventType,
-    actor: &str,
-    diff: Option<&str>,
-) -> Result<EventId> {
-    let id = EventId::new();
-    let now = Utc::now();
-
-    sqlx::query(
-        "INSERT INTO events (id, entity_id, event_type, actor, diff, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .bind(id.as_str())
-    .bind(entity_id)
-    .bind(event_type.as_str())
-    .bind(actor)
-    .bind(diff)
-    .bind(now)
-    .execute(conn)
-    .await?;
-
-    Ok(id)
-}
-
 /// Get events for an entity.
 ///
 /// # Errors
@@ -1346,7 +1162,6 @@ pub async fn get_entity_events(pool: &Pool<Sqlite>, entity_id: &str) -> Result<V
     .fetch_all(pool)
     .await?)
 }
-
 
 // ---------------------------------------------------------------------------
 // Blocked entities cache
@@ -1496,21 +1311,36 @@ pub async fn import_data(
     data: &ExportData,
     include_events: bool,
 ) -> Result<ImportResult> {
-    let entities_imported = import_entities(conn, &data.entities).await?;
-    let relations_imported = import_relations(conn, &data.relations).await?;
-    let messages_imported = import_messages(conn, &data.messages).await?;
-    let events_imported = if include_events {
-        import_events(conn, &data.events).await?
-    } else {
-        0
-    };
+    // Disable triggers to prevent duplicate events during import
+    sqlx::query("UPDATE _trigger_control SET disabled = 1")
+        .execute(&mut *conn)
+        .await?;
 
-    Ok(ImportResult {
-        entities_imported,
-        relations_imported,
-        messages_imported,
-        events_imported,
-    })
+    let result = async {
+        let entities_imported = import_entities(&mut *conn, &data.entities).await?;
+        let relations_imported = import_relations(&mut *conn, &data.relations).await?;
+        let messages_imported = import_messages(&mut *conn, &data.messages).await?;
+        let events_imported = if include_events {
+            import_events(&mut *conn, &data.events).await?
+        } else {
+            0
+        };
+
+        Ok(ImportResult {
+            entities_imported,
+            relations_imported,
+            messages_imported,
+            events_imported,
+        })
+    }
+    .await;
+
+    // Re-enable triggers regardless of import outcome
+    sqlx::query("UPDATE _trigger_control SET disabled = 0")
+        .execute(&mut *conn)
+        .await?;
+
+    result
 }
 
 async fn import_entities(conn: &mut SqliteConnection, entities: &[Entity]) -> Result<usize> {

@@ -276,7 +276,8 @@ async fn create_entity_records_diff_in_event() {
     let create_event = &events[0];
     assert!(create_event.diff.is_some());
 
-    let diff: serde_json::Value = serde_json::from_str(create_event.diff.as_ref().unwrap()).unwrap();
+    let diff: serde_json::Value =
+        serde_json::from_str(create_event.diff.as_ref().unwrap()).unwrap();
     assert_eq!(diff["name"], "Test task");
     assert_eq!(diff["entity_type"], "task");
 }

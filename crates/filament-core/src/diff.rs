@@ -121,9 +121,7 @@ mod tests {
 
     #[test]
     fn update_diff_returns_none_when_empty() {
-        let diff = DiffBuilder::new()
-            .field("summary", "same", "same")
-            .build();
+        let diff = DiffBuilder::new().field("summary", "same", "same").build();
 
         assert!(diff.is_none());
     }

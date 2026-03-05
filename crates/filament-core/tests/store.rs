@@ -506,29 +506,88 @@ async fn ready_tasks_excludes_depends_on() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn event_recording() {
+async fn trigger_creates_event_on_entity_insert() {
     let store = test_db().await;
+    let req = sample_entity_req();
+
+    let (id, _) = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    let events = get_entity_events(store.pool(), id.as_str()).await.unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, EventType::EntityCreated);
+    let diff: serde_json::Value = serde_json::from_str(events[0].diff.as_ref().unwrap()).unwrap();
+    assert_eq!(diff["name"], "Test task");
+    assert_eq!(diff["entity_type"], "task");
+}
+
+#[tokio::test]
+async fn trigger_creates_event_on_status_change() {
+    let store = test_db().await;
+    let req = sample_entity_req();
+
+    let (id, _) = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
 
     store
         .with_transaction(|conn| {
+            let id = id.clone();
             Box::pin(async move {
-                record_event(
-                    conn,
-                    Some("e1"),
-                    EventType::StatusChange,
-                    "cli",
-                    Some(r#"{"status":{"old":"open","new":"closed"}}"#),
-                )
-                .await?;
-                Ok(())
+                update_entity_status(conn, id.as_str(), EntityStatus::InProgress).await
             })
         })
         .await
         .unwrap();
 
-    let events = get_entity_events(store.pool(), "e1").await.unwrap();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].event_type, EventType::StatusChange);
+    let events = get_entity_events(store.pool(), id.as_str()).await.unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].event_type, EventType::EntityCreated);
+    assert_eq!(events[1].event_type, EventType::StatusChange);
+    let diff: serde_json::Value = serde_json::from_str(events[1].diff.as_ref().unwrap()).unwrap();
+    assert_eq!(diff["status"]["old"], "open");
+    assert_eq!(diff["status"]["new"], "in_progress");
+}
+
+#[tokio::test]
+async fn trigger_creates_event_on_entity_delete() {
+    let store = test_db().await;
+    let req = sample_entity_req();
+
+    let (id, _) = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move { create_entity(conn, &req).await })
+        })
+        .await
+        .unwrap();
+
+    store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            Box::pin(async move { delete_entity(conn, id.as_str()).await })
+        })
+        .await
+        .unwrap();
+
+    // Events persist after entity deletion (no FK cascade on events)
+    let events = get_entity_events(store.pool(), id.as_str()).await.unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].event_type, EventType::EntityCreated);
+    assert_eq!(events[1].event_type, EventType::EntityDeleted);
+    // Delete diff has same flat format as create diff
+    let diff: serde_json::Value = serde_json::from_str(events[1].diff.as_ref().unwrap()).unwrap();
+    assert_eq!(diff["name"], "Test task");
+    assert_eq!(diff["entity_type"], "task");
 }
 
 // ---------------------------------------------------------------------------
@@ -1637,7 +1696,9 @@ async fn reconcile_stale_runs_marks_running_as_failed() {
     let tid = task_id.clone();
     let run_id = store
         .with_transaction(|conn| {
-            Box::pin(async move { create_agent_run(conn, tid.as_str(), "coder", Some(99999)).await })
+            Box::pin(
+                async move { create_agent_run(conn, tid.as_str(), "coder", Some(99999)).await },
+            )
         })
         .await
         .unwrap();
@@ -1659,9 +1720,7 @@ async fn reconcile_stale_runs_marks_running_as_failed() {
 
     // Reconcile
     let count = store
-        .with_transaction(|conn| {
-            Box::pin(async move { reconcile_stale_agent_runs(conn).await })
-        })
+        .with_transaction(|conn| Box::pin(async move { reconcile_stale_agent_runs(conn).await }))
         .await
         .unwrap();
     assert_eq!(count, 1);
@@ -1682,9 +1741,7 @@ async fn reconcile_stale_runs_noop_when_none_running() {
     let store = test_db().await;
 
     let count = store
-        .with_transaction(|conn| {
-            Box::pin(async move { reconcile_stale_agent_runs(conn).await })
-        })
+        .with_transaction(|conn| Box::pin(async move { reconcile_stale_agent_runs(conn).await }))
         .await
         .unwrap();
     assert_eq!(count, 0);
@@ -1717,18 +1774,16 @@ async fn reconcile_stale_runs_does_not_revert_closed_tasks() {
     store
         .with_transaction(|conn| {
             let tid = task_id.clone();
-            Box::pin(async move {
-                update_entity_status(conn, tid.as_str(), EntityStatus::Closed).await
-            })
+            Box::pin(
+                async move { update_entity_status(conn, tid.as_str(), EntityStatus::Closed).await },
+            )
         })
         .await
         .unwrap();
 
     // Reconcile should mark run as failed but NOT revert the closed task
     store
-        .with_transaction(|conn| {
-            Box::pin(async move { reconcile_stale_agent_runs(conn).await })
-        })
+        .with_transaction(|conn| Box::pin(async move { reconcile_stale_agent_runs(conn).await }))
         .await
         .unwrap();
 
