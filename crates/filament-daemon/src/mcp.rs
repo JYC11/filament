@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use filament_core::connection::FilamentConnection;
 use filament_core::dto::{CreateEntityRequest, CreateRelationRequest, SendMessageRequest};
 use filament_core::error::{FilamentError, StructuredError};
@@ -26,6 +28,8 @@ pub const TOOL_COUNT: usize = 16;
 pub struct FilamentMcp {
     conn: std::sync::Arc<Mutex<FilamentConnection>>,
     tool_router: ToolRouter<Self>,
+    /// When set, only these tool names are allowed. Others return an error.
+    allowed_tools: Option<HashSet<String>>,
 }
 
 fn map_err(e: &FilamentError) -> String {
@@ -40,7 +44,27 @@ impl FilamentMcp {
         Self {
             conn: std::sync::Arc::new(Mutex::new(conn)),
             tool_router: Self::tool_router(),
+            allowed_tools: None,
         }
+    }
+
+    pub fn new_filtered(conn: FilamentConnection, allowed: &[&str]) -> Self {
+        Self {
+            conn: std::sync::Arc::new(Mutex::new(conn)),
+            tool_router: Self::tool_router(),
+            allowed_tools: Some(allowed.iter().map(|s| (*s).to_string()).collect()),
+        }
+    }
+
+    fn check_allowed(&self, tool_name: &str) -> Result<(), String> {
+        if let Some(ref allowed) = self.allowed_tools {
+            if !allowed.contains(tool_name) {
+                return Err(format!(
+                    "tool '{tool_name}' is not allowed for this agent role"
+                ));
+            }
+        }
+        Ok(())
     }
 
     // -- Agent workflow tools --
@@ -51,6 +75,7 @@ impl FilamentMcp {
         &self,
         Parameters(p): Parameters<TaskReadyParams>,
     ) -> Result<String, String> {
+        self.check_allowed("filament_task_ready")?;
         let mut conn = self.conn.lock().await;
         match conn.ready_tasks().await {
             Ok(mut tasks) => {
@@ -69,6 +94,7 @@ impl FilamentMcp {
         &self,
         Parameters(p): Parameters<TaskCloseParams>,
     ) -> Result<String, String> {
+        self.check_allowed("filament_task_close")?;
         let mut conn = self.conn.lock().await;
         let task = conn.resolve_task(&p.slug).await.map_err(|e| map_err(&e))?;
         conn.update_entity_status(
@@ -83,6 +109,7 @@ impl FilamentMcp {
     /// Get graph neighborhood summaries around an entity.
     #[tool(name = "filament_context")]
     async fn context(&self, Parameters(p): Parameters<ContextParams>) -> Result<String, String> {
+        self.check_allowed("filament_context")?;
         let mut conn = self.conn.lock().await;
         let entity = conn
             .resolve_entity(&p.slug)
@@ -102,6 +129,7 @@ impl FilamentMcp {
         &self,
         Parameters(p): Parameters<MessageSendParams>,
     ) -> Result<String, String> {
+        self.check_allowed("filament_message_send")?;
         let mut conn = self.conn.lock().await;
         // Validate recipient exists and is an agent
         conn.resolve_agent(&p.to_agent)
@@ -125,6 +153,7 @@ impl FilamentMcp {
         &self,
         Parameters(p): Parameters<MessageInboxParams>,
     ) -> Result<String, String> {
+        self.check_allowed("filament_message_inbox")?;
         let mut conn = self.conn.lock().await;
         let msgs = conn.get_inbox(&p.agent).await.map_err(|e| map_err(&e))?;
         Ok(serde_json::to_string_pretty(&msgs).expect("JSON"))
@@ -133,6 +162,7 @@ impl FilamentMcp {
     /// Acquire an advisory file lock.
     #[tool(name = "filament_reserve")]
     async fn reserve(&self, Parameters(p): Parameters<ReserveParams>) -> Result<String, String> {
+        self.check_allowed("filament_reserve")?;
         let mut conn = self.conn.lock().await;
         let mode = ReservationMode::from(p.exclusive.unwrap_or(false));
         let ttl_val = p.ttl_secs.unwrap_or(300);
@@ -147,6 +177,7 @@ impl FilamentMcp {
     /// Release a file reservation.
     #[tool(name = "filament_release")]
     async fn release(&self, Parameters(p): Parameters<ReleaseParams>) -> Result<String, String> {
+        self.check_allowed("filament_release")?;
         let mut conn = self.conn.lock().await;
         conn.release_reservation(&p.reservation_id)
             .await
@@ -160,6 +191,7 @@ impl FilamentMcp {
         &self,
         Parameters(p): Parameters<ReservationsParams>,
     ) -> Result<String, String> {
+        self.check_allowed("filament_reservations")?;
         let mut conn = self.conn.lock().await;
         let reservations = conn
             .list_reservations(p.agent.as_deref())
@@ -173,6 +205,7 @@ impl FilamentMcp {
     /// Get entity details and its relations.
     #[tool(name = "filament_inspect")]
     async fn inspect(&self, Parameters(p): Parameters<InspectParams>) -> Result<String, String> {
+        self.check_allowed("filament_inspect")?;
         let mut conn = self.conn.lock().await;
         let entity = conn
             .resolve_entity(&p.slug)
@@ -192,6 +225,7 @@ impl FilamentMcp {
     /// List/filter entities by type and status.
     #[tool(name = "filament_list")]
     async fn list(&self, Parameters(p): Parameters<ListParams>) -> Result<String, String> {
+        self.check_allowed("filament_list")?;
         let mut conn = self.conn.lock().await;
         let entities = conn
             .list_entities(p.entity_type, p.status)
@@ -203,6 +237,7 @@ impl FilamentMcp {
     /// Create a new entity (task, doc, module, etc.).
     #[tool(name = "filament_add")]
     async fn add(&self, Parameters(p): Parameters<AddParams>) -> Result<String, String> {
+        self.check_allowed("filament_add")?;
         let mut conn = self.conn.lock().await;
         let req = CreateEntityRequest {
             name: p.name,
@@ -219,6 +254,7 @@ impl FilamentMcp {
     /// Update entity summary and/or status.
     #[tool(name = "filament_update")]
     async fn update(&self, Parameters(p): Parameters<UpdateParams>) -> Result<String, String> {
+        self.check_allowed("filament_update")?;
         let mut conn = self.conn.lock().await;
         let entity = conn
             .resolve_entity(&p.slug)
@@ -261,6 +297,7 @@ impl FilamentMcp {
     /// Delete an entity and its relations.
     #[tool(name = "filament_delete")]
     async fn delete(&self, Parameters(p): Parameters<DeleteParams>) -> Result<String, String> {
+        self.check_allowed("filament_delete")?;
         let mut conn = self.conn.lock().await;
         let entity = conn
             .resolve_entity(&p.slug)
@@ -275,6 +312,7 @@ impl FilamentMcp {
     /// Create a relation between two entities.
     #[tool(name = "filament_relate")]
     async fn relate(&self, Parameters(p): Parameters<RelateParams>) -> Result<String, String> {
+        self.check_allowed("filament_relate")?;
         let mut conn = self.conn.lock().await;
         let source = conn
             .resolve_entity(&p.source)
@@ -304,6 +342,7 @@ impl FilamentMcp {
     /// Remove a relation between two entities.
     #[tool(name = "filament_unrelate")]
     async fn unrelate(&self, Parameters(p): Parameters<UnrelateParams>) -> Result<String, String> {
+        self.check_allowed("filament_unrelate")?;
         let mut conn = self.conn.lock().await;
         let source = conn
             .resolve_entity(&p.source)
@@ -334,6 +373,7 @@ impl FilamentMcp {
         &self,
         Parameters(p): Parameters<MessageReadParams>,
     ) -> Result<String, String> {
+        self.check_allowed("filament_message_read")?;
         let mut conn = self.conn.lock().await;
         conn.mark_message_read(&p.message_id)
             .await
@@ -361,13 +401,22 @@ impl ServerHandler for FilamentMcp {
 // ---------------------------------------------------------------------------
 
 /// Run the MCP server on stdio.
+/// If `allowed_tools` is provided, only those tools are accessible.
 ///
 /// # Errors
 ///
 /// Returns an error if the server fails to start or the transport closes unexpectedly.
-pub async fn run_mcp_stdio(conn: FilamentConnection) -> filament_core::error::Result<()> {
+pub async fn run_mcp_stdio(
+    conn: FilamentConnection,
+    allowed_tools: Option<&[&str]>,
+) -> filament_core::error::Result<()> {
     debug!("starting MCP stdio server");
-    let server = FilamentMcp::new(conn);
+    let server = if let Some(tools) = allowed_tools {
+        debug!(tools = ?tools, "MCP tool filtering enabled");
+        FilamentMcp::new_filtered(conn, tools)
+    } else {
+        FilamentMcp::new(conn)
+    };
     let service = server
         .serve(rmcp::transport::stdio())
         .await
@@ -392,7 +441,27 @@ pub async fn run_mcp_transport<T>(
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
 {
-    let server = FilamentMcp::new(conn);
+    run_mcp_transport_filtered(conn, transport, None).await
+}
+
+/// Run the MCP server on a generic transport with optional tool filtering.
+///
+/// # Errors
+///
+/// Returns an error if the server fails to start.
+pub async fn run_mcp_transport_filtered<T>(
+    conn: FilamentConnection,
+    transport: T,
+    allowed_tools: Option<&[&str]>,
+) -> filament_core::error::Result<()>
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+{
+    let server = if let Some(tools) = allowed_tools {
+        FilamentMcp::new_filtered(conn, tools)
+    } else {
+        FilamentMcp::new(conn)
+    };
     let service = server
         .serve(transport)
         .await

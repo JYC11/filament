@@ -32,6 +32,21 @@ async fn start_mcp_client(
     TestClient.serve(client_io).await.expect("MCP client init")
 }
 
+/// Spawn MCP server with tool filtering.
+async fn start_mcp_client_filtered(
+    conn: FilamentConnection,
+    allowed: &'static [&'static str],
+) -> rmcp::service::RunningService<rmcp::RoleClient, TestClient> {
+    let (server_io, client_io) = tokio::io::duplex(16384);
+
+    tokio::spawn(async move {
+        let _ =
+            filament_daemon::mcp::run_mcp_transport_filtered(conn, server_io, Some(allowed)).await;
+    });
+
+    TestClient.serve(client_io).await.expect("MCP client init")
+}
+
 /// Build a `CallToolRequestParams` from name and JSON args.
 fn call(name: &str, args: serde_json::Value) -> CallToolRequestParams {
     CallToolRequestParams {
@@ -487,6 +502,97 @@ async fn tool_update_validation_error() {
     assert!(
         result.is_error.unwrap_or(false),
         "update with no fields should be an error"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_filtering_blocks_disallowed() {
+    let (conn, _tmp) = test_connection().await;
+
+    // Only allow inspect and list — not add, delete, reserve, etc.
+    let client =
+        start_mcp_client_filtered(conn, &["filament_inspect", "filament_list"]).await;
+    let peer = client.peer();
+
+    // Allowed tool should work (list returns empty but no error)
+    let result = peer
+        .call_tool(call(
+            "filament_list",
+            serde_json::json!({ "entity_type": "task" }),
+        ))
+        .await
+        .expect("list");
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "filament_list should be allowed"
+    );
+
+    // Disallowed tool should return an error
+    let result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({
+                "name": "blocked-task",
+                "entity_type": "task",
+                "summary": "Should fail",
+            }),
+        ))
+        .await
+        .expect("add should return result");
+    assert!(
+        result.is_error.unwrap_or(false),
+        "filament_add should be blocked by filter"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("not allowed"),
+        "error should mention 'not allowed': {text}"
+    );
+
+    // Another disallowed tool
+    let result = peer
+        .call_tool(call(
+            "filament_reserve",
+            serde_json::json!({
+                "file_glob": "*.rs",
+                "agent": "test",
+                "ttl_secs": 60,
+            }),
+        ))
+        .await
+        .expect("reserve should return result");
+    assert!(
+        result.is_error.unwrap_or(false),
+        "filament_reserve should be blocked by filter"
+    );
+
+    client.cancel().await.expect("cancel");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tool_filtering_none_allows_all() {
+    // No filter = all tools allowed (unfiltered mode, like CLI `filament mcp`)
+    let (conn, _tmp) = test_connection().await;
+    let client = start_mcp_client(conn).await;
+    let peer = client.peer();
+
+    // Add should work without filter
+    let result = peer
+        .call_tool(call(
+            "filament_add",
+            serde_json::json!({
+                "name": "unfiltered-task",
+                "entity_type": "task",
+                "summary": "No filter",
+            }),
+        ))
+        .await
+        .expect("add");
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "filament_add should work without filter"
     );
 
     client.cancel().await.expect("cancel");

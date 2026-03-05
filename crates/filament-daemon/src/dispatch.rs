@@ -54,11 +54,17 @@ impl Drop for ChildGuard {
 }
 
 /// Build a temporary MCP config JSON file for the subprocess.
+/// The agent's role is passed via `FILAMENT_AGENT_ROLE` env var so the MCP
+/// server can enforce per-role tool filtering.
 ///
 /// # Errors
 ///
 /// Returns `AgentDispatchFailed` if JSON serialization fails, or `Io` if the file cannot be written.
-pub fn build_mcp_config(run_id: &AgentRunId, project_root: &Path) -> Result<PathBuf> {
+pub fn build_mcp_config(
+    run_id: &AgentRunId,
+    project_root: &Path,
+    role: AgentRole,
+) -> Result<PathBuf> {
     let runtime_dir = project_root.join(".filament");
     let config_path = runtime_dir.join(format!("mcp-{run_id}.json"));
 
@@ -70,6 +76,9 @@ pub fn build_mcp_config(run_id: &AgentRunId, project_root: &Path) -> Result<Path
                 "command": filament_bin.to_string_lossy(),
                 "args": ["mcp"],
                 "cwd": project_root.to_string_lossy(),
+                "env": {
+                    "FILAMENT_AGENT_ROLE": role.as_str(),
+                },
             }
         }
     });
@@ -147,8 +156,8 @@ pub async fn dispatch_agent(
         });
     }
 
-    // Build MCP config
-    let mcp_config_path = build_mcp_config(&AgentRunId::new(), &config.project_root)?;
+    // Build MCP config with role for tool filtering
+    let mcp_config_path = build_mcp_config(&AgentRunId::new(), &config.project_root, role)?;
 
     // Build system prompt with rich context bundle
     let context = {

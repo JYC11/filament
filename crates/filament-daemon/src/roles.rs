@@ -12,48 +12,54 @@ pub const fn system_prompt(role: AgentRole) -> &'static str {
 }
 
 /// MCP tool whitelist for this role.
-/// Note: not yet enforced in MCP config — reserved for future tool filtering.
+/// Names must match MCP tool names (the `filament_*` names from mcp.rs).
+/// Enforced server-side: disallowed tools return an error.
 #[must_use]
 pub const fn allowed_tools(role: AgentRole) -> &'static [&'static str] {
     match role {
         AgentRole::Coder => &[
-            "get_entity",
-            "list_entities",
-            "get_inbox",
-            "send_message",
-            "acquire_reservation",
-            "release_reservation",
-            "list_reservations",
-            "ready_tasks",
-            "context_query",
+            "filament_inspect",
+            "filament_list",
+            "filament_message_inbox",
+            "filament_message_send",
+            "filament_message_read",
+            "filament_reserve",
+            "filament_release",
+            "filament_reservations",
+            "filament_task_ready",
+            "filament_task_close",
+            "filament_context",
         ],
         AgentRole::Reviewer => &[
-            "get_entity",
-            "list_entities",
-            "get_inbox",
-            "send_message",
-            "context_query",
-            "list_reservations",
+            "filament_inspect",
+            "filament_list",
+            "filament_message_inbox",
+            "filament_message_send",
+            "filament_message_read",
+            "filament_context",
+            "filament_reservations",
         ],
         AgentRole::Planner => &[
-            "get_entity",
-            "list_entities",
-            "create_entity",
-            "create_relation",
-            "send_message",
-            "ready_tasks",
-            "critical_path",
-            "context_query",
-            "check_cycle",
+            "filament_inspect",
+            "filament_list",
+            "filament_add",
+            "filament_relate",
+            "filament_message_send",
+            "filament_message_inbox",
+            "filament_message_read",
+            "filament_task_ready",
+            "filament_context",
         ],
         AgentRole::Dockeeper => &[
-            "get_entity",
-            "list_entities",
-            "update_entity_summary",
-            "send_message",
-            "context_query",
-            "acquire_reservation",
-            "release_reservation",
+            "filament_inspect",
+            "filament_list",
+            "filament_update",
+            "filament_message_send",
+            "filament_message_inbox",
+            "filament_message_read",
+            "filament_context",
+            "filament_reserve",
+            "filament_release",
         ],
     }
 }
@@ -98,6 +104,18 @@ mod tests {
                 !allowed_tools(*role).is_empty(),
                 "{role} has no allowed tools"
             );
+        }
+    }
+
+    #[test]
+    fn test_allowed_tools_use_filament_prefix() {
+        for role in AgentRole::ALL {
+            for tool in allowed_tools(*role) {
+                assert!(
+                    tool.starts_with("filament_"),
+                    "{role}: tool '{tool}' must start with 'filament_' to match MCP names"
+                );
+            }
         }
     }
 }
