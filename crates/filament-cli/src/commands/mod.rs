@@ -12,6 +12,7 @@ mod message;
 mod query;
 mod relation;
 mod reserve;
+mod seed;
 mod serve;
 mod task;
 mod tui;
@@ -85,6 +86,9 @@ pub enum Commands {
     /// Start the MCP stdio server (for AI agent integration).
     Mcp,
 
+    /// Seed the knowledge graph from existing project files (CLAUDE.md).
+    Seed(seed::SeedArgs),
+
     // -- Export / Import --
     /// Export the full graph as JSON.
     Export(export::ExportArgs),
@@ -139,6 +143,7 @@ impl Commands {
             Self::Reservations(args) => reserve::reservations(cli, args).await,
             Self::Serve(args) => serve::serve(cli, args).await,
             Self::Stop => serve::stop(cli).await,
+            Self::Seed(args) => seed::seed(cli, args).await,
             Self::Export(args) => export::export(cli, args).await,
             Self::Import(args) => export::import(cli, args).await,
             Self::Escalations => escalation::escalations(cli).await,
