@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use filament_core::config::FilamentConfig;
+
 /// Configuration for the daemon server.
 #[derive(Debug, Clone)]
 pub struct ServeConfig {
@@ -14,15 +16,16 @@ pub struct ServeConfig {
 }
 
 impl ServeConfig {
-    /// Create a config from a project root directory.
+    /// Create a config from a project root directory, reading config file for overrides.
     #[must_use]
     pub fn from_project_root(root: &std::path::Path) -> Self {
+        let cfg = FilamentConfig::load(root);
         let runtime_dir = root.join(".filament");
         Self {
             socket_path: runtime_dir.join("filament.sock"),
             db_path: runtime_dir.join("filament.db"),
             pid_path: runtime_dir.join("filament.pid"),
-            cleanup_interval_secs: 60,
+            cleanup_interval_secs: cfg.resolve_cleanup_interval_secs(),
         }
     }
 }

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use filament_core::config::FilamentConfig;
 use filament_core::error::Result;
 use filament_core::graph::KnowledgeGraph;
 use filament_core::store::{self, FilamentStore};
@@ -8,7 +9,7 @@ use tokio::sync::RwLock;
 /// Configuration for agent dispatch.
 #[derive(Debug, Clone)]
 pub struct DispatchConfig {
-    /// Command to run (default: "claude"). Overridden by `FILAMENT_AGENT_COMMAND` env var.
+    /// Command to run (default: "claude"). Config file, then `FILAMENT_AGENT_COMMAND` env var.
     pub agent_command: String,
     /// Project root directory (for MCP config and working directory).
     pub project_root: PathBuf,
@@ -21,23 +22,16 @@ pub struct DispatchConfig {
 }
 
 impl DispatchConfig {
-    /// Create from project root, reading env vars for overrides.
+    /// Create from project root, reading config file then env vars for overrides.
     #[must_use]
     pub fn from_project_root(root: &Path) -> Self {
+        let cfg = FilamentConfig::load(root);
         Self {
-            agent_command: std::env::var("FILAMENT_AGENT_COMMAND")
-                .unwrap_or_else(|_| "claude".to_string()),
+            agent_command: cfg.resolve_agent_command(),
             project_root: root.to_path_buf(),
-            context_depth: std::env::var("FILAMENT_CONTEXT_DEPTH")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(2),
-            auto_dispatch: std::env::var("FILAMENT_AUTO_DISPATCH")
-                .is_ok_and(|v| v == "1" || v == "true"),
-            max_auto_dispatch: std::env::var("FILAMENT_MAX_AUTO_DISPATCH")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(3),
+            context_depth: cfg.resolve_context_depth(),
+            auto_dispatch: cfg.resolve_auto_dispatch(),
+            max_auto_dispatch: cfg.resolve_max_auto_dispatch(),
         }
     }
 }

@@ -1,5 +1,6 @@
 mod agent;
 mod completions;
+mod config;
 mod entity;
 mod escalation;
 mod export;
@@ -88,6 +89,10 @@ pub enum Commands {
     /// Show pending escalations (blockers, questions, needs-input).
     Escalations,
 
+    // -- Configuration --
+    /// View or initialize project configuration.
+    Config(config::ConfigCommand),
+
     // -- Shell completions --
     /// Generate shell completions (bash, zsh, fish, elvish, powershell).
     Completions(completions::CompletionsArgs),
@@ -121,6 +126,7 @@ impl Commands {
             Self::Export(args) => export::export(cli, args).await,
             Self::Import(args) => export::import(cli, args).await,
             Self::Escalations => escalation::escalations(cli).await,
+            Self::Config(cmd) => cmd.run(cli).await,
             Self::Completions(args) => {
                 completions::run(args);
                 Ok(())

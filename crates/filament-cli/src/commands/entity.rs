@@ -1,11 +1,14 @@
 use std::path::Path;
 
 use clap::Args;
+use filament_core::config::FilamentConfig;
 use filament_core::dto::CreateEntityRequest;
 use filament_core::error::Result;
 use filament_core::models::{EntityType, Priority};
 
-use super::helpers::{connect, output_json, print_entity_list, print_relations, read_content_file};
+use super::helpers::{
+    connect, find_project_root, output_json, print_entity_list, print_relations, read_content_file,
+};
 use crate::Cli;
 
 #[derive(Args, Debug)]
@@ -97,7 +100,14 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
         summary: Some(args.summary.clone()),
         key_facts,
         content_path: args.content.clone(),
-        priority: args.priority.map(Priority::new).transpose()?,
+        priority: {
+            let p = args.priority.unwrap_or_else(|| {
+                find_project_root()
+                    .map(|r| FilamentConfig::load(&r).resolve_default_priority())
+                    .unwrap_or(2)
+            });
+            Some(Priority::new(p)?)
+        },
     };
 
     let (id, slug) = conn.create_entity(req).await?;

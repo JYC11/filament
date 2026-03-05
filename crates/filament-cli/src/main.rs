@@ -13,7 +13,7 @@ use commands::Commands;
 pub struct Cli {
     /// Output JSON instead of human-readable text.
     #[arg(long, global = true)]
-    json: bool,
+    pub json: bool,
 
     /// Increase verbosity (-v for debug, -vv for trace).
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
@@ -25,6 +25,20 @@ pub struct Cli {
 
     #[command(subcommand)]
     command: Commands,
+}
+
+impl Cli {
+    /// Apply config file defaults that can be overridden by CLI flags.
+    fn apply_config_defaults(&mut self) {
+        // Only apply config for commands that operate in a project context.
+        // `init`, `completions`, etc. work outside a project.
+        if let Ok(root) = commands::helpers::find_project_root() {
+            let cfg = filament_core::config::FilamentConfig::load(&root);
+            if !self.json && cfg.json_output() {
+                self.json = true;
+            }
+        }
+    }
 }
 
 fn init_tracing(verbose: u8, quiet: bool, stderr_only: bool) {
@@ -58,7 +72,8 @@ fn init_tracing(verbose: u8, quiet: bool, stderr_only: bool) {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    cli.apply_config_defaults();
     let tui_mode = matches!(cli.command, Commands::Tui);
     let stderr_only = matches!(cli.command, Commands::Mcp) || tui_mode;
     if !tui_mode {
