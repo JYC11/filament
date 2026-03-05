@@ -8,7 +8,8 @@ description: >
   and lessons, recording architecture decisions, creating knowledge graph entries,
   coordinating agent work, or querying project structure.
   Triggers on: "filament", "add entity", "add task", "add lesson", "track this",
-  "create a task", "gotcha", "lesson", "record a lesson", "relate these", "what blocks",
+  "create a task", "gotcha", "lesson", "record a lesson", "search before solving",
+  "capture lesson", "search knowledge", "relate these", "what blocks",
   "critical path", "ready tasks", "project graph", "knowledge graph", "file reservation",
   "agent message", "what's next", "dispatch agent", "escalations", "export", "import",
   "daemon", "tui".
@@ -16,414 +17,179 @@ description: >
 
 # Filament CLI — Project Knowledge Management
 
-Filament is a local-only knowledge graph + task manager + multi-agent orchestrator. All data
-lives in `.filament/` within the project root. Initialize with `filament init` before any
-other command.
+Local-only knowledge graph + task manager + multi-agent orchestrator. Data lives in `.filament/` (created by `filament init`).
 
 ## Identity: Slugs
 
-Every entity gets a unique **8-char slug** (`[a-z0-9]`) auto-generated on creation. Slugs are
-the primary human-facing identifier. All commands accept slugs (or UUIDs) wherever an entity
-reference is needed. Use `filament list` or `filament inspect` to find slugs.
+Every entity gets a unique **8-char slug** (`[a-z0-9]`), auto-generated on creation. All commands accept slugs (or UUIDs).
 
-## Quick Reference
+## Search Before Solving, Capture After Solving
 
-### Project Setup
-```bash
-filament init                              # creates .filament/ with SQLite DB
-```
-
-### Entity CRUD (the core building block)
-
-Entities are nodes in the knowledge graph. Types: `task`, `module`, `service`, `agent`, `plan`, `doc`, `lesson`.
+**Every task should follow this protocol.** The knowledge base becomes self-reinforcing.
 
 ```bash
-# Create — returns the entity's slug
-filament add <NAME> --type <TYPE> --summary "..." [--priority 0-4] [--facts '{"k":"v"}'] [--content path/to/file]
+# 1. Pick a task
+filament task ready
+filament update <SLUG> --status in_progress
 
-# Read
-filament inspect <SLUG>                    # details + relations
-filament read <SLUG>                       # full content file
-filament list [--type TYPE] [--status STATUS]
+# 2. Search for existing knowledge before solving
+filament search "relevant error or topic"
+filament search --type lesson "connection pool"   # filter by type
+filament lesson show <SLUG>                        # read a found lesson
 
-# Update
-filament update <SLUG> --summary "new"     # update summary
-filament update <SLUG> --status closed     # update status (open|closed|in_progress|blocked)
-filament update <SLUG> --summary "new" --status in_progress  # both at once
+# 3. Do the work
 
-# Delete
-filament remove <SLUG>                     # cascades relations
+# 4. Capture if you learned something non-obvious
+filament lesson add "descriptive title" \
+  --problem "what was failing" \
+  --solution "how to fix it" \
+  --learned "key insight for next time" \
+  --pattern "optional-pattern-name"
+
+# 5. Close the task
+filament task close <SLUG>
 ```
 
-### Relations (edges in the graph)
+**Capture when:** surprising errors, unexpected library behavior, non-obvious conventions, debugging sessions > few minutes, anything that saves a future agent time.
+**Skip when:** obvious fixes (typos, missing imports), already documented, language basics.
 
-Relations connect entities. Types: `blocks`, `depends_on`, `produces`, `owns`, `relates_to`, `assigned_to`.
+## Command Reference
 
-```bash
-filament relate <SOURCE> <TYPE> <TARGET> [--summary "..." --weight N]
-filament unrelate <SOURCE> <TYPE> <TARGET>
-```
+### Entity CRUD
 
-### Tasks (specialized entity workflow)
+| Command | Description |
+|---------|-------------|
+| `filament add <NAME> --type <TYPE> --summary "..."` | Create entity. Optional: `--priority 0-4`, `--facts '{"k":"v"}'`, `--content path/to/file` |
+| `filament inspect <SLUG>` | Show details + relations |
+| `filament read <SLUG>` | Show full content file |
+| `filament list [--type TYPE] [--status STATUS]` | List entities |
+| `filament update <SLUG> --summary "..." --status STATUS` | Update (status: open\|closed\|in_progress\|blocked) |
+| `filament remove <SLUG>` | Delete (cascades relations) |
 
-Tasks are entities with type=task. The `task` subcommand provides workflow shortcuts.
+Entity types: `task`, `module`, `service`, `agent`, `plan`, `doc`, `lesson`
 
-```bash
-filament task add <TITLE> --summary "..." [--priority N] [--blocks SLUG] [--depends-on SLUG]
-filament task list [--status open|closed|in_progress|all]
-filament task list --unblocked             # open tasks with no open blockers
-filament task ready [--limit N]            # unblocked tasks ranked by priority (graph-based)
-filament task show <SLUG>                  # details + relations
-filament task close <SLUG>                 # sets status=closed
-filament task assign <SLUG> --to <AGENT>   # creates assigned_to relation
-filament task critical-path <SLUG>         # longest dependency chain
-```
+### Tasks
 
-### Lessons (knowledge capture — gotchas, patterns, solutions)
+| Command | Description |
+|---------|-------------|
+| `filament task add <TITLE> --summary "..." [--priority N] [--blocks SLUG] [--depends-on SLUG]` | Create task |
+| `filament task list [--status STATUS] [--unblocked]` | List tasks |
+| `filament task ready [--limit N]` | Unblocked tasks ranked by priority |
+| `filament task show <SLUG>` | Details + relations |
+| `filament task close <SLUG>` | Set status=closed |
+| `filament task assign <SLUG> --to <AGENT>` | Assign to agent |
+| `filament task critical-path <SLUG>` | Longest dependency chain |
 
-Lessons are entities with type=lesson. They capture reusable knowledge with structured fields.
-**Gotchas, recurring problems, and solutions should ALWAYS be recorded as Lesson entities** (not Doc).
+### Lessons
 
-```bash
-filament lesson add <TITLE> --problem "what was failing" --solution "how to fix" --learned "key insight" [--pattern "pattern-name"] [--priority N]
-filament lesson list [--pattern NAME] [--status all|open|closed]
-filament lesson show <SLUG>                # structured display of problem/solution/pattern/learned
-```
+| Command | Description |
+|---------|-------------|
+| `filament lesson add <TITLE> --problem "..." --solution "..." --learned "..." [--pattern NAME]` | Create lesson |
+| `filament lesson list [--pattern NAME] [--status STATUS]` | List lessons |
+| `filament lesson show <SLUG>` | Structured problem/solution/pattern/learned display |
 
-Lesson fields are stored in `key_facts` JSON. The `--learned` value is also used as the entity summary.
-Pattern names enable cross-project knowledge transfer (e.g., "n-plus-one-fix", "circuit-breaker").
+**Gotchas and solutions are ALWAYS lessons** (not docs). Pattern names enable cross-project knowledge transfer.
 
-### Agent Dispatch (subprocess management)
+### Search (FTS5 + BM25)
 
-Dispatch AI agents to work on tasks. Agents run as subprocesses and report results.
+| Command | Description |
+|---------|-------------|
+| `filament search <QUERY> [--type TYPE] [--limit N] [--json]` | Full-text search across names, summaries, key_facts |
 
-```bash
-filament agent dispatch <TASK_SLUG> [--role coder|reviewer|planner|dockeeper]
-filament agent dispatch-all [--max-parallel N] [--role ROLE]   # dispatch all ready tasks
-filament agent status <RUN_ID>             # check a specific agent run
-filament agent list                        # all agent runs
-filament agent history <TASK_SLUG>         # past runs for a task
-```
+Supports: words, phrases (`"like this"`), `OR`, `NOT` operators.
 
-Roles determine the system prompt and tool access:
-- `coder` (default) — writes code, runs tests
-- `reviewer` — reviews code, suggests improvements
-- `planner` — creates plans and breaks down work
-- `dockeeper` — writes documentation
+### Relations
 
-### Escalations
+| Command | Description |
+|---------|-------------|
+| `filament relate <SRC> <TYPE> <TGT> [--summary "..." --weight N]` | Create relation |
+| `filament unrelate <SRC> <TYPE> <TGT>` | Remove relation |
 
-Escalations surface blockers, questions, and needs-input from agents to the user.
+Types: `blocks` (A blocks B), `depends_on`, `produces`, `owns`, `relates_to`, `assigned_to`
 
-```bash
-filament escalations                       # show all pending escalations
-```
+### Agent Dispatch
 
-Escalations are created automatically when agents send `--type blocker` or `--type question`
-messages TO `user`. They appear in the TUI escalation indicator and in `filament escalations`.
+| Command | Description |
+|---------|-------------|
+| `filament agent dispatch <TASK> [--role coder\|reviewer\|planner\|dockeeper]` | Dispatch agent to task |
+| `filament agent dispatch-all [--max-parallel N]` | Dispatch all ready tasks |
+| `filament agent status <RUN_ID>` / `list` / `history <TASK>` | Monitor agents |
 
-### Context Queries (graph traversal)
+### Messaging
 
-```bash
-filament context --around <SLUG> --depth N [--limit N]  # BFS neighborhood
-filament pagerank [--damping 0.85] [--iterations 50] [--limit N]  # PageRank scores
-filament degree [--limit N]                              # degree centrality (in/out/total)
-```
+| Command | Description |
+|---------|-------------|
+| `filament message send --from <A> --to <B> --body "..." [--type text\|question\|blocker\|artifact]` | Send message |
+| `filament message inbox <AGENT>` / `read <MSG_ID>` | Read messages |
+| `filament escalations` | Show pending blockers/questions |
 
-### Inter-Agent Messaging
+Send `--type blocker` or `--type question` TO `user` to create escalations.
 
-```bash
-filament message send --from <AGENT> --to <AGENT> --body "..." [--type text|question|blocker|artifact]
-filament message inbox <AGENT>             # unread messages
-filament message read <MSG_ID>             # mark as read
-```
+### Graph Queries
 
-Message types:
-- `text` — general communication (default)
-- `question` — agent needs a decision (creates escalation if sent to `user`)
-- `blocker` — agent is blocked and cannot proceed (creates escalation if sent to `user`)
-- `artifact` — agent produced a deliverable
+| Command | Description |
+|---------|-------------|
+| `filament context --around <SLUG> --depth N` | BFS neighborhood |
+| `filament pagerank` / `filament degree` | Graph analytics |
 
-### File Reservations (advisory locking)
+### File Reservations
 
-```bash
-filament reserve <GLOB> --agent <NAME> [--exclusive] [--ttl SECS]
-filament release <GLOB> --agent <NAME>
-filament reservations [--agent NAME] [--clean]
-```
+| Command | Description |
+|---------|-------------|
+| `filament reserve <GLOB> --agent <NAME> [--exclusive] [--ttl SECS]` | Acquire lock |
+| `filament release <GLOB> --agent <NAME>` | Release lock |
+| `filament reservations [--agent NAME] [--clean]` | List reservations |
 
-### Export / Import
+### Infrastructure
 
-```bash
-filament export [--output PATH] [--no-events]    # export all data to JSON
-filament import [--input PATH] [--no-events]     # import from JSON
-```
-
-Export creates a complete snapshot (entities, relations, messages, reservations, events).
-Import performs upserts — existing entities are updated, new ones are inserted.
-
-### Configuration
-
-```bash
-filament config show                       # display resolved configuration
-filament config init                       # create filament.toml with defaults
-filament config path                       # print config file path
-```
-
-Config file (`filament.toml`) supports layered resolution: defaults → config → env → CLI.
-
-### Change Notifications
-
-```bash
-filament watch [--events entity_created,entity_updated,...]  # real-time change stream
-```
-
-Subscribes to daemon push notifications for entity/relation/message changes.
-
-### Git Hooks
-
-```bash
-filament hook install                      # install pre-commit reservation check
-filament hook uninstall                    # remove the hook
-filament hook check [--agent NAME]         # run the check manually
-```
-
-### Seed (auto-populate from project files)
-
-```bash
-filament seed [--dry-run]                  # parse CLAUDE.md sections into Doc entities
-```
-
-### Audit Trail (git-backed snapshots)
-
-```bash
-filament audit [--branch NAME] [--message "..."]  # snapshot graph to git branch
-```
-
-### Shell Completions
-
-```bash
-filament completions bash|zsh|fish|elvish|powershell
-```
-
-### Daemon (multi-agent mode)
-
-```bash
-filament serve [--foreground] [--socket-path PATH]  # start Unix socket server
-filament stop                                       # stop running daemon
-```
-
-When the daemon is running, all CLI commands route through it via Unix socket instead of
-accessing SQLite directly. This enables concurrent multi-agent access.
-
-### TUI (interactive dashboard)
-
-```bash
-filament tui                               # launch ratatui terminal UI
-```
-
-The TUI shows: task list, agent status, file reservations, messages, graph view, and an escalation indicator.
-
-### MCP Server (AI agent integration)
-
-```bash
-filament mcp                               # start MCP stdio server
-```
-
-Exposes 16 tools via the Model Context Protocol for AI agent integration. Agents connect
-via stdio and can create/read/update entities, send messages, manage tasks, etc.
+| Command | Description |
+|---------|-------------|
+| `filament serve [--foreground]` / `filament stop` | Daemon (multi-agent mode) |
+| `filament mcp` | MCP stdio server (16 tools for AI agents) |
+| `filament tui` | Interactive ratatui dashboard |
+| `filament export [--output PATH]` / `filament import [--input PATH]` | Snapshot/restore |
+| `filament config show` / `init` / `path` | Configuration (`filament.toml`) |
+| `filament watch [--events ...]` | Real-time change notifications |
+| `filament hook install` / `uninstall` / `check` | Git pre-commit reservation checks |
+| `filament seed [--dry-run]` | Parse CLAUDE.md into Doc entities |
+| `filament audit [--branch NAME]` | Snapshot graph to git branch |
+| `filament completions bash\|zsh\|fish` | Shell completions |
 
 ### Global Flags
 
-| Flag | Effect |
-|------|--------|
-| `--json` | Machine-readable JSON output |
-| `-v` | Debug logging (filament crate) |
-| `-vv` | Trace logging (all crates) |
-| `-q` | Suppress non-error output |
+`--json` (machine-readable) | `-v` (debug) | `-vv` (trace) | `-q` (quiet)
 
-## Common Workflows
+## Entity Types
 
-### Import project documentation as knowledge entities
-
-```bash
-filament add project-plan --type plan --summary "Master plan v1.1" --content .plan/filament-v1.md
-filament add phase-1-core --type plan --summary "Phase 1: Core library" --content .plan/phase1-core.md
-filament relate project-plan owns phase-1-core
-```
-
-### Record a gotcha / lesson learned
-
-```bash
-filament lesson add "SQLite CHECK constraint" \
-  --problem "INSERT fails when new entity_type not in CHECK list" \
-  --solution "Recreate table with updated CHECK constraint in migration" \
-  --learned "SQLite cannot ALTER CHECK constraints — must recreate table" \
-  --pattern "sqlite-check-migration"
-```
-
-### Track architecture decisions
-
-```bash
-filament add adr-003-unified-graph --type doc --summary "All data as Entity nodes + Relation edges" \
-  --facts '{"status":"accepted","date":"2026-02-28"}' --content .plan/adr/003-unified-graph.md
-filament relate adr-003-unified-graph relates_to filament-core
-```
-
-### Create task with dependency chain
-
-```bash
-filament task add implement-daemon --summary "Unix socket server + MCP protocol" --priority 1
-filament task add implement-tui --summary "Ratatui dashboard" --depends-on implement-daemon
-filament task critical-path implement-tui   # shows: implement-daemon -> implement-tui
-```
-
-### Agent coordination workflow
-
-```bash
-filament add agent-planner --type agent --summary "Planning agent"
-filament task assign implement-daemon --to agent-planner
-filament reserve "crates/filament-daemon/**" --agent agent-planner --exclusive --ttl 7200
-filament message send --from orchestrator --to agent-planner --body "Start phase 3 implementation"
-```
-
-### Dispatch agents to ready tasks
-
-```bash
-filament task ready                        # see what's unblocked
-filament agent dispatch <TASK_SLUG>        # dispatch single task (role=coder)
-filament agent dispatch-all --max-parallel 3  # dispatch all ready tasks
-filament agent list                        # monitor running agents
-filament escalations                       # check for blockers/questions
-```
-
-### Handle escalations
-
-```bash
-filament escalations                       # see pending blockers & questions
-# Respond to the agent that raised the escalation:
-filament message send --from user --to <AGENT_SLUG> --body "Answer to your question" --type text
-# Then unblock the task:
-filament update <TASK_SLUG> --status in_progress
-```
-
-### Export, backup, and restore
-
-```bash
-filament export --output snapshot.json     # full backup
-filament import --input snapshot.json      # restore into another project
-```
-
-### Query project structure
-
-```bash
-filament list --type module                # all modules
-filament list --type task --status open    # open tasks
-filament task ready                        # what to work on next
-filament context --around <SLUG> --depth 2 # what connects to an entity
-```
-
-### Simulation / Roleplay (exercise the full system)
-
-Seed a temp project with example data and manually simulate agent cycles:
-
-```bash
-# Setup
-cd /tmp && rm -rf filament-sim && mkdir filament-sim && cd filament-sim
-filament init
-
-# Create entities
-filament add api-gateway --type module --summary "HTTP routing layer"
-filament add auth-service --type module --summary "JWT auth + sessions"
-filament add alice --type agent --summary "Senior backend coder"
-filament add bob --type agent --summary "Frontend specialist"
-filament task add design-arch --summary "Design system architecture" --priority 0
-filament task add setup-db --summary "PostgreSQL schema + migrations" --priority 1
-
-# Create dependency chain
-filament relate <design-arch-slug> blocks <setup-db-slug>
-
-# Simulate agent cycle
-filament task ready                        # → design-arch is unblocked
-filament task assign <slug> --to <agent-slug>
-filament update <slug> --status in_progress
-filament message send --from alice --to bob --body "DB schema ready" --type artifact
-filament task close <slug>
-filament task ready                        # → next task unblocked
-
-# Simulate escalation
-filament message send --from alice --to user --body "BLOCKED: need credentials" --type blocker
-filament update <slug> --status blocked
-filament escalations                       # → shows alice's blocker
-
-# Cleanup
-rm -rf /tmp/filament-sim
-```
-
-## Entity Types and When to Use Them
-
-| Type | Purpose | Examples |
-|------|---------|---------|
-| `task` | **Work items** — the only type with full status workflow (open → in_progress → closed). Has priority, dependency tracking, ready-queue ranking, critical path. | "implement daemon", "fix bug #42" |
-| `module` | **Code structure** — crates, files, subsystems. Relate to tasks so agents know which code a task touches. | "filament-core", "store.rs" |
-| `service` | **Runtime components** — running infrastructure vs code. | "sqlite-db", "unix-socket-server" |
-| `agent` | **Actors** — required for `task assign`, `message send`, `reserve`. | "planner-agent", "code-reviewer" |
-| `plan` | **Planning docs** — group tasks via `owns`. Always use `--content path/to/plan.md` to point at the file. | "phase-3-plan", "architecture-overview" |
-| `doc` | **Reference material** — ADRs, specs, runbooks. Always use `--content path/to/doc.md` to point at the file. | "adr-003", "api-spec" |
-| `lesson` | **Knowledge capture** — gotchas, recurring problems, solutions, patterns. Use `filament lesson add` with `--problem`, `--solution`, `--learned`. | "sqlx-check-gotcha", "n-plus-one-fix" |
-
-**Design principle**: The graph is lightweight — summaries + pointers, not content duplication.
-For `doc` and `plan` types, always use `--content` so the physical `.md` file remains the source of truth.
-**Gotchas and lessons** should ALWAYS use the `lesson` type (not `doc`) so they have structured problem/solution/learned fields.
-
-## Relation Types and Semantics
-
-| Type | Reads As | Use For |
-|------|----------|---------|
-| `blocks` | A blocks B | Task dependencies (B can't start until A closes) |
-| `depends_on` | A depends on B | Declarative dependency (A needs B) |
-| `produces` | A produces B | Output relationships (build step -> artifact) |
-| `owns` | A owns B | Containment (plan owns tasks, module owns files) |
-| `relates_to` | A relates to B | General association |
-| `assigned_to` | A assigned to B | Agent assignment |
+| Type | Purpose | When to use |
+|------|---------|-------------|
+| `task` | Work items with status workflow, priority, deps | Bugs, features, work to track |
+| `module` | Code structure (crates, files) | Relate tasks to code they touch |
+| `service` | Runtime components | Databases, servers, infrastructure |
+| `agent` | Actors (required for assign/message/reserve) | AI or human workers |
+| `plan` | Planning docs (use `--content path.md`) | Group tasks via `owns` |
+| `doc` | Reference material (use `--content path.md`) | ADRs, specs, runbooks |
+| `lesson` | Knowledge capture (use `filament lesson add`) | Gotchas, patterns, solutions |
 
 ## Structured Errors
 
-All errors have machine-readable exit codes:
-
-| Exit Code | Meaning |
-|-----------|---------|
+| Exit | Meaning |
+|------|---------|
 | 0 | Success |
-| 2 | CLI argument error (clap) |
-| 3 | Not found (entity, relation, message) |
+| 2 | CLI argument error |
+| 3 | Not found |
 | 4 | Validation error |
 | 5 | Database error |
-| 6 | Resource conflict (file reservation) |
+| 6 | Resource conflict |
 | 7 | I/O error |
 
-With `--json`, errors output structured JSON with `code`, `message`, `hint`, and `retryable` fields.
-
-## Dual-Track Convention
-
-Filament runs alongside traditional .md documentation:
-- **CLAUDE.md** and **MEMORY.md** remain the source of truth for session onboarding
-- Filament entities mirror and extend the .md content with queryable structure
-- When updating project state, update BOTH .md files and filament entities
-- Filament adds: graph queries, dependency tracking, ready-task computation, agent coordination
+With `--json`, errors include `code`, `message`, `hint`, `retryable` fields.
 
 ## Tips
 
-- Entities are identified by **slugs** (8-char `[a-z0-9]`), auto-generated on creation
-- Use `filament list` or `filament inspect` to find an entity's slug
-- `--json` output is suitable for piping to `jq` or parsing in scripts
-- Priority 0 = highest urgency, 4 = lowest (default is 2)
-- Reservations use string-equality for glob matching (not pattern overlap)
-- `task close` and `task assign` validate the entity is actually a task
+- Priority: 0 = highest, 4 = lowest (default 2)
+- `blocks` direction: `A blocks B` means B can't start until A closes
 - `task list --status` and `--unblocked` cannot be combined
-- To create escalations: send `--type blocker` or `--type question` messages FROM an agent TO `user`
-- Auto-dispatch: set `FILAMENT_AUTO_DISPATCH=1` to chain agent runs on newly-unblocked tasks
-- `filament seed` bootstraps the knowledge graph from CLAUDE.md sections
-- `filament audit` snapshots the graph to a git branch for disaster recovery
-- `filament pagerank` and `filament degree` show graph analytics
-- `filament watch` streams real-time change notifications from the daemon
-- `filament config init` creates a `filament.toml` for project-level defaults
+- Daemon routes all CLI commands through Unix socket for concurrent access
+- `FILAMENT_AUTO_DISPATCH=1` chains agent runs on newly-unblocked tasks
+- Dual-track: keep CLAUDE.md/MEMORY.md in sync with filament entities
