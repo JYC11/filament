@@ -5,6 +5,7 @@ mod entity;
 mod escalation;
 mod export;
 pub mod helpers;
+mod hook;
 mod init;
 mod mcp;
 mod message;
@@ -98,6 +99,10 @@ pub enum Commands {
     /// Generate shell completions (bash, zsh, fish, elvish, powershell).
     Completions(completions::CompletionsArgs),
 
+    // -- Git hooks --
+    /// Git hook management (pre-commit reservation checks).
+    Hook(hook::HookCommand),
+
     // -- Watch --
     /// Watch for real-time change notifications (requires daemon).
     Watch(watch::WatchArgs),
@@ -136,6 +141,7 @@ impl Commands {
                 completions::run(args);
                 Ok(())
             }
+            Self::Hook(cmd) => cmd.run(cli).await,
             Self::Watch(args) => watch::watch(cli, args).await,
             Self::Mcp => mcp::run().await,
             Self::Tui => tui::run().await,
