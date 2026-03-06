@@ -117,6 +117,8 @@ pub async fn serve_with_dispatch(
         }
     });
 
+    spawn_idle_watcher(config.idle_timeout_secs, Arc::clone(&state), cancel.clone());
+
     // Accept loop
     loop {
         tokio::select! {
@@ -147,6 +149,30 @@ pub async fn serve_with_dispatch(
     info!("daemon stopped");
 
     Ok(())
+}
+
+/// Spawn a background task that cancels the server after idle timeout.
+/// Does nothing if `idle_timeout_secs` is 0.
+fn spawn_idle_watcher(idle_timeout_secs: u64, state: Arc<SharedState>, cancel: CancellationToken) {
+    if idle_timeout_secs == 0 {
+        return;
+    }
+    tokio::spawn(async move {
+        let check_interval = std::time::Duration::from_secs(30);
+        let mut interval = tokio::time::interval(check_interval);
+        loop {
+            tokio::select! {
+                () = cancel.cancelled() => break,
+                _ = interval.tick() => {
+                    if state.idle_secs() >= idle_timeout_secs {
+                        info!(idle_secs = idle_timeout_secs, "idle timeout reached, shutting down");
+                        cancel.cancel();
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }
 
 /// Kill running agent processes and mark their DB records as failed.

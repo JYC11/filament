@@ -65,7 +65,7 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::DispatchAgent => dispatch::dispatch_agent(params, state).await,
         // Graph
         Method::ReadyTasks => graph::ready_tasks(params, state).await,
-        Method::CriticalPath => graph::critical_path(params, state).await,
+        Method::BlockerDepth => graph::blocker_depth(params, state).await,
         Method::ImpactScore => graph::impact_score(params, state).await,
         Method::BatchImpactScores => graph::batch_impact_scores(params, state).await,
         Method::ContextQuery => graph::context_query(params, state).await,

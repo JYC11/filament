@@ -270,68 +270,57 @@ impl KnowledgeGraph {
         tasks
     }
 
-    /// Critical path: longest chain of upstream prerequisites for a task.
+    /// Blocker depth: how many layers of unclosed upstream blockers exist for this entity.
     ///
-    /// "Upstream" means things that must complete before this entity can proceed:
+    /// BFS from the entity following upstream edges:
     /// - Outgoing `DependsOn` edges (A `depends_on` B → B is upstream)
     /// - Incoming `Blocks` edges (B `blocks` A → B is upstream)
     ///
-    /// Returns the chain of entity IDs (starting with the given entity).
-    /// Safe against cycles.
+    /// Only follows non-Closed nodes. Returns the maximum BFS depth reached.
+    /// A return of 0 means no unclosed blockers. Safe against cycles.
     #[must_use]
-    pub fn critical_path(&self, entity_id: &str) -> Vec<EntityId> {
+    pub fn blocker_depth(&self, entity_id: &str) -> usize {
         let Some(&start) = self.index.get(entity_id) else {
-            return Vec::new();
+            return 0;
         };
 
-        let mut longest: Vec<EntityId> = Vec::new();
-        let mut current: Vec<EntityId> = vec![EntityId::from(entity_id)];
         let mut visited = std::collections::HashSet::new();
         visited.insert(start);
-        self.dfs_longest_path(start, &mut current, &mut longest, &mut visited);
-        longest
-    }
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back((start, 0usize));
+        let mut max_depth = 0usize;
 
-    fn dfs_longest_path(
-        &self,
-        node: NodeIndex,
-        current: &mut Vec<EntityId>,
-        longest: &mut Vec<EntityId>,
-        visited: &mut std::collections::HashSet<NodeIndex>,
-    ) {
-        let mut found_dep = false;
+        while let Some((node, depth)) = queue.pop_front() {
+            // Follow outgoing DependsOn: A depends_on B → B is upstream
+            for edge in self.graph.edges_directed(node, Direction::Outgoing) {
+                if edge.weight().relation_type == RelationType::DependsOn {
+                    let target = edge.target();
+                    if self.graph[target].status != EntityStatus::Closed
+                        && visited.insert(target)
+                    {
+                        let next_depth = depth + 1;
+                        max_depth = max_depth.max(next_depth);
+                        queue.push_back((target, next_depth));
+                    }
+                }
+            }
 
-        // Follow outgoing DependsOn: A depends_on B → B is upstream
-        for edge in self.graph.edges_directed(node, Direction::Outgoing) {
-            if edge.weight().relation_type == RelationType::DependsOn {
-                let target = edge.target();
-                if self.graph[target].status != EntityStatus::Closed && visited.insert(target) {
-                    found_dep = true;
-                    current.push(self.graph[target].entity_id.clone());
-                    self.dfs_longest_path(target, current, longest, visited);
-                    current.pop();
-                    visited.remove(&target);
+            // Follow incoming Blocks: B blocks A → B is upstream of A
+            for edge in self.graph.edges_directed(node, Direction::Incoming) {
+                if edge.weight().relation_type == RelationType::Blocks {
+                    let source = edge.source();
+                    if self.graph[source].status != EntityStatus::Closed
+                        && visited.insert(source)
+                    {
+                        let next_depth = depth + 1;
+                        max_depth = max_depth.max(next_depth);
+                        queue.push_back((source, next_depth));
+                    }
                 }
             }
         }
 
-        // Follow incoming Blocks: B blocks A → B is upstream of A
-        for edge in self.graph.edges_directed(node, Direction::Incoming) {
-            if edge.weight().relation_type == RelationType::Blocks {
-                let source = edge.source();
-                if self.graph[source].status != EntityStatus::Closed && visited.insert(source) {
-                    found_dep = true;
-                    current.push(self.graph[source].entity_id.clone());
-                    self.dfs_longest_path(source, current, longest, visited);
-                    current.pop();
-                    visited.remove(&source);
-                }
-            }
-        }
-
-        if !found_dep && current.len() > longest.len() {
-            longest.clone_from(current);
-        }
+        max_depth
     }
 
     /// Impact score: number of transitive dependents (nodes reachable via incoming edges).
@@ -532,23 +521,15 @@ impl KnowledgeGraph {
     }
 
     /// Build a rich context bundle for an entity, combining neighborhood context,
-    /// critical path, impact score, and upstream artifact summaries.
+    /// blocker depth, impact score, and upstream artifact summaries.
     #[must_use]
     pub fn build_context_bundle(&self, entity_id: &str, depth: usize) -> ContextBundle {
         ContextBundle {
             summaries: self.context_summaries(entity_id, depth),
-            critical_path: self.critical_path_names(entity_id),
+            blocker_depth: self.blocker_depth(entity_id),
             impact_score: self.impact_score(entity_id),
             upstream_artifacts: self.upstream_artifacts(entity_id),
         }
-    }
-
-    /// Critical path but return entity names instead of IDs (for prompts).
-    fn critical_path_names(&self, entity_id: &str) -> Vec<String> {
-        self.critical_path(entity_id)
-            .into_iter()
-            .filter_map(|id| self.get_node(id.as_str()).map(|n| n.name.to_string()))
-            .collect()
     }
 
     /// Find tasks that become newly unblocked when `completed_entity_id` is completed.
@@ -630,7 +611,7 @@ impl KnowledgeGraph {
 #[derive(Debug, Clone)]
 pub struct ContextBundle {
     pub summaries: Vec<String>,
-    pub critical_path: Vec<String>,
+    pub blocker_depth: usize,
     pub impact_score: usize,
     pub upstream_artifacts: Vec<String>,
 }
@@ -648,9 +629,11 @@ impl ContextBundle {
             }
         }
 
-        if !self.critical_path.is_empty() {
-            lines.push("--- CRITICAL PATH ---".to_string());
-            lines.push(self.critical_path.join(" → "));
+        if self.blocker_depth > 0 {
+            lines.push(format!(
+                "Blocker depth: {} layers of unclosed prerequisites",
+                self.blocker_depth
+            ));
         }
 
         if !self.upstream_artifacts.is_empty() {

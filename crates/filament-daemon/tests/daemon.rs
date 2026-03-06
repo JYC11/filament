@@ -29,6 +29,7 @@ async fn start_test_daemon() -> (DaemonClient, CancellationToken, tempfile::Temp
         db_path,
         pid_path,
         cleanup_interval_secs: 3600, // long interval for tests
+        idle_timeout_secs: 0,       // no idle timeout in tests
     };
 
     let cancel = CancellationToken::new();
@@ -325,12 +326,12 @@ async fn graph_operations_via_socket() {
     assert_eq!(ready.len(), 1);
     assert_eq!(ready[0].name(), "task-a");
 
-    // Critical path from task-b
-    let path = client
-        .critical_path(task_b.as_str())
+    // Blocker depth from task-b (blocked by task-a, so depth >= 1)
+    let depth = client
+        .blocker_depth(task_b.as_str())
         .await
-        .expect("critical path");
-    assert!(!path.is_empty());
+        .expect("blocker depth");
+    assert!(depth >= 1);
 
     // Impact score of task-a
     let score = client
@@ -414,6 +415,7 @@ async fn stale_reservation_cleanup() {
         db_path,
         pid_path,
         cleanup_interval_secs: 1, // very fast cleanup
+        idle_timeout_secs: 0,
     };
 
     let cancel = CancellationToken::new();
@@ -1328,15 +1330,12 @@ async fn multi_agent_full_workflow() {
     let ready = verify.ready_tasks().await.expect("final ready tasks");
     assert!(ready.is_empty(), "no tasks should be ready (all closed)");
 
-    // Critical path from review — always includes at least the starting node
-    let path = verify
-        .critical_path(review.as_str())
+    // Blocker depth from review — all tasks are closed, so depth is 0
+    let depth = verify
+        .blocker_depth(review.as_str())
         .await
-        .expect("critical path");
-    assert!(
-        !path.is_empty(),
-        "critical path should include at least the starting node"
-    );
+        .expect("blocker depth");
+    assert_eq!(depth, 0, "all upstream blockers are closed, depth should be 0");
 
     // Events were recorded for design entity
     let events = verify

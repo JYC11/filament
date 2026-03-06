@@ -429,14 +429,15 @@ impl DaemonClient {
         Self::parse_result(result)
     }
 
-    pub async fn critical_path(&mut self, entity_id: &str) -> Result<Vec<EntityId>> {
+    pub async fn blocker_depth(&mut self, entity_id: &str) -> Result<usize> {
         let result = self
             .call(
-                Method::CriticalPath,
+                Method::BlockerDepth,
                 serde_json::json!({ "entity_id": entity_id }),
             )
             .await?;
-        Self::parse_result(result)
+        let depth: usize = Self::extract_field(&result, "depth")?;
+        Ok(depth)
     }
 
     pub async fn impact_score(&mut self, entity_id: &str) -> Result<usize> {

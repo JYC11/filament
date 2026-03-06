@@ -138,41 +138,36 @@ fn task_with_blocks() {
 }
 
 #[test]
-fn task_critical_path() {
+fn task_blocker_depth() {
     let dir = init_project();
 
     let slug1 = add_task(&dir, "step-1", &["--summary", "First step"]);
     let slug2 = add_task(&dir, "step-2", &["--summary", "Second step"]);
 
-    // step-1 blocks step-2 → step-1 is upstream of step-2
+    // step-1 blocks step-2 → step-2 has depth 1
     filament(&dir)
         .args(["relate", &slug1, "blocks", &slug2])
         .assert()
         .success();
 
-    // critical-path from step-2 shows upstream prerequisites: step-2 ← step-1
     filament(&dir)
-        .args(["task", "critical-path", &slug2])
+        .args(["task", "blocker-depth", &slug2])
         .assert()
         .success()
-        .stdout(predicate::str::contains("step-1").and(predicate::str::contains("step-2")));
+        .stdout(predicate::str::contains("blocker depth 1"));
 }
 
 #[test]
-fn task_critical_path_no_deps() {
+fn task_blocker_depth_no_deps() {
     let dir = init_project();
 
     let slug = add_task(&dir, "standalone", &["--summary", "No deps"]);
 
-    // With no outgoing dependency edges, the path is just the node itself (1 step)
     filament(&dir)
-        .args(["task", "critical-path", &slug])
+        .args(["task", "blocker-depth", &slug])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("Critical path (1 step)")
-                .and(predicate::str::contains("standalone")),
-        );
+        .stdout(predicate::str::contains("no upstream blockers"));
 }
 
 #[test]
@@ -266,24 +261,29 @@ fn task_ready_json() {
 }
 
 #[test]
-fn task_critical_path_plural_steps() {
+fn task_blocker_depth_plural_layers() {
     let dir = init_project();
 
     let slug_a = add_task(&dir, "cp-a", &["--summary", "Step A"]);
     let slug_b = add_task(&dir, "cp-b", &["--summary", "Step B"]);
+    let slug_c = add_task(&dir, "cp-c", &["--summary", "Step C"]);
 
-    // cp-a blocks cp-b → cp-a is upstream of cp-b
+    // cp-a blocks cp-b, cp-b blocks cp-c → cp-c has depth 2
     filament(&dir)
         .args(["relate", &slug_a, "blocks", &slug_b])
         .assert()
         .success();
-
-    // 2 steps should use plural "steps" (query from blocked task)
     filament(&dir)
-        .args(["task", "critical-path", &slug_b])
+        .args(["relate", &slug_b, "blocks", &slug_c])
+        .assert()
+        .success();
+
+    // 2 layers should use plural "layers"
+    filament(&dir)
+        .args(["task", "blocker-depth", &slug_c])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Critical path (2 steps)"));
+        .stdout(predicate::str::contains("blocker depth 2 (layers"));
 }
 
 #[test]

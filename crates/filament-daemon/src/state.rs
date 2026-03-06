@@ -1,4 +1,6 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use filament_core::config::FilamentConfig;
 use filament_core::error::Result;
@@ -46,6 +48,7 @@ pub struct SharedState {
     graph: RwLock<KnowledgeGraph>,
     dispatch_config: Option<DispatchConfig>,
     notify_tx: broadcast::Sender<Notification>,
+    last_activity: AtomicU64,
 }
 
 impl SharedState {
@@ -56,6 +59,7 @@ impl SharedState {
             graph: RwLock::new(graph),
             dispatch_config: None,
             notify_tx,
+            last_activity: AtomicU64::new(epoch_secs()),
         }
     }
 
@@ -71,6 +75,7 @@ impl SharedState {
             graph: RwLock::new(graph),
             dispatch_config: Some(config),
             notify_tx,
+            last_activity: AtomicU64::new(epoch_secs()),
         }
     }
 
@@ -89,6 +94,16 @@ impl SharedState {
     /// Subscribe to change notifications.
     pub fn subscribe(&self) -> broadcast::Receiver<Notification> {
         self.notify_tx.subscribe()
+    }
+
+    /// Record activity — resets the idle timer.
+    pub fn touch(&self) {
+        self.last_activity.store(epoch_secs(), Ordering::Relaxed);
+    }
+
+    /// Seconds since last activity.
+    pub fn idle_secs(&self) -> u64 {
+        epoch_secs().saturating_sub(self.last_activity.load(Ordering::Relaxed))
     }
 
     pub async fn graph_read(&self) -> tokio::sync::RwLockReadGuard<'_, KnowledgeGraph> {
@@ -111,4 +126,11 @@ impl SharedState {
             })
             .await
     }
+}
+
+fn epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }

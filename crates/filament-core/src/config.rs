@@ -23,6 +23,8 @@ pub struct FilamentConfig {
     pub max_auto_dispatch: Option<usize>,
     /// Seconds between stale reservation cleanup sweeps (default 60).
     pub cleanup_interval_secs: Option<u64>,
+    /// Idle timeout in seconds before daemon auto-shuts down (default 1800 = 30 min, 0 = never).
+    pub idle_timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -103,6 +105,16 @@ impl FilamentConfig {
     pub fn resolve_default_priority(&self) -> u8 {
         self.default_priority.unwrap_or(2)
     }
+
+    /// Resolve idle timeout: env var > config > 1800 (30 min). 0 means never.
+    #[must_use]
+    pub fn resolve_idle_timeout_secs(&self) -> u64 {
+        std::env::var("FILAMENT_IDLE_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or(self.idle_timeout_secs)
+            .unwrap_or(1800)
+    }
 }
 
 #[cfg(test)]
@@ -120,6 +132,7 @@ mod tests {
         assert_eq!(cfg.resolve_context_depth(), 2);
         assert_eq!(cfg.resolve_max_auto_dispatch(), 3);
         assert_eq!(cfg.resolve_cleanup_interval_secs(), 60);
+        assert_eq!(cfg.resolve_idle_timeout_secs(), 1800);
         assert_eq!(cfg.resolve_default_priority(), 2);
         assert!(!cfg.json_output());
     }
@@ -135,6 +148,7 @@ auto_dispatch = true
 context_depth = 4
 max_auto_dispatch = 5
 cleanup_interval_secs = 120
+idle_timeout_secs = 600
 "#;
         let cfg: FilamentConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(cfg.resolve_default_priority(), 3);
@@ -144,6 +158,7 @@ cleanup_interval_secs = 120
         assert_eq!(cfg.resolve_context_depth(), 4);
         assert_eq!(cfg.resolve_max_auto_dispatch(), 5);
         assert_eq!(cfg.resolve_cleanup_interval_secs(), 120);
+        assert_eq!(cfg.resolve_idle_timeout_secs(), 600);
     }
 
     #[test]

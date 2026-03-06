@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 use filament_core::config::FilamentConfig;
 use filament_core::dto::{CreateEntityRequest, CreateRelationRequest};
 use filament_core::error::Result;
-use filament_core::models::{EntityId, EntityType, Priority, RelationType};
+use filament_core::models::{EntityType, Priority, RelationType};
 
 use super::helpers::{
     connect, find_project_root, output_json, print_entity_list, print_relations,
@@ -25,7 +25,7 @@ impl TaskCommand {
             TaskSubcommand::Show(args) => show(cli, args).await,
             TaskSubcommand::Close(args) => close(cli, args).await,
             TaskSubcommand::Assign(args) => assign(cli, args).await,
-            TaskSubcommand::CriticalPath(args) => critical_path(cli, args).await,
+            TaskSubcommand::BlockerDepth(args) => blocker_depth(cli, args).await,
         }
     }
 }
@@ -44,8 +44,8 @@ enum TaskSubcommand {
     Close(TaskCloseArgs),
     /// Assign a task to an agent.
     Assign(TaskAssignArgs),
-    /// Show critical path from a task.
-    CriticalPath(TaskCriticalPathArgs),
+    /// Show blocker depth of a task.
+    BlockerDepth(TaskBlockerDepthArgs),
 }
 
 #[derive(Args, Debug)]
@@ -105,7 +105,7 @@ struct TaskAssignArgs {
 }
 
 #[derive(Args, Debug)]
-struct TaskCriticalPathArgs {
+struct TaskBlockerDepthArgs {
     /// Task slug or ID.
     slug: String,
 }
@@ -308,29 +308,19 @@ async fn assign(cli: &Cli, args: &TaskAssignArgs) -> Result<()> {
     Ok(())
 }
 
-async fn critical_path(cli: &Cli, args: &TaskCriticalPathArgs) -> Result<()> {
+async fn blocker_depth(cli: &Cli, args: &TaskBlockerDepthArgs) -> Result<()> {
     let mut conn = connect().await?;
     let entity = conn.resolve_entity(&args.slug).await?;
 
-    let path = conn.critical_path(entity.id().as_str()).await?;
+    let depth = conn.blocker_depth(entity.id().as_str()).await?;
 
     if cli.json {
-        let items: Vec<_> = path.iter().map(EntityId::as_str).collect();
-        output_json(&items);
-    } else if path.is_empty() {
-        println!("No dependency chain found for: {}", entity.name());
+        output_json(&serde_json::json!({ "depth": depth }));
+    } else if depth == 0 {
+        println!("{}: no upstream blockers", entity.name());
     } else {
-        let label = if path.len() == 1 { "step" } else { "steps" };
-        println!("Critical path ({} {label}):", path.len());
-        // Batch-fetch all path entity names in one query (avoids N+1)
-        let path_ids: Vec<String> = path.iter().map(ToString::to_string).collect();
-        let name_map = conn.batch_get_entities(&path_ids).await?;
-        for (i, id) in path.iter().enumerate() {
-            let name = name_map
-                .get(id.as_str())
-                .map_or_else(|| id.to_string(), |e| e.name().to_string());
-            println!("  {}. {}", i + 1, name);
-        }
+        let label = if depth == 1 { "layer" } else { "layers" };
+        println!("{}: blocker depth {} ({label} of unclosed prerequisites)", entity.name(), depth);
     }
     Ok(())
 }

@@ -704,7 +704,7 @@ mod tests {
     fn test_build_system_prompt() {
         let bundle = ContextBundle {
             summaries: vec!["Module: auth".to_string(), "Depends: session".to_string()],
-            critical_path: vec!["fix-auth".to_string(), "deploy".to_string()],
+            blocker_depth: 2,
             impact_score: 3,
             upstream_artifacts: vec!["[completed] setup-db: schema ready".to_string()],
         };
@@ -718,8 +718,7 @@ mod tests {
         assert!(prompt.contains("fix-bug"));
         assert!(prompt.contains("Fix the login validation bug"));
         assert!(prompt.contains("Module: auth"));
-        assert!(prompt.contains("CRITICAL PATH"));
-        assert!(prompt.contains("fix-auth"));
+        assert!(prompt.contains("Blocker depth: 2"));
         assert!(prompt.contains("UPSTREAM RESULTS"));
         assert!(prompt.contains("setup-db"));
         assert!(prompt.contains("3 downstream"));
@@ -729,7 +728,7 @@ mod tests {
     fn test_build_system_prompt_no_context() {
         let bundle = ContextBundle {
             summaries: vec![],
-            critical_path: vec![],
+            blocker_depth: 0,
             impact_score: 0,
             upstream_artifacts: vec![],
         };
@@ -738,7 +737,7 @@ mod tests {
         assert!(prompt.contains("Reviewer agent"));
         assert!(prompt.contains("review-pr"));
         assert!(!prompt.contains("CONTEXT"));
-        assert!(!prompt.contains("CRITICAL PATH"));
+        assert!(!prompt.contains("Blocker depth"));
         assert!(!prompt.contains("UPSTREAM RESULTS"));
     }
 

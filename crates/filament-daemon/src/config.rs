@@ -13,6 +13,8 @@ pub struct ServeConfig {
     pub pid_path: PathBuf,
     /// Interval in seconds between stale reservation cleanup sweeps.
     pub cleanup_interval_secs: u64,
+    /// Idle timeout in seconds (0 = never auto-shutdown).
+    pub idle_timeout_secs: u64,
 }
 
 impl ServeConfig {
@@ -26,6 +28,7 @@ impl ServeConfig {
             db_path: runtime_dir.join("filament.db"),
             pid_path: runtime_dir.join("filament.pid"),
             cleanup_interval_secs: cfg.resolve_cleanup_interval_secs(),
+            idle_timeout_secs: cfg.resolve_idle_timeout_secs(),
         }
     }
 }

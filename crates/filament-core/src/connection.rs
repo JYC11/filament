@@ -48,6 +48,15 @@ impl FilamentConnection {
             if let Ok(stream) = UnixStream::connect(&sock_path).await {
                 return Ok(Self::Socket(DaemonClient::from_stream(stream)));
             }
+            // Socket file exists but can't connect — stale, remove it
+            let _ = std::fs::remove_file(&sock_path);
+        }
+
+        // Try auto-starting daemon (unless disabled via env var)
+        if std::env::var("FILAMENT_NO_AUTO_START").is_err() {
+            if let Some(conn) = Self::try_auto_start(project_root, &sock_path).await {
+                return Ok(conn);
+            }
         }
 
         // Fall back to direct mode
@@ -60,6 +69,38 @@ impl FilamentConnection {
         })?;
         let pool = init_pool(db_str).await?;
         Ok(Self::Direct(FilamentStore::new(pool)))
+    }
+
+    /// Try to auto-start the daemon as a background process and connect.
+    /// Returns `None` if spawn fails or connection can't be established.
+    async fn try_auto_start(project_root: &Path, sock_path: &Path) -> Option<Self> {
+        // Find the filament binary
+        let exe = std::env::current_exe().ok()?;
+
+        // Spawn `filament serve` as a detached background process
+        let child = std::process::Command::new(&exe)
+            .arg("serve")
+            .current_dir(project_root)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+
+        if child.is_err() {
+            return None;
+        }
+
+        // Wait for socket to appear (up to 3 seconds)
+        for _ in 0..30 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if sock_path.exists() {
+                if let Ok(stream) = UnixStream::connect(sock_path).await {
+                    return Some(Self::Socket(DaemonClient::from_stream(stream)));
+                }
+            }
+        }
+
+        None
     }
 
     /// Open a direct connection to a specific database path.
@@ -519,14 +560,14 @@ impl FilamentConnection {
         }
     }
 
-    pub async fn critical_path(&mut self, entity_id: &str) -> Result<Vec<EntityId>> {
+    pub async fn blocker_depth(&mut self, entity_id: &str) -> Result<usize> {
         match self {
             Self::Direct(s) => {
                 let mut graph = KnowledgeGraph::new();
                 graph.hydrate(s.pool()).await?;
-                Ok(graph.critical_path(entity_id))
+                Ok(graph.blocker_depth(entity_id))
             }
-            Self::Socket(c) => c.critical_path(entity_id).await,
+            Self::Socket(c) => c.blocker_depth(entity_id).await,
         }
     }
 

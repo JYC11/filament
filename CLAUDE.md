@@ -138,7 +138,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 | Concern | Old way (.md files) | New way (filament CLI) |
 |---------|--------------------|-----------------------|
 | Plans & phases | `.plan/filament-v1.md` | `filament list --type plan` |
-| Tasks & deps | Manual tracking in MEMORY.md | `filament task ready`, `filament task critical-path` |
+| Tasks & deps | Manual tracking in MEMORY.md | `filament task ready`, `filament task blocker-depth` |
 | Architecture | `.plan/adr/*.md` | `filament list --type doc`, `filament context --around <adr>` |
 | Code structure | This file's Project Layout section | `filament list --type module`, `filament context --around <module>` |
 | What's next | MEMORY.md "Next Steps" | `filament task ready` |

@@ -89,7 +89,7 @@ pub enum Method {
 
     // Graph operations
     ReadyTasks,
-    CriticalPath,
+    BlockerDepth,
     ImpactScore,
     BatchImpactScores,
     ContextQuery,

@@ -16,6 +16,7 @@ use crate::handler;
 ///
 /// Panics if response serialization fails (infallible for well-formed `Response`).
 pub async fn handle_connection(stream: UnixStream, state: Arc<SharedState>) {
+    state.touch();
     let (reader, mut writer) = stream.into_split();
     let mut lines = BufReader::new(reader).lines();
 
@@ -76,6 +77,7 @@ pub async fn handle_connection(stream: UnixStream, state: Arc<SharedState>) {
             return;
         }
 
+        state.touch();
         debug!(method = ?request.method, id = %request.id, "handling request");
         let response = handler::dispatch(request, &state).await;
         let json = serde_json::to_string(&response).expect("infallible");

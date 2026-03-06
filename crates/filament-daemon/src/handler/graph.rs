@@ -21,13 +21,13 @@ pub async fn ready_tasks(
     Ok(serde_json::to_value(&tasks).expect("infallible"))
 }
 
-pub async fn critical_path(
+pub async fn blocker_depth(
     params: serde_json::Value,
     state: &Arc<SharedState>,
 ) -> Result<serde_json::Value> {
     let p: EntityIdParam = parse_params(params)?;
-    let path = state.graph_read().await.critical_path(&p.entity_id);
-    Ok(serde_json::to_value(&path).expect("infallible"))
+    let depth = state.graph_read().await.blocker_depth(&p.entity_id);
+    Ok(serde_json::json!({ "depth": depth }))
 }
 
 pub async fn impact_score(

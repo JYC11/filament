@@ -8,8 +8,9 @@ fn agent_dispatch_requires_daemon() {
     let dir = init_project();
     let slug = add_task(&dir, "test-dispatch", &["--summary", "Test dispatch"]);
 
-    // Without a daemon running, dispatch should fail with a clear error
+    // Without a daemon running (and auto-start disabled), dispatch should fail
     filament(&dir)
+        .env("FILAMENT_NO_AUTO_START", "1")
         .args(["agent", "dispatch", &slug, "--role", "coder"])
         .assert()
         .failure()
@@ -46,6 +47,7 @@ fn agent_dispatch_all_requires_daemon() {
     let dir = init_project();
 
     filament(&dir)
+        .env("FILAMENT_NO_AUTO_START", "1")
         .args(["agent", "dispatch-all", "--role", "coder"])
         .assert()
         .failure()

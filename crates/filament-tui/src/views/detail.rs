@@ -6,13 +6,12 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use std::collections::HashMap;
 
 use filament_core::models::{Entity, EntityType, Event, LessonFields, Relation};
-use filament_core::types::EntityId;
 
 pub struct DetailData {
     pub entity: Entity,
     pub relations: Vec<Relation>,
     pub events: Vec<Event>,
-    pub critical_path: Vec<EntityId>,
+    pub blocker_depth: usize,
     /// Maps entity ID -> "slug name" for human-readable display of related entities.
     pub name_map: HashMap<String, String>,
 }
@@ -87,15 +86,14 @@ fn build_detail_lines(data: &DetailData) -> Vec<Line<'static>> {
         lines.push(Line::from(""));
     }
 
-    // Critical path (tasks only)
-    if entity.entity_type() == EntityType::Task && !data.critical_path.is_empty() {
-        lines.push(section_header("Critical Path"));
-        let chain: Vec<String> = data
-            .critical_path
-            .iter()
-            .map(|id| resolve_name(&data.name_map, id.as_str()))
-            .collect();
-        lines.push(Line::from(format!("  {}", chain.join(" -> "))));
+    // Blocker depth (tasks only)
+    if entity.entity_type() == EntityType::Task && data.blocker_depth > 0 {
+        lines.push(section_header("Blocker Depth"));
+        let label = if data.blocker_depth == 1 { "layer" } else { "layers" };
+        lines.push(Line::from(format!(
+            "  {} {label} of unclosed prerequisites",
+            data.blocker_depth
+        )));
         lines.push(Line::from(""));
     }
 

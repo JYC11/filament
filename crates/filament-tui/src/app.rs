@@ -534,6 +534,11 @@ impl App {
                 config.resolve_cleanup_interval_secs().to_string(),
                 source_label(config.cleanup_interval_secs.is_some()),
             ),
+            (
+                "idle_timeout_secs".to_string(),
+                config.resolve_idle_timeout_secs().to_string(),
+                source_label(config.idle_timeout_secs.is_some()),
+            ),
         ];
     }
 
@@ -741,13 +746,13 @@ impl App {
             .await
             .unwrap_or_default();
 
-        let critical_path = if entity.entity_type() == EntityType::Task {
+        let blocker_depth = if entity.entity_type() == EntityType::Task {
             self.conn
-                .critical_path(&entity_id)
+                .blocker_depth(&entity_id)
                 .await
-                .unwrap_or_default()
+                .unwrap_or(0)
         } else {
-            Vec::new()
+            0
         };
 
         // Collect all referenced entity IDs for batch name resolution
@@ -759,9 +764,6 @@ impl App {
             if rel.target_id.as_str() != entity_id {
                 ref_ids.push(rel.target_id.to_string());
             }
-        }
-        for cp_id in &critical_path {
-            ref_ids.push(cp_id.to_string());
         }
         ref_ids.sort_unstable();
         ref_ids.dedup();
@@ -782,7 +784,7 @@ impl App {
             entity,
             relations,
             events,
-            critical_path,
+            blocker_depth,
             name_map,
         });
         self.detail_scroll = 0;

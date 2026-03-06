@@ -69,14 +69,14 @@ async fn ready_tasks_excludes_blocked_nodes() {
 }
 
 // ---------------------------------------------------------------------------
-// critical_path
+// blocker_depth
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn critical_path_follows_upstream_blocks() {
+async fn blocker_depth_follows_upstream_blocks() {
     let store = test_db().await;
 
-    // A blocks B, B blocks C → C's upstream chain is C ← B ← A
+    // A blocks B, B blocks C → C has 2 layers of upstream blockers
     let (_, _, c_id) = store
         .with_transaction(|conn| {
             Box::pin(async move {
@@ -94,13 +94,11 @@ async fn critical_path_follows_upstream_blocks() {
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(store.pool()).await.unwrap();
 
-    // Query from C (the most-blocked task): upstream is C ← B ← A
-    let path = graph.critical_path(c_id.as_str());
-    assert_eq!(path.len(), 3); // C -> B -> A (upstream prerequisites)
+    assert_eq!(graph.blocker_depth(c_id.as_str()), 2);
 }
 
 #[tokio::test]
-async fn critical_path_follows_depends_on() {
+async fn blocker_depth_follows_depends_on() {
     let store = test_db().await;
 
     // A depends_on B, B depends_on C (A needs B, B needs C)
@@ -121,17 +119,17 @@ async fn critical_path_follows_depends_on() {
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(store.pool()).await.unwrap();
 
-    let path = graph.critical_path(a_id.as_str());
-    assert_eq!(path.len(), 3); // A -> B -> C (upstream chain)
+    assert_eq!(graph.blocker_depth(a_id.as_str()), 2);
 }
 
 #[tokio::test]
-async fn critical_path_mixed_blocks_and_depends_on() {
+async fn blocker_depth_mixed_blocks_and_depends_on() {
     let store = test_db().await;
 
     // B blocks A (incoming blocks → B is upstream of A)
     // A depends_on C (outgoing depends_on → C is upstream of A)
-    // Both B and C are upstream of A, so critical path from A should find the longer chain.
+    // C depends_on D (D is upstream of C)
+    // Max depth from A: A→C→D = depth 2, A→B = depth 1 → max is 2
     let a_id = store
         .with_transaction(|conn| {
             Box::pin(async move {
@@ -139,11 +137,8 @@ async fn critical_path_mixed_blocks_and_depends_on() {
                 let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
                 let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
                 let (d, _) = create_entity(conn, &task_req("D", 1)).await?;
-                // B blocks A (B is upstream of A)
                 create_relation(conn, &blocks_req(b.as_str(), a.as_str())).await?;
-                // A depends_on C (C is upstream of A)
                 create_relation(conn, &depends_on_req(a.as_str(), c.as_str())).await?;
-                // C depends_on D (D is upstream of C)
                 create_relation(conn, &depends_on_req(c.as_str(), d.as_str())).await?;
                 Ok(a)
             })
@@ -154,17 +149,15 @@ async fn critical_path_mixed_blocks_and_depends_on() {
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(store.pool()).await.unwrap();
 
-    let path = graph.critical_path(a_id.as_str());
-    // Longest upstream chain: A → C → D (length 3), vs A → B (length 2)
-    assert_eq!(path.len(), 3);
+    assert_eq!(graph.blocker_depth(a_id.as_str()), 2);
 }
 
 #[tokio::test]
-async fn critical_path_does_not_follow_outgoing_blocks() {
+async fn blocker_depth_does_not_follow_outgoing_blocks() {
     let store = test_db().await;
 
     // A blocks B (outgoing blocks from A — B is downstream, NOT upstream)
-    // So critical_path(A) should NOT follow A→B.
+    // So blocker_depth(A) should be 0 (no upstream blockers).
     let a_id = store
         .with_transaction(|conn| {
             Box::pin(async move {
@@ -180,9 +173,7 @@ async fn critical_path_does_not_follow_outgoing_blocks() {
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(store.pool()).await.unwrap();
 
-    let path = graph.critical_path(a_id.as_str());
-    // A has no upstream prerequisites, so path is just [A]
-    assert_eq!(path.len(), 1);
+    assert_eq!(graph.blocker_depth(a_id.as_str()), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -343,11 +334,11 @@ async fn context_traverses_incoming_edges() {
 }
 
 // ---------------------------------------------------------------------------
-// critical_path safety with cycles
+// blocker_depth safety with cycles
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn critical_path_safe_with_cycle() {
+async fn blocker_depth_safe_with_cycle() {
     let store = test_db().await;
 
     let a_id = store
@@ -375,11 +366,9 @@ async fn critical_path_safe_with_cycle() {
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(store.pool()).await.unwrap();
 
-    // Should return a path without stack overflow, even with a cycle
-    let path = graph.critical_path(a_id.as_str());
-    assert!(!path.is_empty());
-    // Path length is bounded (can't loop forever)
-    assert!(path.len() <= graph.node_count());
+    // BFS with visited set terminates safely even with cycles
+    let depth = graph.blocker_depth(a_id.as_str());
+    assert!(depth <= graph.node_count());
 }
 
 // ---------------------------------------------------------------------------
@@ -863,7 +852,7 @@ async fn degree_centrality_disconnected_components() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn critical_path_nonexistent_entity() {
+async fn blocker_depth_nonexistent_entity() {
     let store = test_db().await;
     store
         .with_transaction(|conn| {
@@ -878,8 +867,7 @@ async fn critical_path_nonexistent_entity() {
     let mut graph = KnowledgeGraph::new();
     graph.hydrate(store.pool()).await.unwrap();
 
-    let path = graph.critical_path("nonexistent-id");
-    assert!(path.is_empty());
+    assert_eq!(graph.blocker_depth("nonexistent-id"), 0);
 }
 
 #[tokio::test]
@@ -1071,7 +1059,7 @@ async fn context_bundle_nonexistent_entity() {
     let graph = KnowledgeGraph::new();
     let bundle = graph.build_context_bundle("nonexistent", 2);
     assert!(bundle.summaries.is_empty());
-    assert!(bundle.critical_path.is_empty());
+    assert_eq!(bundle.blocker_depth, 0);
     assert_eq!(bundle.impact_score, 0);
     assert!(bundle.upstream_artifacts.is_empty());
 }
@@ -1095,11 +1083,11 @@ async fn context_bundle_prompt_lines_empty_for_isolated_node() {
 
     let bundle = graph.build_context_bundle(a_id.as_str(), 2);
     assert!(bundle.summaries.is_empty());
+    assert_eq!(bundle.blocker_depth, 0);
     assert_eq!(bundle.impact_score, 0);
     let lines = bundle.to_prompt_lines();
-    // Critical path includes self, so prompt lines has the critical path section
-    assert_eq!(lines.len(), 2); // "--- CRITICAL PATH ---" + "Isolated"
-    assert!(lines[0].contains("CRITICAL PATH"));
+    // Isolated node has no blockers, no context, no artifacts → empty prompt
+    assert!(lines.is_empty());
 }
 
 #[tokio::test]

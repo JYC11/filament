@@ -62,7 +62,7 @@ fn method_enum_all_variants_serialize() {
         Method::FinishAgentRun,
         Method::ListRunningAgents,
         Method::ReadyTasks,
-        Method::CriticalPath,
+        Method::BlockerDepth,
         Method::ImpactScore,
         Method::ContextQuery,
         Method::CheckCycle,

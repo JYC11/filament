@@ -88,6 +88,7 @@ async fn start_test_daemon(
         db_path,
         pid_path,
         cleanup_interval_secs: 3600,
+        idle_timeout_secs: 0,
     };
 
     // Pass dispatch config directly — no env var contamination
