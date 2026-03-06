@@ -1,0 +1,106 @@
+{
+  "name": "Infrastructure & Governance",
+  "description": "DevOps-focused scenario: config, seed, audit, hooks, graph analytics, export/import round-trip. 2 agents, 4 tasks.",
+
+  "modules": [
+    {"name": "platform", "summary": "Internal developer platform — CI/CD, monitoring, secrets management"},
+    {"name": "docs-site", "summary": "Documentation site — generated from source, versioned, searchable"}
+  ],
+
+  "agents": [
+    {"name": "rex", "summary": "DevOps engineer — platform ownership, CI/CD, infrastructure-as-code"},
+    {"name": "sam", "summary": "Technical writer — documentation, runbooks, onboarding guides"}
+  ],
+
+  "tasks": [
+    {"name": "setup-ci", "summary": "Configure CI/CD pipeline: GitHub Actions, build matrix, test gates, deploy triggers", "priority": 0, "blocks": ["setup-monitoring"]},
+    {"name": "setup-monitoring", "summary": "Prometheus + Grafana: service dashboards, alerting rules, PagerDuty integration", "priority": 1, "blocks": ["write-runbook"]},
+    {"name": "write-runbook", "summary": "Production runbook: incident response, rollback procedures, escalation matrix", "priority": 1, "blocks": ["governance-audit"]},
+    {"name": "governance-audit", "summary": "Final governance audit: verify hooks, audit trail, config, export integrity", "priority": 0, "blocks": []}
+  ],
+
+  "docs": [
+    {"name": "platform-adr", "summary": "Architecture decision record: why GitHub Actions over Jenkins, why Prometheus over Datadog", "relates_to": ["platform"]}
+  ],
+
+  "plans": [
+    {"name": "infra-plan", "summary": "Infrastructure & Governance setup — 4 tasks across 2 modules", "owns": ["setup-ci", "setup-monitoring", "write-runbook", "governance-audit"]}
+  ],
+
+  "extra_relations": [
+    {"source": "docs-site", "type": "depends_on", "target": "platform"}
+  ],
+
+  "cycles": [
+    {
+      "title": "Project bootstrap with config and hooks",
+      "scene": "Rex sets up the project infrastructure: config file, git hooks, and initial CI pipeline.",
+      "actions": [
+        {"type": "query", "command": "config show"},
+        {"type": "query", "command": "hook install"},
+        {"type": "query", "command": "hook check"},
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "setup-ci", "agent": "rex"},
+        {"type": "start", "task": "setup-ci"},
+        {"type": "reserve", "glob": ".github/**", "agent": "rex", "exclusive": true, "ttl": 3600},
+        {"type": "mkdir", "path": ".github/workflows"},
+        {"type": "write_file", "path": ".github/workflows/ci.txt", "content": "CI Pipeline Configuration\n=========================\nTrigger: push to main, PR to main\nMatrix: [ubuntu-latest, macos-latest]\nSteps:\n  1. Checkout\n  2. Setup toolchain\n  3. Cache dependencies\n  4. Lint (clippy)\n  5. Test (all crates)\n  6. Build release\n  7. Upload artifacts\n\nDeploy trigger: tag v*\nDeploy target: staging (auto), production (manual approval)", "agent": "rex"},
+        {"type": "query", "command": "hook check"},
+        {"type": "release", "glob": ".github/**", "agent": "rex"},
+        {"type": "close", "task": "setup-ci"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Monitoring setup with reservation enforcement",
+      "scene": "Rex builds monitoring while Sam starts writing docs. Hook check verifies reservation enforcement.",
+      "actions": [
+        {"type": "assign", "task": "setup-monitoring", "agent": "rex"},
+        {"type": "start", "task": "setup-monitoring"},
+        {"type": "reserve", "glob": "monitoring/**", "agent": "rex", "exclusive": true, "ttl": 3600},
+        {"type": "mkdir", "path": "monitoring"},
+        {"type": "write_file", "path": "monitoring/alerts.txt", "content": "Alerting Rules\n==============\nCRITICAL (PagerDuty):\n  - error_rate > 5% for 5min\n  - p99_latency > 2s for 10min\n  - service_down for 1min\n\nWARNING (Slack):\n  - error_rate > 1% for 15min\n  - p99_latency > 1s for 30min\n  - disk_usage > 80%\n  - memory_usage > 90%\n\nINFO (Dashboard only):\n  - deploy completed\n  - config change detected\n  - new service registered", "agent": "rex"},
+        {"type": "reserve", "glob": "monitoring/**", "agent": "sam", "exclusive": true, "ttl": 3600},
+        {"type": "query", "command": "reservations"},
+        {"type": "release", "glob": "monitoring/**", "agent": "rex"},
+        {"type": "close", "task": "setup-monitoring"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Runbook authoring with cross-references",
+      "scene": "Sam writes the production runbook, reading Rex's monitoring config for accuracy.",
+      "actions": [
+        {"type": "assign", "task": "write-runbook", "agent": "sam"},
+        {"type": "start", "task": "write-runbook"},
+        {"type": "read_file", "path": "monitoring/alerts.txt", "agent": "sam"},
+        {"type": "read_file", "path": ".github/workflows/ci.txt", "agent": "sam"},
+        {"type": "mkdir", "path": "docs/runbooks"},
+        {"type": "write_file", "path": "docs/runbooks/incident-response.txt", "content": "Incident Response Runbook\n=========================\n\n1. ACKNOWLEDGE (< 5min)\n   - Ack PagerDuty alert\n   - Join #incident Slack channel\n   - Announce: \"Investigating [alert name]\"\n\n2. TRIAGE (< 15min)\n   - Check Grafana dashboard for affected service\n   - Check error logs: kubectl logs -f deployment/[service]\n   - Determine severity: S1 (customer-facing) / S2 (degraded) / S3 (internal)\n\n3. MITIGATE (< 30min)\n   - If deploy-related: rollback via CI (see ci.txt)\n   - If load-related: scale horizontally\n   - If data-related: enable circuit breaker\n\n4. RESOLVE\n   - Verify metrics return to baseline\n   - Update status page\n   - Schedule post-mortem within 48h\n\n5. POST-MORTEM\n   - Blameless RCA\n   - Capture lessons in filament: fl lesson add\n   - Update runbook if gap found", "agent": "sam"},
+        {"type": "message", "from": "sam", "to": "rex", "body": "Runbook written to docs/runbooks/incident-response.txt. References your alerting thresholds. Please review the rollback procedure section.", "msg_type": "artifact"},
+        {"type": "close", "task": "write-runbook"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Governance audit — full infrastructure verification",
+      "scene": "Rex runs the governance audit: graph analytics, audit trail, config verification, and export/import round-trip.",
+      "actions": [
+        {"type": "assign", "task": "governance-audit", "agent": "rex"},
+        {"type": "start", "task": "governance-audit"},
+        {"type": "query", "command": "pagerank"},
+        {"type": "query", "command": "degree"},
+        {"type": "query", "command": "context --around <setup-monitoring> --depth 2"},
+        {"type": "query", "command": "config show"},
+        {"type": "query", "command": "list --type task --status all"},
+        {"type": "query", "command": "list --type doc"},
+        {"type": "query", "command": "list --type module"},
+        {"type": "query", "command": "export --output /tmp/fl-sim/snapshot.json"},
+        {"type": "query", "command": "hook check"},
+        {"type": "close", "task": "governance-audit"},
+        {"type": "query", "command": "task list --status all"},
+        {"type": "query", "command": "task ready"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+{
+  "name": "Microservices Migration",
+  "description": "Monolith decomposed into 5 microservices with diamond dependency graph, 6 agents, 15 tasks, daemon mode simulation",
+
+  "modules": [
+    {"name": "monolith", "summary": "Legacy monolith application being decomposed"},
+    {"name": "user-service", "summary": "User management microservice — registration, profiles, authentication"},
+    {"name": "order-service", "summary": "Order processing microservice — cart, checkout, order history"},
+    {"name": "payment-service", "summary": "Payment processing microservice — Stripe integration, invoicing, refunds"},
+    {"name": "notification-service", "summary": "Notification microservice — email, SMS, push notifications"},
+    {"name": "api-gateway", "summary": "API gateway — routing, rate limiting, auth token validation"}
+  ],
+
+  "agents": [
+    {"name": "alice", "summary": "Backend developer — owns user and order services"},
+    {"name": "bob", "summary": "Payments specialist — owns payment service integration"},
+    {"name": "carol", "summary": "Frontend/API developer — API gateway implementation"},
+    {"name": "dave", "summary": "Infrastructure engineer — owns infra, monitoring, deployments"},
+    {"name": "eve", "summary": "QA engineer/reviewer — security audits, integration testing"},
+    {"name": "frank", "summary": "Tech lead/planner — architecture decisions, post-mortems"}
+  ],
+
+  "tasks": [
+    {"name": "arch-design", "summary": "Design microservice architecture: service boundaries, API contracts, data ownership", "priority": 0, "blocks": ["user-svc-impl", "order-svc-impl", "payment-svc-impl"]},
+    {"name": "db-migration-plan", "summary": "Plan database decomposition: schema splits, data migration strategy, dual-write period", "priority": 0, "blocks": ["user-svc-impl", "order-svc-impl", "payment-svc-impl"]},
+    {"name": "infra-setup", "summary": "Kubernetes cluster, service mesh, container registry, CI/CD pipelines", "priority": 1, "blocks": ["monitoring-setup"]},
+    {"name": "user-svc-impl", "summary": "Implement user service: gRPC API, PostgreSQL, user CRUD, profile management", "priority": 1, "blocks": ["notification-svc-impl", "api-gateway-impl"]},
+    {"name": "order-svc-impl", "summary": "Implement order service: gRPC API, order lifecycle, inventory checks", "priority": 1, "blocks": ["api-gateway-impl"]},
+    {"name": "payment-svc-impl", "summary": "Implement payment service: Stripe SDK, webhook handlers, idempotent charges", "priority": 1, "blocks": ["security-audit", "api-gateway-impl"]},
+    {"name": "notification-svc-impl", "summary": "Implement notification service: email templates, SMS gateway, push via FCM", "priority": 2, "blocks": []},
+    {"name": "monitoring-setup", "summary": "Prometheus + Grafana dashboards, alerting rules, distributed tracing with Jaeger", "priority": 1, "blocks": ["integration-tests"]},
+    {"name": "api-gateway-impl", "summary": "Implement API gateway: route aggregation, auth middleware, rate limiting, circuit breakers", "priority": 1, "blocks": ["integration-tests"]},
+    {"name": "security-audit", "summary": "Security review: OWASP checklist, penetration testing, dependency audit, secrets management", "priority": 1, "blocks": ["integration-tests"]},
+    {"name": "integration-tests", "summary": "End-to-end test suite: service-to-service calls, failure scenarios, load testing", "priority": 1, "blocks": ["canary-deploy"]},
+    {"name": "load-tests", "summary": "Performance testing: baseline metrics, stress testing, capacity planning", "priority": 2, "blocks": ["canary-deploy"]},
+    {"name": "canary-deploy", "summary": "Canary deployment: 5% traffic split, monitoring, rollback criteria", "priority": 0, "blocks": ["full-deploy"]},
+    {"name": "full-deploy", "summary": "Full production deployment: traffic migration, monolith decommission plan", "priority": 0, "blocks": ["post-mortem-doc"]},
+    {"name": "post-mortem-doc", "summary": "Migration post-mortem: lessons learned, performance comparisons, architecture decisions log", "priority": 2, "blocks": []}
+  ],
+
+  "docs": [
+    {"name": "service-contracts", "summary": "gRPC proto definitions and REST API specs for all microservices", "relates_to": ["api-gateway"]},
+    {"name": "migration-runbook", "summary": "Step-by-step runbook for production cutover: pre-checks, rollback procedures, communication plan", "relates_to": ["monolith"]}
+  ],
+
+  "plans": [
+    {"name": "migration-plan", "summary": "Microservices Migration — decompose monolith into 5 services across 15 tasks", "owns": ["arch-design", "db-migration-plan", "infra-setup", "user-svc-impl", "order-svc-impl", "payment-svc-impl", "notification-svc-impl", "monitoring-setup", "api-gateway-impl", "security-audit", "integration-tests", "load-tests", "canary-deploy", "full-deploy", "post-mortem-doc"]}
+  ],
+
+  "extra_relations": [
+    {"source": "user-service", "type": "depends_on", "target": "monolith"},
+    {"source": "order-service", "type": "depends_on", "target": "monolith"},
+    {"source": "payment-service", "type": "depends_on", "target": "monolith"},
+    {"source": "api-gateway", "type": "depends_on", "target": "user-service"},
+    {"source": "api-gateway", "type": "depends_on", "target": "order-service"},
+    {"source": "api-gateway", "type": "depends_on", "target": "payment-service"}
+  ],
+
+  "cycles": [
+    {
+      "title": "Architecture and planning phase",
+      "scene": "Frank leads architecture design while Alice plans the database decomposition and Dave sets up infrastructure.",
+      "actions": [
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "arch-design", "agent": "frank"},
+        {"type": "assign", "task": "db-migration-plan", "agent": "alice"},
+        {"type": "assign", "task": "infra-setup", "agent": "dave"},
+        {"type": "start", "task": "arch-design"},
+        {"type": "start", "task": "db-migration-plan"},
+        {"type": "start", "task": "infra-setup"},
+        {"type": "reserve", "glob": "docs/architecture/**", "agent": "frank", "exclusive": true, "ttl": 3600},
+        {"type": "reserve", "glob": "migrations/**", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "reserve", "glob": "infra/**", "agent": "dave", "exclusive": true, "ttl": 3600}
+      ]
+    },
+    {
+      "title": "Phase 1 completes, service implementation begins",
+      "scene": "Architecture and DB plans are done. Three service implementations unblock simultaneously — the diamond dependency begins.",
+      "actions": [
+        {"type": "message", "from": "frank", "to": "alice", "body": "Architecture finalized. Service boundaries: user-svc owns users+auth, order-svc owns orders+inventory, payment-svc owns charges+refunds. All communicate via gRPC. See service-contracts doc.", "msg_type": "artifact"},
+        {"type": "message", "from": "frank", "to": "bob", "body": "Payment service: use Stripe SDK with idempotency keys. Webhook signature verification required. See security-audit checklist.", "msg_type": "text"},
+        {"type": "release", "glob": "docs/architecture/**", "agent": "frank"},
+        {"type": "close", "task": "arch-design"},
+        {"type": "message", "from": "alice", "to": "frank", "body": "DB migration plan ready. 3-phase approach: (1) dual-write to new schemas, (2) backfill historical data, (3) cut over reads. Zero-downtime target.", "msg_type": "artifact"},
+        {"type": "release", "glob": "migrations/**", "agent": "alice"},
+        {"type": "close", "task": "db-migration-plan"},
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "user-svc-impl", "agent": "alice"},
+        {"type": "assign", "task": "order-svc-impl", "agent": "alice"},
+        {"type": "assign", "task": "payment-svc-impl", "agent": "bob"},
+        {"type": "start", "task": "user-svc-impl"},
+        {"type": "start", "task": "order-svc-impl"},
+        {"type": "start", "task": "payment-svc-impl"}
+      ]
+    },
+    {
+      "title": "Reservation conflict on shared proto",
+      "scene": "Bob reserves the shared proto file. Alice needs it too — conflict!",
+      "actions": [
+        {"type": "reserve", "glob": "proto/shared.proto", "agent": "bob", "exclusive": true, "ttl": 3600},
+        {"type": "reserve", "glob": "proto/shared.proto", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "escalate", "from": "alice", "body": "BLOCKED: proto/shared.proto reserved by Bob. I need to add user service message types. Can we coordinate?", "msg_type": "blocker"},
+        {"type": "query", "command": "escalations"},
+        {"type": "message", "from": "frank", "to": "alice", "body": "Bob will release proto/shared.proto after adding payment types. Coordinate directly — he should be done within the hour.", "msg_type": "text"},
+        {"type": "release", "glob": "proto/shared.proto", "agent": "bob"},
+        {"type": "reserve", "glob": "proto/shared.proto", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "release", "glob": "proto/shared.proto", "agent": "alice"}
+      ]
+    },
+    {
+      "title": "PCI compliance blocker on payments",
+      "scene": "Bob discovers the payment service needs PCI DSS compliance review before proceeding.",
+      "actions": [
+        {"type": "escalate", "from": "bob", "body": "BLOCKED: Payment service requires PCI DSS Level 1 compliance. Need legal/compliance team sign-off on our Stripe integration approach. Cannot store card data even temporarily.", "msg_type": "blocker"},
+        {"type": "block", "task": "payment-svc-impl", "reason": "PCI DSS compliance review required"},
+        {"type": "query", "command": "escalations"},
+        {"type": "message", "from": "user", "to": "bob", "body": "PCI compliance approved. Use Stripe Elements (client-side tokenization) — no card data touches our servers. Compliance team confirmed this qualifies as SAQ-A.", "msg_type": "text"},
+        {"type": "resolve", "task": "payment-svc-impl"}
+      ]
+    },
+    {
+      "title": "Services complete, converging on gateway",
+      "scene": "All three services finish. The diamond converges — api-gateway-impl is now unblocked.",
+      "actions": [
+        {"type": "close", "task": "user-svc-impl"},
+        {"type": "close", "task": "order-svc-impl"},
+        {"type": "message", "from": "bob", "to": "eve", "body": "Payment service complete. Stripe integration with idempotency keys, webhook verification, and refund handling. Ready for security audit.", "msg_type": "artifact"},
+        {"type": "close", "task": "payment-svc-impl"},
+        {"type": "release", "glob": "infra/**", "agent": "dave"},
+        {"type": "close", "task": "infra-setup"},
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "api-gateway-impl", "agent": "carol"},
+        {"type": "assign", "task": "monitoring-setup", "agent": "dave"},
+        {"type": "assign", "task": "security-audit", "agent": "eve"},
+        {"type": "assign", "task": "notification-svc-impl", "agent": "dave"},
+        {"type": "start", "task": "api-gateway-impl"},
+        {"type": "start", "task": "monitoring-setup"},
+        {"type": "start", "task": "security-audit"},
+        {"type": "start", "task": "notification-svc-impl"}
+      ]
+    },
+    {
+      "title": "Security audit findings and resolution",
+      "scene": "Eve finds security issues during the audit that need fixing before integration tests.",
+      "actions": [
+        {"type": "message", "from": "eve", "to": "bob", "body": "Security audit finding: payment webhook endpoint lacks rate limiting. An attacker could replay webhooks. Add signature timestamp validation (reject >5min old).", "msg_type": "text"},
+        {"type": "message", "from": "eve", "to": "alice", "body": "Security audit finding: user service password reset token has no expiry. Add 1-hour TTL.", "msg_type": "text"},
+        {"type": "message", "from": "eve", "to": "frank", "body": "Security audit complete. 2 findings (both medium severity, fixes in progress). No critical issues. OWASP top 10 checklist passed.", "msg_type": "artifact"},
+        {"type": "close", "task": "security-audit"},
+        {"type": "close", "task": "monitoring-setup"},
+        {"type": "close", "task": "notification-svc-impl"},
+        {"type": "close", "task": "api-gateway-impl"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Integration testing and load testing",
+      "scene": "Eve runs integration tests while Dave runs load tests in parallel.",
+      "actions": [
+        {"type": "assign", "task": "integration-tests", "agent": "eve"},
+        {"type": "assign", "task": "load-tests", "agent": "dave"},
+        {"type": "start", "task": "integration-tests"},
+        {"type": "start", "task": "load-tests"},
+        {"type": "message", "from": "eve", "to": "frank", "body": "Integration tests: 147/150 passing. 3 failures in order-payment flow — race condition in webhook processing. Filing fix request.", "msg_type": "artifact"},
+        {"type": "message", "from": "dave", "to": "frank", "body": "Load test results: 2400 req/s sustained (target: 2000). P99 latency 120ms. Memory stable at 512MB per service. Ready for production.", "msg_type": "artifact"},
+        {"type": "close", "task": "integration-tests"},
+        {"type": "close", "task": "load-tests"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Canary and full deployment",
+      "scene": "The team deploys to production with a canary rollout strategy.",
+      "actions": [
+        {"type": "assign", "task": "canary-deploy", "agent": "dave"},
+        {"type": "start", "task": "canary-deploy"},
+        {"type": "message", "from": "dave", "to": "frank", "body": "Canary at 5% traffic for 2 hours. Error rate: 0.02% (baseline: 0.03%). Latency: -15% improvement. No anomalies. Recommending full rollout.", "msg_type": "artifact"},
+        {"type": "close", "task": "canary-deploy"},
+        {"type": "assign", "task": "full-deploy", "agent": "dave"},
+        {"type": "start", "task": "full-deploy"},
+        {"type": "close", "task": "full-deploy"},
+        {"type": "assign", "task": "post-mortem-doc", "agent": "frank"},
+        {"type": "start", "task": "post-mortem-doc"},
+        {"type": "message", "from": "frank", "to": "user", "body": "Migration complete. All services live. Monolith decommission scheduled for next sprint. Post-mortem doc in progress.", "msg_type": "text"},
+        {"type": "close", "task": "post-mortem-doc"},
+        {"type": "query", "command": "task list --status all"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Graph exploration and export",
+      "scene": "Explore the knowledge graph and export the full state.",
+      "actions": [
+        {"type": "query", "command": "context --around <api-gateway-impl> --depth 2"},
+        {"type": "query", "command": "pagerank"},
+        {"type": "query", "command": "degree"},
+        {"type": "query", "command": "export --output /tmp/fl-sim/snapshot.json"}
+      ]
+    }
+  ]
+}

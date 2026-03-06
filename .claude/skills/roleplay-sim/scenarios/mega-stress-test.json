@@ -1,0 +1,349 @@
+{
+  "name": "Mega Stress Test",
+  "description": "Maximum complexity scenario: 8 modules, 8 agents, 20 tasks, diamond+parallel deps, every feature exercised — lessons, search, file actions, config, hooks, graph analytics, escalations, reservation conflicts, export/import. 15 cycles.",
+
+  "modules": [
+    {"name": "auth-core", "summary": "Authentication core — OAuth2, SAML, MFA, session management"},
+    {"name": "user-mgmt", "summary": "User management — profiles, roles, permissions, RBAC"},
+    {"name": "api-layer", "summary": "REST + GraphQL API layer with rate limiting and versioning"},
+    {"name": "event-bus", "summary": "Event-driven architecture — Kafka topics, schema registry, consumers"},
+    {"name": "data-store", "summary": "PostgreSQL + Redis caching layer, migrations, connection pooling"},
+    {"name": "search-idx", "summary": "Elasticsearch indexing pipeline for full-text search"},
+    {"name": "frontend-app", "summary": "React 18 SPA with SSR, i18n, and accessibility"},
+    {"name": "infra-ops", "summary": "Kubernetes, Terraform, CI/CD, monitoring, alerting"}
+  ],
+
+  "agents": [
+    {"name": "alice", "summary": "Senior backend — auth specialist, 8yr experience"},
+    {"name": "bob", "summary": "Backend — API and event-driven systems"},
+    {"name": "carol", "summary": "Full-stack — frontend lead, accessibility expert"},
+    {"name": "dave", "summary": "Data engineer — databases, search, caching"},
+    {"name": "eve", "summary": "Security engineer — audits, pentesting, compliance"},
+    {"name": "frank", "summary": "DevOps/SRE — infrastructure, deployments, monitoring"},
+    {"name": "grace", "summary": "Tech lead — architecture, planning, tie-breaker"},
+    {"name": "heidi", "summary": "QA lead — integration testing, load testing, chaos engineering"}
+  ],
+
+  "tasks": [
+    {"name": "architecture-design", "summary": "System architecture: service boundaries, API contracts, data model, event schema", "priority": 0, "blocks": ["setup-database", "setup-event-bus", "setup-auth"]},
+    {"name": "setup-database", "summary": "PostgreSQL schema, migrations, connection pool config, Redis cache layer", "priority": 1, "blocks": ["build-user-mgmt", "build-search-index"]},
+    {"name": "setup-event-bus", "summary": "Kafka cluster, schema registry, topic definitions, consumer groups", "priority": 1, "blocks": ["build-api-events", "build-search-index"]},
+    {"name": "setup-auth", "summary": "OAuth2 provider config, SAML federation, MFA enrollment flow, JWT signing keys", "priority": 1, "blocks": ["build-user-mgmt", "build-api-endpoints"]},
+    {"name": "build-user-mgmt", "summary": "User CRUD, role assignment, permission checks, RBAC enforcement", "priority": 1, "blocks": ["build-api-endpoints"]},
+    {"name": "build-api-endpoints", "summary": "REST endpoints + GraphQL schema, rate limiting, request validation, versioning", "priority": 1, "blocks": ["build-frontend", "security-audit"]},
+    {"name": "build-api-events", "summary": "Event producers for API mutations, dead-letter queue, retry policies", "priority": 1, "blocks": ["build-search-index"]},
+    {"name": "build-search-index", "summary": "Elasticsearch mapping, indexing pipeline from events, search API", "priority": 2, "blocks": ["build-frontend"]},
+    {"name": "build-frontend", "summary": "React SPA: auth flow, dashboard, search UI, user management, i18n", "priority": 2, "blocks": ["integration-tests"]},
+    {"name": "security-audit", "summary": "OWASP top 10, dependency audit, secrets scan, penetration testing", "priority": 1, "blocks": ["integration-tests"]},
+    {"name": "setup-infra", "summary": "Kubernetes manifests, Terraform modules, CI/CD pipelines", "priority": 1, "blocks": ["setup-monitoring"]},
+    {"name": "setup-monitoring", "summary": "Prometheus, Grafana dashboards, alerting rules, distributed tracing", "priority": 1, "blocks": ["load-tests"]},
+    {"name": "integration-tests", "summary": "E2E test suite: auth flows, CRUD, events, search, error scenarios", "priority": 1, "blocks": ["chaos-tests"]},
+    {"name": "load-tests", "summary": "Performance baseline, stress testing, capacity planning, bottleneck analysis", "priority": 2, "blocks": ["chaos-tests"]},
+    {"name": "chaos-tests", "summary": "Chaos engineering: kill pods, network partitions, disk pressure, clock skew", "priority": 1, "blocks": ["canary-deploy"]},
+    {"name": "write-docs", "summary": "API docs, runbooks, architecture decision records, onboarding guide", "priority": 2, "blocks": ["canary-deploy"]},
+    {"name": "canary-deploy", "summary": "5% canary traffic, A/B metrics comparison, rollback criteria", "priority": 0, "blocks": ["full-deploy"]},
+    {"name": "full-deploy", "summary": "Full production rollout, DNS cutover, old system decommission", "priority": 0, "blocks": ["post-launch-review"]},
+    {"name": "post-launch-review", "summary": "Post-launch metrics review, incident retrospective, lessons captured", "priority": 2, "blocks": ["knowledge-export"]},
+    {"name": "knowledge-export", "summary": "Export full project knowledge graph, verify round-trip, archive", "priority": 2, "blocks": []}
+  ],
+
+  "docs": [
+    {"name": "api-spec-v2", "summary": "REST + GraphQL API specification: endpoints, schemas, auth headers, rate limits", "relates_to": ["api-layer"]},
+    {"name": "auth-architecture", "summary": "Auth design: OAuth2 flows, SAML federation, MFA enrollment, JWT structure", "relates_to": ["auth-core"]},
+    {"name": "event-schema-registry", "summary": "Kafka event schemas: Avro definitions, versioning strategy, compatibility rules", "relates_to": ["event-bus"]},
+    {"name": "infra-runbook", "summary": "Operations runbook: incident response, rollback, scaling procedures, on-call rotation", "relates_to": ["infra-ops"]}
+  ],
+
+  "plans": [
+    {"name": "platform-v2-plan", "summary": "Platform V2 — full rewrite with 20 tasks across 8 modules, 8 agents", "owns": ["architecture-design", "setup-database", "setup-event-bus", "setup-auth", "build-user-mgmt", "build-api-endpoints", "build-api-events", "build-search-index", "build-frontend", "security-audit", "setup-infra", "setup-monitoring", "integration-tests", "load-tests", "chaos-tests", "write-docs", "canary-deploy", "full-deploy", "post-launch-review", "knowledge-export"]}
+  ],
+
+  "extra_relations": [
+    {"source": "user-mgmt", "type": "depends_on", "target": "auth-core"},
+    {"source": "user-mgmt", "type": "depends_on", "target": "data-store"},
+    {"source": "api-layer", "type": "depends_on", "target": "user-mgmt"},
+    {"source": "api-layer", "type": "depends_on", "target": "auth-core"},
+    {"source": "event-bus", "type": "depends_on", "target": "api-layer"},
+    {"source": "search-idx", "type": "depends_on", "target": "event-bus"},
+    {"source": "search-idx", "type": "depends_on", "target": "data-store"},
+    {"source": "frontend-app", "type": "depends_on", "target": "api-layer"},
+    {"source": "frontend-app", "type": "depends_on", "target": "search-idx"},
+    {"source": "infra-ops", "type": "depends_on", "target": "data-store"}
+  ],
+
+  "cycles": [
+    {
+      "title": "Project kickoff — config, hooks, architecture",
+      "scene": "Grace leads architecture while Frank bootstraps infrastructure. Config and hooks are verified first.",
+      "actions": [
+        {"type": "query", "command": "config show"},
+        {"type": "query", "command": "hook install"},
+        {"type": "query", "command": "hook check"},
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "architecture-design", "agent": "grace"},
+        {"type": "assign", "task": "setup-infra", "agent": "frank"},
+        {"type": "start", "task": "architecture-design"},
+        {"type": "start", "task": "setup-infra"},
+        {"type": "mkdir", "path": "docs/architecture"},
+        {"type": "mkdir", "path": "infra/k8s"},
+        {"type": "reserve", "glob": "docs/architecture/**", "agent": "grace", "exclusive": true, "ttl": 3600},
+        {"type": "reserve", "glob": "infra/**", "agent": "frank", "exclusive": true, "ttl": 3600},
+        {"type": "write_file", "path": "docs/architecture/system-design.txt", "content": "Platform V2 Architecture\n========================\nServices: auth-core, user-mgmt, api-layer, event-bus, data-store, search-idx, frontend-app\nCommunication: REST (sync) + Kafka (async)\nAuth: OAuth2 + SAML federation, JWT with RS256\nData: PostgreSQL (primary) + Redis (cache) + Elasticsearch (search)\nInfra: Kubernetes, Terraform, GitHub Actions\n\nDependency graph (diamond pattern):\n  architecture-design\n    -> setup-database + setup-event-bus + setup-auth (parallel fan-out)\n      -> build-user-mgmt + build-api-events (converge on setup)\n        -> build-api-endpoints (converge on user-mgmt + auth)\n          -> build-frontend + security-audit (parallel)\n            -> integration-tests (diamond converge)\n              -> chaos-tests + load-tests\n                -> canary-deploy -> full-deploy -> post-launch", "agent": "grace"},
+        {"type": "write_file", "path": "infra/k8s/namespace.txt", "content": "Kubernetes Namespace Config\n===========================\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: platform-v2\n  labels:\n    team: platform\n    env: staging\n---\nResource quotas:\n  CPU: 16 cores\n  Memory: 32Gi\n  Pods: 50\n\nNetwork policies:\n  - Allow ingress from api-gateway only\n  - Allow egress to data-store, event-bus\n  - Deny all other inter-namespace traffic", "agent": "frank"},
+        {"type": "message", "from": "grace", "to": "alice", "body": "Architecture finalized. Auth-core: OAuth2 + SAML with RS256 JWTs. See docs/architecture/system-design.txt. You're on setup-auth once this cycle closes.", "msg_type": "artifact"},
+        {"type": "message", "from": "grace", "to": "dave", "body": "Data layer: PostgreSQL primary, Redis cache, Elasticsearch for search. Connection pooling via PgBouncer. You'll own setup-database and build-search-index.", "msg_type": "artifact"}
+      ]
+    },
+    {
+      "title": "Architecture complete, triple fan-out begins",
+      "scene": "Architecture closes. Three foundation tasks unblock simultaneously — database, event bus, and auth.",
+      "actions": [
+        {"type": "release", "glob": "docs/architecture/**", "agent": "grace"},
+        {"type": "close", "task": "architecture-design"},
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "setup-database", "agent": "dave"},
+        {"type": "assign", "task": "setup-event-bus", "agent": "bob"},
+        {"type": "assign", "task": "setup-auth", "agent": "alice"},
+        {"type": "start", "task": "setup-database"},
+        {"type": "start", "task": "setup-event-bus"},
+        {"type": "start", "task": "setup-auth"},
+        {"type": "reserve", "glob": "src/database/**", "agent": "dave", "exclusive": true, "ttl": 3600},
+        {"type": "reserve", "glob": "src/events/**", "agent": "bob", "exclusive": true, "ttl": 3600},
+        {"type": "reserve", "glob": "src/auth/**", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "mkdir", "path": "src/database"},
+        {"type": "mkdir", "path": "src/events"},
+        {"type": "mkdir", "path": "src/auth"},
+        {"type": "write_file", "path": "src/database/schema.txt", "content": "PostgreSQL Schema\n=================\nusers (id UUID PK, email UNIQUE, name, created_at, updated_at)\nroles (id UUID PK, name UNIQUE, description)\nuser_roles (user_id FK, role_id FK, granted_at)\npermissions (id UUID PK, resource, action, role_id FK)\nsessions (id UUID PK, user_id FK, token_hash, expires_at, created_at)\noauth_tokens (id UUID PK, user_id FK, provider, access_token_enc, refresh_token_enc, expires_at)\n\nIndexes: users(email), sessions(token_hash), sessions(expires_at), oauth_tokens(user_id, provider)\nConnection pool: PgBouncer, max 100 connections, transaction mode", "agent": "dave"},
+        {"type": "write_file", "path": "src/events/topics.txt", "content": "Kafka Topics\n============\nplatform.users.created (key: user_id, value: UserCreatedEvent)\nplatform.users.updated (key: user_id, value: UserUpdatedEvent)\nplatform.auth.login (key: user_id, value: LoginEvent)\nplatform.auth.logout (key: user_id, value: LogoutEvent)\nplatform.api.request (key: request_id, value: ApiRequestEvent)\nplatform.search.reindex (key: entity_type, value: ReindexCommand)\nplatform.dlq (dead-letter queue for failed processing)\n\nPartitions: 12 per topic\nReplication: 3\nRetention: 7 days (30 days for DLQ)\nSchema: Avro with backward compatibility", "agent": "bob"},
+        {"type": "write_file", "path": "src/auth/oauth-flow.txt", "content": "OAuth2 Authorization Code Flow\n===============================\n1. Client redirects to /auth/authorize?provider=google&redirect_uri=...\n2. Server generates state + PKCE challenge, stores in session\n3. Redirect to Google with client_id, redirect_uri, state, code_challenge\n4. Google redirects back with authorization code\n5. Server exchanges code for tokens (POST to token endpoint)\n6. Validate id_token, extract claims\n7. Create/update local user, generate JWT (RS256, 1h expiry)\n8. Set httpOnly secure cookie with JWT\n9. Emit platform.auth.login event\n\nSAML Federation (enterprise):\n  SP-initiated flow via /auth/saml/login\n  IdP metadata cached with 24h TTL\n  Assertion validation: signature + conditions + audience", "agent": "alice"},
+        {"type": "query", "command": "reservations"}
+      ]
+    },
+    {
+      "title": "Database bug — connection pool exhaustion",
+      "scene": "Dave hits a connection pool bug during stress testing the schema setup.",
+      "actions": [
+        {"type": "escalate", "from": "dave", "body": "CRITICAL: PgBouncer connection pool exhausted under concurrent migration. 100 connections maxed out — migrations deadlocked. Need to increase pool or serialize migrations.", "msg_type": "blocker"},
+        {"type": "block", "task": "setup-database", "reason": "Connection pool exhaustion during concurrent migrations"},
+        {"type": "write_file", "path": "src/database/debug-pool.txt", "content": "Debug: Connection Pool Exhaustion\n==================================\nSymptom: Migrations deadlock when run concurrently from CI\nRoot cause: Each migration opens a transaction, PgBouncer in\n  transaction mode holds connection for duration. 5 parallel\n  CI jobs x 20 connections each = 100 (pool max).\n\nFix:\n  1. Run migrations serially (not in parallel CI jobs)\n  2. Use advisory locks: SELECT pg_advisory_lock(12345)\n  3. Increase pool to 200 for migration phase, drop back to 100\n\nChosen: Option 1 + 2 (advisory locks + serial execution)\nLesson: Never run DDL migrations concurrently against pooled connections", "agent": "dave"},
+        {"type": "message", "from": "user", "to": "dave", "body": "Good analysis. Use advisory locks + serial migration. Capture this as a lesson.", "msg_type": "text"},
+        {"type": "resolve", "task": "setup-database"},
+        {"type": "query", "command": "lesson add \"PgBouncer pool exhaustion during migrations\" --problem \"Concurrent CI jobs running DDL migrations exhausted PgBouncer connection pool (100 max). Migrations deadlocked.\" --solution \"Use pg_advisory_lock to serialize migrations. Never run DDL concurrently against connection-pooled databases.\" --learned \"Connection poolers in transaction mode hold connections for entire transaction duration. DDL migrations must be serialized.\" --pattern \"database-pooling\""}
+      ]
+    },
+    {
+      "title": "Event bus schema conflict — reservation clash",
+      "scene": "Alice needs to update event schemas for auth events, but Bob has the events directory reserved.",
+      "actions": [
+        {"type": "reserve", "glob": "src/events/**", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "escalate", "from": "alice", "body": "BLOCKED: Need to add auth event schemas to src/events/ but Bob has exclusive reservation. Auth login/logout events need Avro schemas before I can finish setup-auth.", "msg_type": "blocker"},
+        {"type": "query", "command": "escalations"},
+        {"type": "message", "from": "grace", "to": "bob", "body": "Alice needs src/events/ for auth schemas. Can you release and coordinate?", "msg_type": "text"},
+        {"type": "write_file", "path": "src/events/auth-events.txt", "content": "Auth Event Schemas (Avro)\n=========================\nLoginEvent {\n  user_id: string (UUID)\n  provider: enum {google, saml, local}\n  ip_address: string\n  user_agent: string\n  timestamp: long (millis)\n  mfa_used: boolean\n}\n\nLogoutEvent {\n  user_id: string (UUID)\n  session_id: string (UUID)\n  reason: enum {user_initiated, timeout, admin_revoke}\n  timestamp: long (millis)\n}", "agent": "bob"},
+        {"type": "release", "glob": "src/events/**", "agent": "bob"},
+        {"type": "reserve", "glob": "src/events/auth-*", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "release", "glob": "src/events/auth-*", "agent": "alice"},
+        {"type": "query", "command": "reservations"},
+        {"type": "query", "command": "lesson add \"Coordinate shared directories via granular reservations\" --problem \"Exclusive reservation on entire src/events/ blocked another agent who needed a subdirectory\" --solution \"Use granular glob patterns (src/events/auth-*) instead of broad directory locks. Coordinate via messages before reserving shared paths.\" --learned \"Broad exclusive reservations create unnecessary contention. Prefer narrow globs that match only the files you actually need.\" --pattern \"reservation-strategy\""}
+      ]
+    },
+    {
+      "title": "Foundation complete, second wave begins",
+      "scene": "Database, event bus, and auth all close. Multiple tasks unblock — the complexity ramps up.",
+      "actions": [
+        {"type": "release", "glob": "src/database/**", "agent": "dave"},
+        {"type": "release", "glob": "src/auth/**", "agent": "alice"},
+        {"type": "close", "task": "setup-database"},
+        {"type": "close", "task": "setup-event-bus"},
+        {"type": "close", "task": "setup-auth"},
+        {"type": "close", "task": "setup-infra"},
+        {"type": "release", "glob": "infra/**", "agent": "frank"},
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "build-user-mgmt", "agent": "alice"},
+        {"type": "assign", "task": "build-api-events", "agent": "bob"},
+        {"type": "assign", "task": "build-search-index", "agent": "dave"},
+        {"type": "assign", "task": "setup-monitoring", "agent": "frank"},
+        {"type": "start", "task": "build-user-mgmt"},
+        {"type": "start", "task": "build-api-events"},
+        {"type": "start", "task": "setup-monitoring"},
+        {"type": "message", "from": "alice", "to": "bob", "body": "User-mgmt will emit UserCreated and UserUpdated events. Make sure the event bus consumer handles both. Schema is in src/events/.", "msg_type": "text"},
+        {"type": "query", "command": "search \"connection pool\""},
+        {"type": "query", "command": "search \"reservation\""}
+      ]
+    },
+    {
+      "title": "Parallel implementation sprint",
+      "scene": "Four agents work simultaneously. Files are written, lessons referenced, messages fly.",
+      "actions": [
+        {"type": "mkdir", "path": "src/user-mgmt"},
+        {"type": "mkdir", "path": "src/api"},
+        {"type": "mkdir", "path": "src/search"},
+        {"type": "mkdir", "path": "monitoring"},
+        {"type": "write_file", "path": "src/user-mgmt/rbac.txt", "content": "RBAC Implementation\n====================\nRoles: admin, editor, viewer, billing\nPermissions: resource:action pairs\n  users:read, users:write, users:delete\n  projects:read, projects:write\n  billing:read, billing:manage\n\nEnforcement:\n  1. JWT contains role claims\n  2. Middleware extracts roles from JWT\n  3. Permission check: does any assigned role grant the required resource:action?\n  4. Cache permission matrix in Redis (5min TTL)\n\nHierarchy: admin > editor > viewer (implicit inheritance)", "agent": "alice"},
+        {"type": "write_file", "path": "src/api/event-producers.txt", "content": "API Event Producers\n====================\nEvery mutation endpoint emits an event:\n  POST /users -> UserCreatedEvent\n  PUT /users/:id -> UserUpdatedEvent\n  DELETE /users/:id -> UserDeletedEvent\n  POST /auth/login -> LoginEvent\n  POST /auth/logout -> LogoutEvent\n\nProducer config:\n  acks: all (wait for all replicas)\n  retries: 3 with exponential backoff\n  idempotency: enabled (exactly-once semantics)\n  DLQ routing: after 3 failed retries\n\nSchema validation: Avro schema registry check before produce", "agent": "bob"},
+        {"type": "write_file", "path": "monitoring/dashboards.txt", "content": "Grafana Dashboards\n==================\n1. Platform Overview: request rate, error rate, p50/p95/p99 latency\n2. Auth Service: login rate, MFA usage, token refresh rate, failed attempts\n3. Event Bus: produce rate, consume lag, DLQ size, schema errors\n4. Database: connection pool usage, query latency, replication lag\n5. Search: index rate, query latency, index size, shard health\n6. Infrastructure: CPU, memory, disk, network by pod", "agent": "frank"},
+        {"type": "close", "task": "build-user-mgmt"},
+        {"type": "close", "task": "build-api-events"},
+        {"type": "close", "task": "setup-monitoring"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Search index + API endpoints converge",
+      "scene": "Dave finishes search indexing. Alice builds API endpoints. The dependency graph converges.",
+      "actions": [
+        {"type": "start", "task": "build-search-index"},
+        {"type": "write_file", "path": "src/search/mapping.txt", "content": "Elasticsearch Index Mapping\n============================\nIndex: platform-users-v1\nMapping:\n  user_id: keyword\n  email: keyword + text (for partial match)\n  name: text (standard analyzer)\n  roles: keyword (array)\n  created_at: date\n  updated_at: date\n\nIndex: platform-content-v1\n  content_id: keyword\n  title: text (english analyzer)\n  body: text (english analyzer)\n  author_id: keyword\n  tags: keyword (array)\n  published_at: date\n\nIndexing pipeline: Kafka consumer on platform.search.reindex\nBulk index: batches of 500, flush every 5s\nRefresh interval: 1s (near real-time search)", "agent": "dave"},
+        {"type": "close", "task": "build-search-index"},
+        {"type": "assign", "task": "build-api-endpoints", "agent": "alice"},
+        {"type": "start", "task": "build-api-endpoints"},
+        {"type": "reserve", "glob": "src/api/**", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "write_file", "path": "src/api/routes.txt", "content": "API Routes\n==========\nREST:\n  POST   /auth/login          (public)\n  POST   /auth/logout         (authenticated)\n  POST   /auth/refresh        (authenticated)\n  GET    /auth/saml/login     (public, enterprise)\n  POST   /auth/saml/callback  (public, enterprise)\n  GET    /users               (admin, editor)\n  POST   /users               (admin)\n  GET    /users/:id           (authenticated, own profile or admin)\n  PUT    /users/:id           (authenticated, own profile or admin)\n  DELETE /users/:id           (admin)\n  GET    /search?q=           (authenticated)\n\nGraphQL:\n  query { users, user(id), search(query) }\n  mutation { createUser, updateUser, deleteUser }\n\nRate limits: 100 req/min (authenticated), 20 req/min (public)\nVersioning: Accept header (application/vnd.platform.v2+json)", "agent": "alice"},
+        {"type": "release", "glob": "src/api/**", "agent": "alice"},
+        {"type": "close", "task": "build-api-endpoints"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Security audit with findings",
+      "scene": "Eve runs the security audit and finds two issues. Meanwhile, Carol starts the frontend.",
+      "actions": [
+        {"type": "assign", "task": "security-audit", "agent": "eve"},
+        {"type": "assign", "task": "build-frontend", "agent": "carol"},
+        {"type": "assign", "task": "write-docs", "agent": "grace"},
+        {"type": "start", "task": "security-audit"},
+        {"type": "start", "task": "build-frontend"},
+        {"type": "start", "task": "write-docs"},
+        {"type": "mkdir", "path": "src/frontend"},
+        {"type": "write_file", "path": "src/frontend/app-structure.txt", "content": "Frontend Architecture\n=====================\nFramework: React 18 + TypeScript strict\nState: React Query (server state) + Zustand (client state)\nRouting: React Router v6\nStyling: Tailwind CSS + Radix UI primitives\nAuth: httpOnly cookie (automatic), token refresh on 401\ni18n: react-intl with lazy-loaded locale bundles\nAccessibility: WCAG 2.1 AA target\n\nPages:\n  /login — OAuth + SAML login\n  /dashboard — overview metrics\n  /users — user management (admin)\n  /profile — own profile\n  /search — full-text search\n  /settings — preferences, MFA enrollment", "agent": "carol"},
+        {"type": "message", "from": "eve", "to": "alice", "body": "Security finding #1 (HIGH): JWT RS256 key stored in environment variable as plaintext. Should use key vault (AWS Secrets Manager or HashiCorp Vault). Rotate immediately.", "msg_type": "text"},
+        {"type": "message", "from": "eve", "to": "bob", "body": "Security finding #2 (MEDIUM): Event bus consumer deserializes without schema validation. Malformed event could cause consumer crash. Add schema registry validation on consume.", "msg_type": "text"},
+        {"type": "escalate", "from": "eve", "body": "Security audit found 2 issues: (1) HIGH — JWT signing key in plaintext env var, (2) MEDIUM — event consumer missing schema validation. Both need fixes before deployment.", "msg_type": "blocker"},
+        {"type": "query", "command": "escalations"},
+        {"type": "message", "from": "user", "to": "eve", "body": "Acknowledged. Alice will move JWT key to Vault, Bob will add schema validation. Track as lessons.", "msg_type": "text"},
+        {"type": "query", "command": "lesson add \"JWT signing keys must use secret management\" --problem \"RS256 JWT signing key stored as plaintext environment variable — accessible to any process on the host\" --solution \"Store signing keys in HashiCorp Vault or AWS Secrets Manager. Rotate keys quarterly. Use key ID (kid) in JWT header for rotation support\" --learned \"Never store cryptographic keys in environment variables. Use dedicated secret management with audit logging and rotation policies\" --pattern \"secrets-management\""},
+        {"type": "query", "command": "lesson add \"Validate event schemas on consume, not just produce\" --problem \"Kafka consumer deserialized events without schema registry validation — malformed event crashed consumer\" --solution \"Add Avro schema validation on both produce AND consume paths. Configure consumer to reject unknown schemas. Route failures to DLQ\" --learned \"Schema validation is a two-sided contract. Producing valid data isn't enough — consumers must also validate to handle schema evolution and corrupt messages\" --pattern \"event-driven\""},
+        {"type": "close", "task": "security-audit"}
+      ]
+    },
+    {
+      "title": "Frontend escalation — SSR complexity",
+      "scene": "Carol hits a blocker with server-side rendering and auth cookies.",
+      "actions": [
+        {"type": "escalate", "from": "carol", "body": "BLOCKED: SSR breaks auth flow. Server-side fetch can't access httpOnly cookies from the browser. Options: (1) skip SSR for authenticated pages, (2) forward cookies via middleware, (3) use BFF pattern. Need architecture decision.", "msg_type": "question"},
+        {"type": "block", "task": "build-frontend", "reason": "SSR + httpOnly cookie conflict"},
+        {"type": "query", "command": "escalations"},
+        {"type": "query", "command": "search \"auth cookie\""},
+        {"type": "message", "from": "grace", "to": "carol", "body": "Use BFF (Backend-for-Frontend) pattern: SSR server forwards cookies to API. Keeps httpOnly security while enabling SSR. See auth-architecture doc for flow.", "msg_type": "text"},
+        {"type": "resolve", "task": "build-frontend"},
+        {"type": "write_file", "path": "src/frontend/bff-notes.txt", "content": "BFF Pattern for SSR + Auth\n===========================\nProblem: Server-side fetch can't access httpOnly browser cookies\nSolution: BFF proxy forwards cookies from incoming request\n\nFlow:\n  1. Browser sends request with httpOnly JWT cookie\n  2. Next.js middleware extracts cookie from request headers\n  3. SSR fetch to API includes cookie in Authorization header\n  4. API validates JWT as normal\n  5. SSR renders with authenticated data\n  6. Client hydration continues with same cookie\n\nSecurity: BFF runs same-origin, cookie never exposed to client JS\nPerformance: adds ~5ms latency per SSR request (acceptable)", "agent": "carol"},
+        {"type": "query", "command": "lesson add \"BFF pattern for SSR with httpOnly cookies\" --problem \"Server-side rendering cannot access httpOnly cookies set by the browser — auth fails during SSR fetch\" --solution \"Use Backend-for-Frontend pattern: SSR middleware extracts cookie from incoming request and forwards it to API calls. Cookie never exposed to client JS\" --learned \"httpOnly cookies and SSR are fundamentally at odds. BFF pattern resolves this cleanly while preserving cookie security\" --pattern \"frontend-auth\""},
+        {"type": "close", "task": "build-frontend"}
+      ]
+    },
+    {
+      "title": "Docs and knowledge search",
+      "scene": "Grace writes documentation, searching existing lessons and artifacts for accuracy.",
+      "actions": [
+        {"type": "query", "command": "search --type lesson \"security\""},
+        {"type": "query", "command": "search \"RBAC\""},
+        {"type": "query", "command": "search \"OAuth2 flow\""},
+        {"type": "query", "command": "lesson list"},
+        {"type": "read_file", "path": "docs/architecture/system-design.txt", "agent": "grace"},
+        {"type": "read_file", "path": "src/auth/oauth-flow.txt", "agent": "grace"},
+        {"type": "read_file", "path": "src/api/routes.txt", "agent": "grace"},
+        {"type": "mkdir", "path": "docs/runbooks"},
+        {"type": "write_file", "path": "docs/runbooks/incident-response.txt", "content": "Incident Response Runbook\n=========================\n1. DETECT: Grafana alert fires -> PagerDuty notification\n2. ACKNOWLEDGE: Ack within 5 min, join #incident channel\n3. TRIAGE: Check dashboards, determine severity (S1/S2/S3)\n4. MITIGATE:\n   - Deploy issue: rollback via CI pipeline\n   - DB issue: check connection pool (see lesson: PgBouncer pool exhaustion)\n   - Auth issue: check JWT key rotation (see lesson: secrets management)\n   - Event bus: check consumer lag and DLQ (see lesson: schema validation)\n5. RESOLVE: Verify metrics, update status page\n6. POST-MORTEM: Blameless RCA within 48h, capture lessons in fl", "agent": "grace"},
+        {"type": "close", "task": "write-docs"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Integration tests + load tests in parallel",
+      "scene": "Heidi runs integration tests while Frank runs load tests. Both report results.",
+      "actions": [
+        {"type": "assign", "task": "integration-tests", "agent": "heidi"},
+        {"type": "assign", "task": "load-tests", "agent": "frank"},
+        {"type": "start", "task": "integration-tests"},
+        {"type": "start", "task": "load-tests"},
+        {"type": "mkdir", "path": "test-results"},
+        {"type": "write_file", "path": "test-results/integration.txt", "content": "Integration Test Results\n========================\nAuth flow (OAuth2): PASS (login, refresh, logout, MFA)\nAuth flow (SAML): PASS (SP-initiated, IdP metadata cache)\nUser CRUD: PASS (create, read, update, delete, list)\nRBAC enforcement: PASS (admin, editor, viewer boundaries)\nEvent production: PASS (all mutation events emitted)\nEvent consumption: PASS (schema validation, DLQ routing)\nSearch indexing: PASS (bulk index, near-real-time refresh)\nSearch queries: PASS (full-text, filters, pagination)\nFrontend SSR: PASS (BFF cookie forwarding)\nError scenarios: PASS (401, 403, 404, 429, 500)\n\nTotal: 87/87 passing", "agent": "heidi"},
+        {"type": "write_file", "path": "test-results/load.txt", "content": "Load Test Results\n==================\nTool: k6\nDuration: 30 min sustained\n\nResults:\n  Throughput: 3200 req/s (target: 2000) -- PASS\n  P50 latency: 12ms -- PASS\n  P95 latency: 45ms -- PASS\n  P99 latency: 120ms -- PASS (target: <200ms)\n  Error rate: 0.01% -- PASS (target: <0.1%)\n  CPU usage: 65% peak -- PASS\n  Memory: stable at 2.1GB -- PASS\n  DB connections: 78/100 pool -- PASS\n\nBottleneck: Search queries P99 at 180ms under load\n  Recommendation: Add search result caching (Redis, 30s TTL)", "agent": "frank"},
+        {"type": "message", "from": "heidi", "to": "grace", "body": "Integration tests: 87/87 passing. Full coverage of auth, CRUD, events, search, SSR, error scenarios. Ready for chaos testing.", "msg_type": "artifact"},
+        {"type": "message", "from": "frank", "to": "grace", "body": "Load tests: 3200 req/s sustained (60% above target). P99 120ms. One recommendation: cache search results in Redis. Ready for production.", "msg_type": "artifact"},
+        {"type": "close", "task": "integration-tests"},
+        {"type": "close", "task": "load-tests"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Chaos tests — simulating failures",
+      "scene": "Heidi runs chaos engineering tests: pod kills, network partitions, disk pressure.",
+      "actions": [
+        {"type": "assign", "task": "chaos-tests", "agent": "heidi"},
+        {"type": "start", "task": "chaos-tests"},
+        {"type": "write_file", "path": "test-results/chaos.txt", "content": "Chaos Test Results\n===================\nTest 1: Kill auth-core pod -> new pod in 8s, zero failed requests (connection draining) -> PASS\nTest 2: Kill data-store pod -> circuit breaker activates in 2s, cached reads continue -> PASS\nTest 3: Network partition (event-bus isolated) -> events buffered, replayed after partition heals -> PASS\nTest 4: Disk pressure on search-idx -> index goes read-only, alert fires in 30s -> PASS\nTest 5: Clock skew (5min) on auth-core -> JWT validation rejects future tokens -> PASS\nTest 6: Cascading failure (kill 3 pods simultaneously) -> system degrades gracefully, recovers in 45s -> PASS\n\nAll 6 chaos scenarios PASSED. System is resilient.", "agent": "heidi"},
+        {"type": "message", "from": "heidi", "to": "grace", "body": "Chaos tests: 6/6 passed. System survives pod kills, network partitions, disk pressure, clock skew, and cascading failures. Recovery time < 45s in all cases.", "msg_type": "artifact"},
+        {"type": "close", "task": "chaos-tests"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Canary and full deployment",
+      "scene": "Frank deploys to production with canary rollout, then full deployment.",
+      "actions": [
+        {"type": "assign", "task": "canary-deploy", "agent": "frank"},
+        {"type": "start", "task": "canary-deploy"},
+        {"type": "write_file", "path": "docs/deploy-log.txt", "content": "Canary Deployment Log\n=====================\n10:00 - Canary deployed: 5% traffic routed to v2\n10:15 - Metrics check: error rate 0.02% (baseline 0.03%) -- OK\n10:30 - Metrics check: P99 latency 95ms (baseline 110ms) -- OK (improved!)\n11:00 - 1h mark: no anomalies, all dashboards green\n11:30 - Increased to 25% traffic\n12:00 - 2h mark at 25%: stable, no regressions\n12:30 - Approved for full rollout\n\nDecision: PROCEED to full deployment", "agent": "frank"},
+        {"type": "close", "task": "canary-deploy"},
+        {"type": "assign", "task": "full-deploy", "agent": "frank"},
+        {"type": "start", "task": "full-deploy"},
+        {"type": "message", "from": "frank", "to": "grace", "body": "Full deployment complete. 100% traffic on v2. All health checks passing. Monolith scaled down to standby (1 replica for rollback).", "msg_type": "artifact"},
+        {"type": "close", "task": "full-deploy"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Post-launch review and lesson capture",
+      "scene": "Grace leads the post-launch review. The team captures final lessons from the entire project.",
+      "actions": [
+        {"type": "assign", "task": "post-launch-review", "agent": "grace"},
+        {"type": "start", "task": "post-launch-review"},
+        {"type": "query", "command": "lesson list"},
+        {"type": "query", "command": "search --type lesson \"pattern\""},
+        {"type": "query", "command": "lesson add \"Canary deployment catches latency improvements too\" --problem \"Team expected canary to only find regressions, almost missed that v2 was 15% faster — needed to update monitoring baselines\" --solution \"Canary dashboards should show improvement metrics alongside regression alerts. Update baselines after successful full deploy\" --learned \"Canary deployments are bidirectional — they catch both regressions AND improvements. Update monitoring baselines post-deploy to avoid false alerts\" --pattern \"deployment\""},
+        {"type": "query", "command": "lesson add \"Chaos engineering reveals recovery time, not just failure modes\" --problem \"Initial chaos test plan only checked pass/fail (did it survive?). Missed that recovery from cascading failure took 45s — longer than SLA\" --solution \"Add recovery time assertions to all chaos scenarios. Define SLA for recovery (e.g., <30s for single failure, <60s for cascading)\" --learned \"Surviving failure isn't enough — recovery speed matters. Chaos tests should assert on time-to-recovery, not just eventual recovery\" --pattern \"chaos-engineering\""},
+        {"type": "read_file", "path": "test-results/chaos.txt", "agent": "grace"},
+        {"type": "read_file", "path": "test-results/load.txt", "agent": "grace"},
+        {"type": "close", "task": "post-launch-review"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Knowledge export and graph analysis",
+      "scene": "Final cycle: export everything, run graph analytics, verify the complete knowledge graph.",
+      "actions": [
+        {"type": "assign", "task": "knowledge-export", "agent": "grace"},
+        {"type": "start", "task": "knowledge-export"},
+        {"type": "query", "command": "pagerank"},
+        {"type": "query", "command": "degree"},
+        {"type": "query", "command": "context --around <build-api-endpoints> --depth 2"},
+        {"type": "query", "command": "context --around <security-audit> --depth 2"},
+        {"type": "query", "command": "lesson list"},
+        {"type": "query", "command": "search \"deployment\""},
+        {"type": "query", "command": "search \"security\" --type lesson"},
+        {"type": "query", "command": "list --type task --status all"},
+        {"type": "query", "command": "list --type agent"},
+        {"type": "query", "command": "list --type module"},
+        {"type": "query", "command": "list --type doc"},
+        {"type": "query", "command": "list --type lesson"},
+        {"type": "query", "command": "config show"},
+        {"type": "query", "command": "hook check"},
+        {"type": "query", "command": "export --output /tmp/fl-sim/snapshot.json"},
+        {"type": "close", "task": "knowledge-export"},
+        {"type": "query", "command": "task list --status all"},
+        {"type": "query", "command": "task ready"}
+      ]
+    }
+  ]
+}

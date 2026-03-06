@@ -1,0 +1,102 @@
+{
+  "name": "Advanced Features Test",
+  "description": "Diamond dependency graph with 3 agents, 5 tasks — tests parallel dispatch, TTL expiry, agent crash cleanup, auto-dispatch chaining, and MCP server",
+
+  "modules": [
+    {"name": "api-service", "summary": "Core API service being implemented"},
+    {"name": "shared-lib", "summary": "Shared library used by all services"}
+  ],
+
+  "agents": [
+    {"name": "alpha", "summary": "Primary implementer — fast worker"},
+    {"name": "beta", "summary": "Secondary implementer — handles parallel tasks"},
+    {"name": "gamma", "summary": "QA and deployment agent"}
+  ],
+
+  "tasks": [
+    {"name": "design-api-schema", "summary": "Design the API schema and data models", "priority": 0, "blocks": ["implement-user-service", "implement-order-service"]},
+    {"name": "implement-user-service", "summary": "Build user CRUD endpoints and authentication", "priority": 1, "blocks": ["integration-tests"]},
+    {"name": "implement-order-service", "summary": "Build order management endpoints", "priority": 1, "blocks": ["integration-tests"]},
+    {"name": "integration-tests", "summary": "End-to-end test suite covering all services", "priority": 1, "blocks": ["deploy"]},
+    {"name": "deploy", "summary": "Deploy all services to production", "priority": 0, "blocks": []}
+  ],
+
+  "docs": [],
+
+  "plans": [
+    {"name": "api-plan", "summary": "API implementation plan with diamond dependency graph", "owns": ["design-api-schema", "implement-user-service", "implement-order-service", "integration-tests", "deploy"]}
+  ],
+
+  "extra_relations": [
+    {"source": "api-service", "type": "depends_on", "target": "shared-lib"}
+  ],
+
+  "cycles": [
+    {
+      "title": "Schema design and initial dispatch",
+      "scene": "Alpha designs the API schema. Once complete, two parallel tasks unblock.",
+      "actions": [
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "design-api-schema", "agent": "alpha"},
+        {"type": "start", "task": "design-api-schema"},
+        {"type": "message", "from": "alpha", "to": "beta", "body": "Schema designed. User service: users table with UUID PKs. Order service: orders + order_items. Shared proto for inter-service communication.", "msg_type": "artifact"},
+        {"type": "close", "task": "design-api-schema"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Parallel service implementation",
+      "scene": "Alpha and Beta work on user and order services simultaneously — testing true parallel execution.",
+      "actions": [
+        {"type": "assign", "task": "implement-user-service", "agent": "alpha"},
+        {"type": "assign", "task": "implement-order-service", "agent": "beta"},
+        {"type": "start", "task": "implement-user-service"},
+        {"type": "start", "task": "implement-order-service"},
+        {"type": "reserve", "glob": "src/user/**", "agent": "alpha", "exclusive": true, "ttl": 60},
+        {"type": "reserve", "glob": "src/order/**", "agent": "beta", "exclusive": true, "ttl": 60},
+        {"type": "query", "command": "reservations"}
+      ]
+    },
+    {
+      "title": "Diamond convergence",
+      "scene": "Both services complete. Integration tests are now unblocked — the diamond converges.",
+      "actions": [
+        {"type": "message", "from": "alpha", "to": "gamma", "body": "User service complete. All CRUD endpoints, JWT auth, password reset. 95% test coverage.", "msg_type": "artifact"},
+        {"type": "release", "glob": "src/user/**", "agent": "alpha"},
+        {"type": "close", "task": "implement-user-service"},
+        {"type": "message", "from": "beta", "to": "gamma", "body": "Order service complete. Order lifecycle, inventory checks, payment integration hooks.", "msg_type": "artifact"},
+        {"type": "release", "glob": "src/order/**", "agent": "beta"},
+        {"type": "close", "task": "implement-order-service"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Integration testing with escalation",
+      "scene": "Gamma runs integration tests and hits a cross-service issue.",
+      "actions": [
+        {"type": "assign", "task": "integration-tests", "agent": "gamma"},
+        {"type": "start", "task": "integration-tests"},
+        {"type": "escalate", "from": "gamma", "body": "Integration test failure: order creation returns 500 when user service is under load. Possible connection pool exhaustion. Need alpha to investigate.", "msg_type": "blocker"},
+        {"type": "block", "task": "integration-tests", "reason": "Cross-service connection pool issue"},
+        {"type": "query", "command": "escalations"},
+        {"type": "message", "from": "user", "to": "gamma", "body": "Alpha increased connection pool size from 5 to 20. Re-run the integration tests.", "msg_type": "text"},
+        {"type": "resolve", "task": "integration-tests"},
+        {"type": "close", "task": "integration-tests"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Deployment and wrap-up",
+      "scene": "Gamma deploys everything. All tasks close — the project is complete.",
+      "actions": [
+        {"type": "assign", "task": "deploy", "agent": "gamma"},
+        {"type": "start", "task": "deploy"},
+        {"type": "message", "from": "gamma", "to": "alpha", "body": "Deployed to production. All health checks passing. Zero-downtime deployment confirmed.", "msg_type": "artifact"},
+        {"type": "close", "task": "deploy"},
+        {"type": "query", "command": "task list --status all"},
+        {"type": "query", "command": "task ready"},
+        {"type": "query", "command": "context --around <integration-tests> --depth 2"}
+      ]
+    }
+  ]
+}

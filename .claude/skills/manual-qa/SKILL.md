@@ -128,6 +128,157 @@ Bugs found through aggressive testing get elevated severity:
 - **Wrong exit code** → Medium (breaks scripting and CI pipelines)
 - **Missing/bad error message** → Medium (user can't self-diagnose)
 
+## Stress Test QA — Large Volume Data Handling
+
+When the user asks for "stress test", "load test", "volume test", or "scale test", run this
+extended protocol that pushes the system under heavy data loads.
+
+### Setup
+
+```bash
+cargo build --release
+cd /tmp && rm -rf <project>-stress-qa && mkdir <project>-stress-qa && cd <project>-stress-qa
+<binary> init
+```
+
+### Phase 1: Bulk Entity Creation
+
+Create a large number of entities rapidly using a shell loop. Capture timing.
+
+```bash
+R="$PROJECT_ROOT/.qa/stress-qa-results.md"
+echo "## Bulk Entity Creation" >> "$R"
+START=$(date +%s)
+for i in $(seq 1 500); do
+  TYPE=$(echo "task module service agent plan doc lesson" | tr ' ' '\n' | shuf -n1)
+  $BINARY add "entity-$i" --type "$TYPE" --summary "Stress test entity $i with type $TYPE" 2>&1 | tail -1
+done
+END=$(date +%s)
+echo "Created 500 entities in $((END-START)) seconds" >> "$R"
+```
+
+Verify: `$BINARY list | wc -l` should show 500 entities.
+
+### Phase 2: Bulk Relation Creation
+
+Create relations between random entity pairs:
+
+```bash
+# Get all slugs
+SLUGS=($($BINARY list --json | jq -r '.[].slug'))
+echo "## Bulk Relation Creation" >> "$R"
+START=$(date +%s)
+TYPES=("relates_to" "depends_on" "produces" "owns")
+for i in $(seq 1 1000); do
+  SRC=${SLUGS[$((RANDOM % ${#SLUGS[@]}))]}
+  TGT=${SLUGS[$((RANDOM % ${#SLUGS[@]}))]}
+  REL=${TYPES[$((RANDOM % ${#TYPES[@]}))]}
+  $BINARY relate "$SRC" "$REL" "$TGT" 2>/dev/null
+done
+END=$(date +%s)
+echo "Attempted 1000 relations in $((END-START)) seconds" >> "$R"
+```
+
+### Phase 3: Bulk Message Volume
+
+```bash
+# Create 10 agents, send 50 messages each
+AGENTS=()
+for i in $(seq 1 10); do
+  SLUG=$($BINARY add "stress-agent-$i" --type agent --summary "Stress agent $i" --json | jq -r '.slug')
+  AGENTS+=("$SLUG")
+done
+START=$(date +%s)
+for i in $(seq 1 500); do
+  FROM=${AGENTS[$((RANDOM % 10))]}
+  TO=${AGENTS[$(( (RANDOM + 1) % 10))]}
+  $BINARY message send --from "$FROM" --to "$TO" --body "Stress message $i: $(head -c 200 /dev/urandom | base64 | head -c 100)" --type text 2>/dev/null
+done
+END=$(date +%s)
+echo "Sent 500 messages in $((END-START)) seconds" >> "$R"
+```
+
+### Phase 4: Performance Queries
+
+Time critical operations at scale:
+
+```bash
+echo "## Performance at Scale" >> "$R"
+
+# List all
+time $BINARY list > /dev/null 2>&1
+
+# Search
+time $BINARY search "stress entity" > /dev/null 2>&1
+
+# Graph operations
+SLUG=${SLUGS[0]}
+time $BINARY context --around "$SLUG" --depth 3 > /dev/null 2>&1
+time $BINARY pagerank > /dev/null 2>&1
+time $BINARY degree > /dev/null 2>&1
+
+# Task operations
+time $BINARY task ready > /dev/null 2>&1
+```
+
+### Phase 5: Export/Import at Scale
+
+```bash
+# Export full state
+time $BINARY export --output /tmp/<project>-stress-qa/stress-snapshot.json
+SIZE=$(wc -c < /tmp/<project>-stress-qa/stress-snapshot.json)
+echo "Export size: $SIZE bytes" >> "$R"
+
+# Import into fresh project
+mkdir -p /tmp/<project>-stress-qa-2 && cd /tmp/<project>-stress-qa-2
+$BINARY init
+time $BINARY import --input /tmp/<project>-stress-qa/stress-snapshot.json
+
+# Verify counts match
+ORIG_COUNT=$($BINARY list --json 2>/dev/null | jq length)
+cd /tmp/<project>-stress-qa-2
+IMPORT_COUNT=$($BINARY list --json 2>/dev/null | jq length)
+echo "Original: $ORIG_COUNT, Imported: $IMPORT_COUNT" >> "$R"
+```
+
+### Phase 6: Concurrent Access
+
+```bash
+# Fire 10 parallel list commands
+echo "## Concurrent Access" >> "$R"
+for i in $(seq 1 10); do
+  $BINARY list > /dev/null 2>&1 &
+done
+wait
+echo "10 parallel list commands: all succeeded" >> "$R"
+
+# Fire 10 parallel writes
+for i in $(seq 1 10); do
+  $BINARY add "concurrent-$i" --type doc --summary "Concurrent write $i" > /dev/null 2>&1 &
+done
+wait
+echo "10 parallel writes: check for errors" >> "$R"
+```
+
+### Pass/Fail Criteria
+
+| Metric | Pass | Fail |
+|--------|------|------|
+| 500 entity creation | <60s | >120s or errors |
+| 1000 relation creation | <120s | >240s or errors |
+| List at 500 entities | <2s | >5s |
+| Search at 500 entities | <2s | >5s |
+| PageRank at 500+1000 | <5s | >15s |
+| Export 500+1000 | <10s | >30s |
+| Import full snapshot | <30s | >60s |
+| Concurrent reads | 0 errors | Any DB lock error |
+| Concurrent writes | 0 corruption | Any data loss |
+| Export/import round-trip | Counts match | Mismatch |
+
+### Results File
+
+Save to `.qa/stress-qa-YYYY-MM-DDTHHMM.md` alongside regular QA results.
+
 ## Key Things to Verify
 
 - **Output formatting**: alignment, truncation, priority/status display

@@ -1,0 +1,184 @@
+{
+  "name": "Web App Rewrite",
+  "description": "Full web app rewrite with 4 agents, 8 tasks in a linear dependency chain, demonstrating blocking, escalations, reservations, messaging, and export/import",
+
+  "modules": [
+    {"name": "api-gateway", "summary": "HTTP routing layer — Express.js with rate limiting and request validation"},
+    {"name": "auth-service", "summary": "JWT authentication + session management with Redis backing"},
+    {"name": "data-layer", "summary": "PostgreSQL models, migrations, and query layer (Prisma)"},
+    {"name": "frontend", "summary": "React 18 SPA with TypeScript, React Query, and Tailwind CSS"}
+  ],
+
+  "agents": [
+    {"name": "alice", "summary": "Senior backend engineer — 5yr exp, owns auth and API"},
+    {"name": "bob", "summary": "Frontend specialist — React expert, accessibility focus"},
+    {"name": "carol", "summary": "Staff engineer — code reviewer, architecture guardian"},
+    {"name": "dave", "summary": "Tech lead — planner, architect, tie-breaker on decisions"}
+  ],
+
+  "tasks": [
+    {"name": "design-architecture", "summary": "Design system architecture: service boundaries, API contracts, data model", "priority": 0, "blocks": ["setup-database"]},
+    {"name": "setup-database", "summary": "PostgreSQL schema, migrations (0001_users, 0002_sessions, 0003_oauth_tokens), seed data", "priority": 1, "blocks": ["implement-auth"]},
+    {"name": "implement-auth", "summary": "OAuth2 + JWT: login/logout, token refresh, session management, Google provider", "priority": 1, "blocks": ["implement-api"]},
+    {"name": "implement-api", "summary": "REST API endpoints: /users, /sessions, /auth/*, rate limiting, validation middleware", "priority": 1, "blocks": ["implement-frontend"]},
+    {"name": "implement-frontend", "summary": "React SPA: login page, dashboard, user profile, API integration via React Query", "priority": 2, "blocks": ["integration-tests"]},
+    {"name": "integration-tests", "summary": "End-to-end test suite: auth flow, CRUD operations, error scenarios, load testing", "priority": 1, "blocks": ["code-review"]},
+    {"name": "code-review", "summary": "Full codebase review: security audit, performance review, accessibility check", "priority": 2, "blocks": ["deploy-staging"]},
+    {"name": "deploy-staging", "summary": "Deploy to staging: Docker compose, CI/CD pipeline, smoke tests, monitoring setup", "priority": 0, "blocks": []}
+  ],
+
+  "docs": [
+    {"name": "api-spec", "summary": "REST API specification: endpoints, request/response schemas, auth headers, error codes", "relates_to": ["api-gateway"]},
+    {"name": "auth-design", "summary": "Auth architecture: OAuth2 flow diagrams, JWT structure, session lifecycle, security considerations", "relates_to": ["auth-service"]}
+  ],
+
+  "plans": [
+    {"name": "rewrite-plan", "summary": "Web App Rewrite v2 — master plan covering 8 tasks across 4 modules", "owns": ["design-architecture", "setup-database", "implement-auth", "implement-api", "implement-frontend", "integration-tests", "code-review", "deploy-staging"]}
+  ],
+
+  "extra_relations": [
+    {"source": "auth-service", "type": "depends_on", "target": "data-layer"},
+    {"source": "api-gateway", "type": "depends_on", "target": "auth-service"},
+    {"source": "frontend", "type": "depends_on", "target": "api-gateway"}
+  ],
+
+  "cycles": [
+    {
+      "title": "Planner completes architecture design",
+      "scene": "Dave the architect kicks off the project by designing the system.",
+      "actions": [
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "design-architecture", "agent": "dave"},
+        {"type": "start", "task": "design-architecture"},
+        {"type": "message", "from": "dave", "to": "alice", "body": "Architecture finalized. DB schema in api-spec doc. Start with PostgreSQL setup — tables: users, sessions, oauth_tokens. Use UUID PKs.", "msg_type": "text"},
+        {"type": "message", "from": "dave", "to": "bob", "body": "Frontend can use React Query for API calls. See api-spec for endpoints. Auth will use httpOnly cookies, not localStorage.", "msg_type": "text"},
+        {"type": "close", "task": "design-architecture"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Database setup with file reservations",
+      "scene": "Alice claims the database work and locks the relevant files.",
+      "actions": [
+        {"type": "assign", "task": "setup-database", "agent": "alice"},
+        {"type": "start", "task": "setup-database"},
+        {"type": "reserve", "glob": "src/db/**", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "query", "command": "reservations"},
+        {"type": "message", "from": "alice", "to": "carol", "body": "DB migrations ready for review: 0001_users.sql, 0002_sessions.sql, 0003_oauth_tokens.sql. Indexes on email and session_token.", "msg_type": "artifact"},
+        {"type": "release", "glob": "src/db/**", "agent": "alice"},
+        {"type": "close", "task": "setup-database"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Blocker escalation",
+      "scene": "Alice starts auth but hits a wall — she needs OAuth credentials nobody provided.",
+      "actions": [
+        {"type": "assign", "task": "implement-auth", "agent": "alice"},
+        {"type": "start", "task": "implement-auth"},
+        {"type": "escalate", "from": "alice", "body": "BLOCKED: Need OAuth2 client_id and client_secret for Google provider. Cannot proceed without credentials. Who has access to the Google Cloud Console?", "msg_type": "blocker"},
+        {"type": "block", "task": "implement-auth", "reason": "Missing OAuth credentials"},
+        {"type": "query", "command": "escalations"}
+      ]
+    },
+    {
+      "title": "Question escalation",
+      "scene": "While blocked, Alice raises a design question too.",
+      "actions": [
+        {"type": "escalate", "from": "alice", "body": "Should we support both OAuth2 and SAML, or just OAuth2? SAML adds ~2 days of work but enterprise customers need it. What's the priority?", "msg_type": "question"},
+        {"type": "query", "command": "escalations"}
+      ]
+    },
+    {
+      "title": "User resolves escalations, work continues",
+      "scene": "The user responds to Alice, unblocking her.",
+      "actions": [
+        {"type": "message", "from": "user", "to": "alice", "body": "OAuth2 only for now. We'll add SAML in v2. Credentials: use env vars OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET — they're in the team vault.", "msg_type": "text"},
+        {"type": "resolve", "task": "implement-auth"},
+        {"type": "message", "from": "alice", "to": "carol", "body": "Auth module complete. JWT tokens with 1h expiry, refresh token rotation every 7d. Google OAuth2 flow tested. Ready for review.", "msg_type": "artifact"},
+        {"type": "close", "task": "implement-auth"},
+        {"type": "query", "command": "task ready"},
+        {"type": "query", "command": "escalations"}
+      ]
+    },
+    {
+      "title": "File reservation conflict",
+      "scene": "Alice and Bob both try to claim the API directory.",
+      "actions": [
+        {"type": "reserve", "glob": "src/api/**", "agent": "alice", "exclusive": true, "ttl": 3600},
+        {"type": "reserve", "glob": "src/api/**", "agent": "bob", "exclusive": true, "ttl": 3600},
+        {"type": "query", "command": "reservations"},
+        {"type": "release", "glob": "src/api/**", "agent": "alice"},
+        {"type": "reserve", "glob": "src/api/**", "agent": "bob", "exclusive": true, "ttl": 3600},
+        {"type": "query", "command": "reservations"},
+        {"type": "release", "glob": "src/api/**", "agent": "bob"}
+      ]
+    },
+    {
+      "title": "Parallel work + inter-agent messaging",
+      "scene": "Alice builds the API while Carol reviews the auth work. Agents communicate directly.",
+      "actions": [
+        {"type": "assign", "task": "implement-api", "agent": "alice"},
+        {"type": "start", "task": "implement-api"},
+        {"type": "message", "from": "carol", "to": "alice", "body": "Auth review complete: LGTM overall. One nit: add rate limiting to /auth/token endpoint (10 req/min per IP). Non-blocking, can be done during API work.", "msg_type": "text"},
+        {"type": "message", "from": "carol", "to": "dave", "body": "Auth module review complete. Code quality is solid. JWT implementation follows OWASP guidelines. Recommending we proceed to API phase.", "msg_type": "artifact"},
+        {"type": "query", "command": "message inbox <alice>"},
+        {"type": "close", "task": "implement-api"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Frontend work + failure scenario",
+      "scene": "Bob starts the frontend but hits a React 19 breaking change.",
+      "actions": [
+        {"type": "assign", "task": "implement-frontend", "agent": "bob"},
+        {"type": "start", "task": "implement-frontend"},
+        {"type": "escalate", "from": "bob", "body": "BLOCKED: Build fails on React 19. Breaking change in useEffect cleanup causes 12 component failures. Options: (1) downgrade to React 18 (~30min), (2) refactor all 12 components (~4hrs). Need a decision.", "msg_type": "blocker"},
+        {"type": "block", "task": "implement-frontend", "reason": "React 19 breaking change"},
+        {"type": "query", "command": "escalations"},
+        {"type": "message", "from": "user", "to": "bob", "body": "Downgrade to React 18 for now. We'll upgrade post-launch when the ecosystem stabilizes.", "msg_type": "text"},
+        {"type": "resolve", "task": "implement-frontend"},
+        {"type": "message", "from": "bob", "to": "carol", "body": "Frontend complete. React 18, TypeScript strict mode, 94% Lighthouse score. React Query handles all API state. Ready for review.", "msg_type": "artifact"},
+        {"type": "close", "task": "implement-frontend"}
+      ]
+    },
+    {
+      "title": "Context queries and graph exploration",
+      "scene": "Step back and explore the knowledge graph we've built.",
+      "actions": [
+        {"type": "query", "command": "context --around <implement-auth> --depth 2"},
+        {"type": "query", "command": "list --type task --status all"},
+        {"type": "query", "command": "list --type agent"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Final sprint — close remaining tasks",
+      "scene": "The team sprints to finish. Integration tests, code review, then deploy.",
+      "actions": [
+        {"type": "assign", "task": "integration-tests", "agent": "alice"},
+        {"type": "start", "task": "integration-tests"},
+        {"type": "close", "task": "integration-tests"},
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "code-review", "agent": "carol"},
+        {"type": "start", "task": "code-review"},
+        {"type": "message", "from": "carol", "to": "dave", "body": "Full review complete. 3 minor issues filed, no blockers. Security audit passed. Ready for staging deploy.", "msg_type": "artifact"},
+        {"type": "close", "task": "code-review"},
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "deploy-staging", "agent": "dave"},
+        {"type": "start", "task": "deploy-staging"},
+        {"type": "close", "task": "deploy-staging"},
+        {"type": "query", "command": "task list --status all"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Export/import round-trip",
+      "scene": "Export everything, import into a fresh project, verify integrity.",
+      "actions": [
+        {"type": "query", "command": "export --output /tmp/fl-sim/snapshot.json"},
+        {"type": "query", "command": "list --type task --status all"}
+      ]
+    }
+  ]
+}

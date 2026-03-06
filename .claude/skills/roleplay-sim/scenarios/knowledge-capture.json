@@ -1,0 +1,145 @@
+{
+  "name": "Knowledge Capture & Debugging",
+  "description": "3 agents build a data pipeline, hit bugs, capture lessons, then a new agent onboards using search. Exercises: lessons, FTS5 search, file actions, graph analytics.",
+
+  "modules": [
+    {"name": "ingestion", "summary": "Data ingestion pipeline — Kafka consumers, schema validation, dead-letter queue"},
+    {"name": "transform", "summary": "Data transformation layer — cleaning, normalization, enrichment"},
+    {"name": "storage", "summary": "Data storage — TimescaleDB, partitioning, retention policies"}
+  ],
+
+  "agents": [
+    {"name": "maya", "summary": "Senior data engineer — pipeline architecture, Kafka expertise"},
+    {"name": "noah", "summary": "Backend engineer — storage layer, SQL optimization"},
+    {"name": "olivia", "summary": "New team member — onboarding mid-project, needs to ramp up fast"}
+  ],
+
+  "tasks": [
+    {"name": "design-pipeline", "summary": "Design data pipeline: source connectors, schema registry, throughput targets", "priority": 0, "blocks": ["build-ingestion", "build-transform"]},
+    {"name": "build-ingestion", "summary": "Kafka consumer group, Avro deserialization, dead-letter routing for malformed records", "priority": 1, "blocks": ["build-storage"]},
+    {"name": "build-transform", "summary": "Data cleaning rules, field normalization, enrichment joins against reference tables", "priority": 1, "blocks": ["build-storage"]},
+    {"name": "build-storage", "summary": "TimescaleDB hypertables, continuous aggregates, retention policy (90d raw, 2yr rollup)", "priority": 1, "blocks": ["integration-validation"]},
+    {"name": "integration-validation", "summary": "End-to-end validation: produce test events, verify storage, check aggregates", "priority": 0, "blocks": []}
+  ],
+
+  "docs": [
+    {"name": "pipeline-spec", "summary": "Pipeline specification: data flow diagram, schema definitions, SLAs", "relates_to": ["ingestion"]}
+  ],
+
+  "plans": [
+    {"name": "pipeline-plan", "summary": "Data pipeline build-out — 5 tasks across 3 modules", "owns": ["design-pipeline", "build-ingestion", "build-transform", "build-storage", "integration-validation"]}
+  ],
+
+  "extra_relations": [
+    {"source": "transform", "type": "depends_on", "target": "ingestion"},
+    {"source": "storage", "type": "depends_on", "target": "transform"}
+  ],
+
+  "cycles": [
+    {
+      "title": "Pipeline design with file artifacts",
+      "scene": "Maya designs the pipeline architecture and writes the spec to disk.",
+      "actions": [
+        {"type": "query", "command": "task ready"},
+        {"type": "assign", "task": "design-pipeline", "agent": "maya"},
+        {"type": "start", "task": "design-pipeline"},
+        {"type": "mkdir", "path": "docs"},
+        {"type": "write_file", "path": "docs/pipeline-design.txt", "content": "Data Pipeline Architecture\n=========================\nSources: 3 Kafka topics (events, metrics, logs)\nSchema: Avro with schema registry (Confluent)\nThroughput target: 50k events/sec sustained\nLatency SLA: < 5s end-to-end\n\nFlow:\n  Kafka -> Ingestion (validate + DLQ) -> Transform (clean + enrich) -> Storage (TimescaleDB)\n\nPartitioning: by tenant_id, 7-day chunks\nRetention: 90d raw, 2yr rollup via continuous aggregates", "agent": "maya"},
+        {"type": "message", "from": "maya", "to": "noah", "body": "Pipeline design written to docs/pipeline-design.txt. Key decision: TimescaleDB over plain PostgreSQL for time-series. Partitioning by tenant_id.", "msg_type": "artifact"},
+        {"type": "close", "task": "design-pipeline"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Parallel build — ingestion and transform",
+      "scene": "Maya builds ingestion while Noah starts transform. Both write code artifacts to disk.",
+      "actions": [
+        {"type": "assign", "task": "build-ingestion", "agent": "maya"},
+        {"type": "assign", "task": "build-transform", "agent": "noah"},
+        {"type": "start", "task": "build-ingestion"},
+        {"type": "start", "task": "build-transform"},
+        {"type": "reserve", "glob": "src/ingestion/**", "agent": "maya", "exclusive": true, "ttl": 3600},
+        {"type": "reserve", "glob": "src/transform/**", "agent": "noah", "exclusive": true, "ttl": 3600},
+        {"type": "mkdir", "path": "src/ingestion"},
+        {"type": "mkdir", "path": "src/transform"},
+        {"type": "write_file", "path": "src/ingestion/consumer.txt", "content": "Kafka Consumer Config\n====================\ngroup.id: pipeline-ingestion-v1\nauto.offset.reset: earliest\nenable.auto.commit: false\nmax.poll.records: 500\n\nDeserialization: Avro with schema registry\nDLQ topic: pipeline.dead-letter\nDLQ routing: malformed schema OR missing required fields", "agent": "maya"},
+        {"type": "write_file", "path": "src/transform/rules.txt", "content": "Transform Rules\n===============\n1. Normalize timestamps to UTC (reject future timestamps > 5min)\n2. Trim whitespace from string fields\n3. Enrich with tenant metadata from reference table\n4. Drop records with null tenant_id (log to metrics)\n5. Deduplicate by (event_id, tenant_id) within 1h window", "agent": "noah"},
+        {"type": "query", "command": "reservations"}
+      ]
+    },
+    {
+      "title": "Ingestion bug — Kafka offset commit failure",
+      "scene": "Maya hits a nasty Kafka bug: offsets aren't committing properly, causing duplicate processing.",
+      "actions": [
+        {"type": "escalate", "from": "maya", "body": "BUG: Kafka consumer offsets not committing. After rebalance, consumer re-processes ~2000 events. Suspect auto.commit is interfering with manual commit. Need to debug.", "msg_type": "blocker"},
+        {"type": "block", "task": "build-ingestion", "reason": "Kafka offset commit failure causing duplicate processing"},
+        {"type": "write_file", "path": "src/ingestion/debug-log.txt", "content": "Debug Session: Kafka Offset Commit\n===================================\nSymptom: After consumer group rebalance, ~2000 events reprocessed\nAttempt 1: Set enable.auto.commit=false — still happening\nAttempt 2: Added commitSync() after each batch — still happening\nRoot cause: Consumer was calling commitAsync() BEFORE processing\n  completed. On rebalance, in-flight batch offsets were lost.\nFix: Move commitSync() to AFTER successful batch processing.\n  Also added idempotency check (event_id dedup in Redis) as safety net.", "agent": "maya"},
+        {"type": "message", "from": "user", "to": "maya", "body": "Good debugging. Commit the fix and capture this as a lesson — it'll bite other teams too.", "msg_type": "text"},
+        {"type": "resolve", "task": "build-ingestion"},
+        {"type": "query", "command": "lesson add \"Kafka offset commit ordering\" --problem \"Consumer offsets lost on rebalance causing duplicate processing — commitAsync called before batch processing completed\" --solution \"Move commitSync to after successful batch processing. Add idempotency layer (event_id dedup in Redis) as safety net\" --learned \"Always commit offsets AFTER processing, never before. Async commit is fine for performance but add idempotency for correctness\" --pattern \"kafka-consumer\""}
+      ]
+    },
+    {
+      "title": "Transform bug — timezone normalization edge case",
+      "scene": "Noah discovers timestamps from one source are in a non-standard format, breaking the transform.",
+      "actions": [
+        {"type": "message", "from": "noah", "to": "maya", "body": "Found edge case: source-3 sends timestamps as Unix millis (not ISO 8601 like sources 1-2). Transform rule #1 was parsing all as ISO and silently dropping source-3 records.", "msg_type": "text"},
+        {"type": "write_file", "path": "src/transform/debug-tz.txt", "content": "Debug: Timezone Normalization\n=============================\nSource 1: ISO 8601 with timezone (2026-03-06T10:30:00Z)\nSource 2: ISO 8601 with timezone (2026-03-06T10:30:00+05:30)\nSource 3: Unix milliseconds (1741257000000) <-- DIFFERENT!\n\nImpact: ~30% of records silently dropped (all source-3)\nFix: Detect format by checking if value is numeric.\n  If numeric and > 1e12, treat as Unix millis.\n  If numeric and > 1e9, treat as Unix seconds.\n  Otherwise parse as ISO 8601.", "agent": "noah"},
+        {"type": "query", "command": "lesson add \"Multi-format timestamp normalization\" --problem \"Transform silently dropped 30% of records because source-3 used Unix millis while others used ISO 8601\" --solution \"Auto-detect timestamp format: numeric > 1e12 = millis, numeric > 1e9 = seconds, else ISO 8601. Log format detection results to metrics\" --learned \"Never assume uniform timestamp formats across data sources. Always validate record counts per source to catch silent data loss early\" --pattern \"data-pipeline\""},
+        {"type": "release", "glob": "src/ingestion/**", "agent": "maya"},
+        {"type": "close", "task": "build-ingestion"},
+        {"type": "release", "glob": "src/transform/**", "agent": "noah"},
+        {"type": "close", "task": "build-transform"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "New agent onboards — uses search and graph to ramp up",
+      "scene": "Olivia joins the team mid-project. She uses search, lessons, graph analytics, and file reading to understand the system.",
+      "actions": [
+        {"type": "query", "command": "search \"pipeline\""},
+        {"type": "query", "command": "search --type lesson \"kafka\""},
+        {"type": "query", "command": "search \"timestamp normalization\""},
+        {"type": "query", "command": "lesson list"},
+        {"type": "read_file", "path": "docs/pipeline-design.txt", "agent": "olivia"},
+        {"type": "read_file", "path": "src/ingestion/debug-log.txt", "agent": "olivia"},
+        {"type": "read_file", "path": "src/transform/debug-tz.txt", "agent": "olivia"},
+        {"type": "query", "command": "pagerank"},
+        {"type": "query", "command": "degree"},
+        {"type": "query", "command": "context --around <build-storage> --depth 2"},
+        {"type": "message", "from": "olivia", "to": "maya", "body": "Ramped up via search + lessons. I see build-storage is ready. I'll take it — TimescaleDB hypertables with tenant_id partitioning, right?", "msg_type": "text"}
+      ]
+    },
+    {
+      "title": "Storage implementation with knowledge reuse",
+      "scene": "Olivia builds storage, referencing lessons from earlier bugs to avoid similar pitfalls.",
+      "actions": [
+        {"type": "assign", "task": "build-storage", "agent": "olivia"},
+        {"type": "start", "task": "build-storage"},
+        {"type": "reserve", "glob": "src/storage/**", "agent": "olivia", "exclusive": true, "ttl": 3600},
+        {"type": "mkdir", "path": "src/storage"},
+        {"type": "query", "command": "search \"idempotency\""},
+        {"type": "write_file", "path": "src/storage/schema.txt", "content": "TimescaleDB Schema\n==================\nCREATE TABLE events (\n  event_id UUID PRIMARY KEY,\n  tenant_id UUID NOT NULL,\n  event_type TEXT NOT NULL,\n  payload JSONB NOT NULL,\n  source TEXT NOT NULL,\n  created_at TIMESTAMPTZ NOT NULL,\n  ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\n\nSELECT create_hypertable('events', 'created_at',\n  chunk_time_interval => INTERVAL '7 days',\n  partitioning_column => 'tenant_id',\n  number_partitions => 4\n);\n\n-- Idempotency: UPSERT by event_id (learned from Kafka offset lesson)\nINSERT INTO events ... ON CONFLICT (event_id) DO NOTHING;\n\n-- Continuous aggregate for rollups\nCREATE MATERIALIZED VIEW events_hourly\nWITH (timescaledb.continuous) AS\nSELECT tenant_id, event_type,\n  time_bucket('1 hour', created_at) AS bucket,\n  COUNT(*) AS event_count\nFROM events\nGROUP BY tenant_id, event_type, bucket;\n\n-- Retention: 90d raw, 2yr rollup\nSELECT add_retention_policy('events', INTERVAL '90 days');\nSELECT add_retention_policy('events_hourly', INTERVAL '730 days');", "agent": "olivia"},
+        {"type": "message", "from": "olivia", "to": "noah", "body": "Storage schema written to src/storage/schema.txt. Used UPSERT for idempotency (learned from Maya's Kafka lesson). Hypertables with 7-day chunks, 4 tenant partitions.", "msg_type": "artifact"},
+        {"type": "release", "glob": "src/storage/**", "agent": "olivia"},
+        {"type": "close", "task": "build-storage"},
+        {"type": "query", "command": "task ready"}
+      ]
+    },
+    {
+      "title": "Integration validation and final lessons",
+      "scene": "The team validates the full pipeline and captures final lessons.",
+      "actions": [
+        {"type": "assign", "task": "integration-validation", "agent": "olivia"},
+        {"type": "start", "task": "integration-validation"},
+        {"type": "write_file", "path": "docs/validation-results.txt", "content": "Integration Validation Results\n==============================\nTest 1: Produce 10k events across 3 sources -> OK (10k stored)\nTest 2: Malformed Avro record -> routed to DLQ -> OK\nTest 3: Source-3 Unix millis timestamps -> normalized correctly -> OK\nTest 4: Duplicate event_id -> deduplicated via UPSERT -> OK\nTest 5: Consumer rebalance mid-batch -> no duplicates (idempotency) -> OK\nTest 6: Continuous aggregate -> hourly rollup correct -> OK\nTest 7: Retention policy -> records >90d marked for drop -> OK\n\nAll 7 tests PASSED. Pipeline ready for production.", "agent": "olivia"},
+        {"type": "close", "task": "integration-validation"},
+        {"type": "query", "command": "lesson add \"Onboarding via knowledge graph\" --problem \"New team member joining mid-project needs to understand architecture, past decisions, and known pitfalls quickly\" --solution \"Use fl search to find relevant entities, fl lesson list/show to learn from past bugs, read file artifacts for design docs, fl pagerank to find high-importance entities\" --learned \"Structured knowledge capture during development pays off immediately when new people onboard. Lessons with patterns enable cross-project learning\" --pattern \"team-onboarding\""},
+        {"type": "query", "command": "lesson list"},
+        {"type": "query", "command": "search \"pipeline\" --type lesson"},
+        {"type": "query", "command": "task list --status all"},
+        {"type": "query", "command": "export --output /tmp/fl-sim/snapshot.json"}
+      ]
+    }
+  ]
+}
