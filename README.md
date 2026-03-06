@@ -65,6 +65,19 @@ make test CRATE=all          # run all tests
 make ci                      # full CI: fmt check + clippy + tests
 ```
 
+## AI Agent Integration
+
+Filament works best when your coding agent (Claude Code, Cursor, etc.) knows its full command set. Rather than memorizing the CLI, create a **skill** or **rule** from this README so your agent can use `fl` commands natively:
+
+```
+Create a skill for the filament CLI based on the README at:
+https://github.com/ndrewpj/filament/blob/main/README.md
+```
+
+This gives your agent the complete command reference, entity types, relation types, and workflow patterns — no manual lookup needed.
+
+---
+
 ## Usage
 
 ### Initialize a Project
@@ -824,6 +837,10 @@ make ci                         # full CI pipeline
 make migration NAME=add_foo     # create a new migration
 make adr TITLE="Decision name"  # create a new ADR
 ```
+
+## Why "Filament"?
+
+A filament is a single fine thread that, woven together with others, forms something strong. In the same way, Filament weaves together isolated pieces of project knowledge — tasks, code modules, plans, docs, lessons, agent activity — into a connected graph that's stronger than the sum of its parts. The name also nods to the thin conductive wire in a light bulb: the thing that turns energy into light. Filament turns scattered context into clarity.
 
 ## Inspiration
 
