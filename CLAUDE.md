@@ -11,7 +11,6 @@ filament/
 ├── util-scripts/               # shell scripts backing Makefile targets
 ├── .plan/
 │   ├── filament-v1.md          # master plan v1.1 (all 6 phases complete)
-│   ├── test-standards.md       # layered test strategy
 │   ├── gotchas.md              # pitfalls & solutions (sqlx, thiserror, petgraph, etc.)
 │   └── adr/                    # architecture decision records (001–020)
 ├── .qa/                        # QA results + simulation logs
@@ -66,7 +65,6 @@ Full ADRs with rationale: `.plan/adr/` (001–022). Key choices:
 ## Plans & References
 
 - Master plan: `.plan/filament-v1.md`
-- Test standards: `.plan/test-standards.md`
 - Gotchas: `.plan/gotchas.md`
 - Architecture decisions: `.plan/adr/` (use `make adr TITLE="..."` to add new ones)
 - QA results & simulation logs: `.qa/`
