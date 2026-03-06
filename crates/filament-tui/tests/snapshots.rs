@@ -474,6 +474,89 @@ async fn page_indicator_in_title() {
 }
 
 // ---------------------------------------------------------------------------
+// Detail pane
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn detail_pane_opens_and_closes() {
+    let mut conn = test_conn().await;
+    conn.create_entity(CreateEntityRequest {
+        name: "My Task".to_string(),
+        entity_type: EntityType::Task,
+        summary: Some("A detailed task".to_string()),
+        key_facts: None,
+        content_path: None,
+        priority: None,
+    })
+    .await
+    .unwrap();
+
+    let mut app = App::new(conn);
+    app.refresh_all().await;
+    app.entity_table_state.select(Some(0));
+
+    assert!(!app.has_detail());
+
+    app.open_detail().await;
+    assert!(app.has_detail());
+
+    let backend = TestBackend::new(100, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
+        .unwrap();
+
+    let output = buffer_to_string(&terminal);
+    assert!(
+        output.contains("My Task"),
+        "detail should show entity name: {output}"
+    );
+    assert!(
+        output.contains("Summary"),
+        "detail should show Summary section: {output}"
+    );
+    assert!(
+        output.contains("A detailed task"),
+        "detail should show summary text: {output}"
+    );
+
+    app.close_detail();
+    assert!(!app.has_detail());
+}
+
+#[tokio::test]
+async fn detail_scroll() {
+    let mut conn = test_conn().await;
+    conn.create_entity(CreateEntityRequest {
+        name: "Scrollable".to_string(),
+        entity_type: EntityType::Task,
+        summary: Some("test".to_string()),
+        key_facts: None,
+        content_path: None,
+        priority: None,
+    })
+    .await
+    .unwrap();
+
+    let mut app = App::new(conn);
+    app.refresh_all().await;
+    app.entity_table_state.select(Some(0));
+    app.open_detail().await;
+
+    assert_eq!(app.detail_scroll, 0);
+    app.scroll_detail_down();
+    assert_eq!(app.detail_scroll, 1);
+    app.scroll_detail_down();
+    assert_eq!(app.detail_scroll, 2);
+    app.scroll_detail_up();
+    assert_eq!(app.detail_scroll, 1);
+    app.scroll_detail_up();
+    assert_eq!(app.detail_scroll, 0);
+    app.scroll_detail_up(); // should not go below 0
+    assert_eq!(app.detail_scroll, 0);
+}
+
+// ---------------------------------------------------------------------------
 // format_seconds edge cases
 // ---------------------------------------------------------------------------
 

@@ -8,6 +8,8 @@ use filament_core::connection::FilamentConnection;
 use filament_core::dto::Escalation;
 use filament_core::models::{AgentRun, Entity, EntityStatus, EntityType, Priority, Reservation};
 
+use crate::views::detail::DetailData;
+
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_PAGE_SIZE: usize = 50;
 
@@ -216,6 +218,8 @@ pub struct App {
     pub filter: FilterState,
     pub page: usize,
     pub page_size: usize,
+    pub detail: Option<DetailData>,
+    pub detail_scroll: u16,
     pub last_refresh: DateTime<Utc>,
     pub status_message: Option<String>,
     pub escalation_count: usize,
@@ -240,6 +244,8 @@ impl App {
             filter: FilterState::default(),
             page: 0,
             page_size: DEFAULT_PAGE_SIZE,
+            detail: None,
+            detail_scroll: 0,
             last_refresh: Utc::now(),
             status_message: None,
             escalation_count: 0,
@@ -480,5 +486,67 @@ impl App {
     pub fn reset_page(&mut self) {
         self.page = 0;
         self.entity_table_state.select(None);
+    }
+
+    pub async fn open_detail(&mut self) {
+        if self.active_tab != Tab::Entities {
+            return;
+        }
+        let Some(idx) = self.entity_table_state.selected() else {
+            return;
+        };
+        let visible = self.visible_entities();
+        let Some(row) = visible.get(idx) else {
+            return;
+        };
+
+        let entity_id = row.entity.id().as_str().to_string();
+        let entity = row.entity.clone();
+
+        let relations = self
+            .conn
+            .list_relations(&entity_id)
+            .await
+            .unwrap_or_default();
+
+        let events = self
+            .conn
+            .get_entity_events(&entity_id)
+            .await
+            .unwrap_or_default();
+
+        let critical_path = if entity.entity_type() == EntityType::Task {
+            self.conn
+                .critical_path(&entity_id)
+                .await
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        self.detail = Some(DetailData {
+            entity,
+            relations,
+            events,
+            critical_path,
+        });
+        self.detail_scroll = 0;
+    }
+
+    pub fn close_detail(&mut self) {
+        self.detail = None;
+        self.detail_scroll = 0;
+    }
+
+    pub const fn has_detail(&self) -> bool {
+        self.detail.is_some()
+    }
+
+    pub const fn scroll_detail_down(&mut self) {
+        self.detail_scroll = self.detail_scroll.saturating_add(1);
+    }
+
+    pub const fn scroll_detail_up(&mut self) {
+        self.detail_scroll = self.detail_scroll.saturating_sub(1);
     }
 }

@@ -51,6 +51,12 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
         _ => {}
     }
 
+    // If detail pane is open, capture keys for it
+    if app.has_detail() {
+        handle_detail_key(app, key);
+        return;
+    }
+
     // If a filter bar is open, capture keys for it
     if app.filter.active_bar.is_some() {
         handle_filter_bar_key(app, key).await;
@@ -111,6 +117,18 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('p') if app.active_tab == Tab::Entities => {
             app.prev_page();
         }
+        KeyCode::Enter if app.active_tab == Tab::Entities => {
+            app.open_detail().await;
+        }
+        _ => {}
+    }
+}
+
+fn handle_detail_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.close_detail(),
+        KeyCode::Char('j') | KeyCode::Down => app.scroll_detail_down(),
+        KeyCode::Char('k') | KeyCode::Up => app.scroll_detail_up(),
         _ => {}
     }
 }

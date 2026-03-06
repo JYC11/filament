@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod detail;
 pub mod entities;
 pub mod filter_bar;
 pub mod messages;

@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::{App, Tab};
-use crate::views::{agents, entities, filter_bar, messages, reservations};
+use crate::views::{agents, detail, entities, filter_bar, messages, reservations};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let has_filter_bar = app.active_tab == Tab::Entities && app.filter.active_bar.is_some();
@@ -56,6 +56,18 @@ fn draw_tab_bar(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
+    let has_detail = app.active_tab == Tab::Entities && app.detail.is_some();
+
+    let (table_area, detail_area) = if has_detail {
+        let split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(area);
+        (split[0], Some(split[1]))
+    } else {
+        (area, None)
+    };
+
     match app.active_tab {
         Tab::Entities => {
             let visible = app.visible_entities();
@@ -67,13 +79,17 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
                 app.total_pages(),
                 &mut state,
                 frame,
-                area,
+                table_area,
             );
             app.entity_table_state = state;
+
+            if let (Some(detail_data), Some(d_area)) = (&app.detail, detail_area) {
+                detail::render_detail(detail_data, app.detail_scroll, frame, d_area);
+            }
         }
         Tab::Agents => {
             let mut state = app.agent_table_state.clone();
-            agents::render_agent_table_stateful(&app.agent_runs, &mut state, frame, area);
+            agents::render_agent_table_stateful(&app.agent_runs, &mut state, frame, table_area);
             app.agent_table_state = state;
         }
         Tab::Reservations => {
@@ -82,13 +98,13 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
                 &app.reservations,
                 &mut state,
                 frame,
-                area,
+                table_area,
             );
             app.reservation_table_state = state;
         }
         Tab::Messages => {
             let mut state = app.message_table_state.clone();
-            messages::render_message_table_stateful(&app.messages, &mut state, frame, area);
+            messages::render_message_table_stateful(&app.messages, &mut state, frame, table_area);
             app.message_table_state = state;
         }
     }
@@ -121,8 +137,11 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let help_text = match app.active_tab {
+        Tab::Entities if app.detail.is_some() => {
+            " | q:quit Esc:close j/k:scroll"
+        }
         Tab::Entities => {
-            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri F:ready n/p:page"
+            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri F:ready n/p:page Enter:detail"
         }
         _ => " | q:quit Tab:switch r:refresh j/k:nav",
     };
