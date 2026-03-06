@@ -88,10 +88,14 @@ impl FilamentConfig {
             .unwrap_or(3)
     }
 
-    /// Resolve cleanup interval: config > 60.
+    /// Resolve cleanup interval: env var > config > 60.
     #[must_use]
     pub fn resolve_cleanup_interval_secs(&self) -> u64 {
-        self.cleanup_interval_secs.unwrap_or(60)
+        std::env::var("FILAMENT_CLEANUP_INTERVAL")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or(self.cleanup_interval_secs)
+            .unwrap_or(60)
     }
 
     /// Resolve default priority: config > 2.
@@ -103,9 +107,12 @@ impl FilamentConfig {
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::*;
 
     #[test]
+    #[serial]
     fn default_config_has_sensible_defaults() {
         let cfg = FilamentConfig::default();
         assert_eq!(cfg.resolve_agent_command(), "claude");
@@ -118,6 +125,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn parse_full_config() {
         let toml_str = r#"
 default_priority = 3
@@ -139,6 +147,7 @@ cleanup_interval_secs = 120
     }
 
     #[test]
+    #[serial]
     fn parse_partial_config() {
         let toml_str = r#"
 default_priority = 4
@@ -153,5 +162,62 @@ default_priority = 4
     fn load_missing_file_returns_default() {
         let cfg = FilamentConfig::load(std::path::Path::new("/nonexistent/path"));
         assert_eq!(cfg.resolve_default_priority(), 2);
+    }
+
+    #[test]
+    #[serial]
+    fn env_var_overrides_config_value() {
+        std::env::set_var("FILAMENT_CLEANUP_INTERVAL", "30");
+        let cfg = FilamentConfig {
+            cleanup_interval_secs: Some(120),
+            ..Default::default()
+        };
+        let result = cfg.resolve_cleanup_interval_secs();
+        std::env::remove_var("FILAMENT_CLEANUP_INTERVAL");
+        assert_eq!(result, 30);
+    }
+
+    #[test]
+    #[serial]
+    fn env_var_overrides_context_depth() {
+        std::env::set_var("FILAMENT_CONTEXT_DEPTH", "5");
+        let cfg = FilamentConfig {
+            context_depth: Some(10),
+            ..Default::default()
+        };
+        let result = cfg.resolve_context_depth();
+        std::env::remove_var("FILAMENT_CONTEXT_DEPTH");
+        assert_eq!(result, 5);
+    }
+
+    #[test]
+    #[serial]
+    fn env_var_auto_dispatch_true_string() {
+        // Test "true" string
+        std::env::set_var("FILAMENT_AUTO_DISPATCH", "true");
+        let cfg = FilamentConfig::default();
+        let result_true = cfg.resolve_auto_dispatch();
+        std::env::remove_var("FILAMENT_AUTO_DISPATCH");
+        assert!(result_true);
+
+        // Test "1" string
+        std::env::set_var("FILAMENT_AUTO_DISPATCH", "1");
+        let result_one = cfg.resolve_auto_dispatch();
+        std::env::remove_var("FILAMENT_AUTO_DISPATCH");
+        assert!(result_one);
+    }
+
+    #[test]
+    #[serial]
+    fn env_var_invalid_value_falls_back() {
+        std::env::set_var("FILAMENT_MAX_AUTO_DISPATCH", "not_a_number");
+        let cfg = FilamentConfig {
+            max_auto_dispatch: Some(7),
+            ..Default::default()
+        };
+        let result = cfg.resolve_max_auto_dispatch();
+        std::env::remove_var("FILAMENT_MAX_AUTO_DISPATCH");
+        // Invalid env var can't parse, so falls back to config value
+        assert_eq!(result, 7);
     }
 }

@@ -226,46 +226,62 @@ async fn check(cli: &Cli, args: &CheckArgs) -> Result<()> {
     )))
 }
 
-/// Simple glob matching: supports `*` (any chars) and `?` (single char).
+/// Simple glob matching: supports `*` (any non-`/` chars) and `**` (any chars including `/`).
 fn glob_matches(pattern: &str, path: &str) -> bool {
-    // Handle common patterns: exact match, `*.ext`, `dir/*`
     if pattern == path {
         return true;
     }
 
-    let pattern_parts: Vec<&str> = pattern.split('*').collect();
-    if pattern_parts.len() == 1 {
-        // No wildcards — exact match only
-        return pattern == path;
+    // Normalize `**` to a sentinel, then split on `*`
+    // Strategy: convert pattern to a regex-like check
+    // `**` matches anything (including `/`), `*` matches anything except `/`
+    glob_match_recursive(pattern, path)
+}
+
+fn glob_match_recursive(pattern: &str, path: &str) -> bool {
+    if pattern.is_empty() {
+        return path.is_empty();
+    }
+    if pattern == "**" || pattern == "**/" {
+        return true;
     }
 
-    // Simple `*` glob matching
-    let mut remaining = path;
-    for (i, part) in pattern_parts.iter().enumerate() {
-        if part.is_empty() {
-            continue;
+    if let Some(rest) = pattern.strip_prefix("**/") {
+        // `**/X` — match X at any directory depth
+        if glob_match_recursive(rest, path) {
+            return true;
         }
-        if i == 0 {
-            // Must start with this prefix
-            if !remaining.starts_with(part) {
-                return false;
+        // Try skipping one path segment at a time
+        for (i, c) in path.char_indices() {
+            if c == '/' && glob_match_recursive(rest, &path[i + 1..]) {
+                return true;
             }
-            remaining = &remaining[part.len()..];
-        } else if i == pattern_parts.len() - 1 {
-            // Must end with this suffix
-            if !remaining.ends_with(part) {
-                return false;
+        }
+        return false;
+    }
+
+    if let Some(rest) = pattern.strip_prefix('*') {
+        // `*` — match any non-`/` chars
+        for i in 0..=path.len() {
+            if i > 0 && path.as_bytes()[i - 1] == b'/' {
+                break;
             }
-            remaining = "";
-        } else {
-            // Must contain this part somewhere
-            match remaining.find(part) {
-                Some(pos) => remaining = &remaining[pos + part.len()..],
-                None => return false,
+            if glob_match_recursive(rest, &path[i..]) {
+                return true;
             }
+        }
+        return false;
+    }
+
+    // Literal character match
+    let mut pattern_chars = pattern.chars();
+    let mut path_chars = path.chars();
+    if let (Some(pc), Some(tc)) = (pattern_chars.next(), path_chars.next()) {
+        if pc == tc {
+            return glob_match_recursive(pattern_chars.as_str(), path_chars.as_str());
         }
     }
-    true
+    false
 }
 
 #[cfg(test)]
@@ -281,14 +297,16 @@ mod tests {
     #[test]
     fn glob_star_extension() {
         assert!(glob_matches("*.rs", "foo.rs"));
-        assert!(glob_matches("*.rs", "src/bar.rs"));
         assert!(!glob_matches("*.rs", "foo.py"));
+        // Single `*` does NOT match across `/`
+        assert!(!glob_matches("*.rs", "src/bar.rs"));
     }
 
     #[test]
     fn glob_prefix_star() {
         assert!(glob_matches("src/*", "src/foo.rs"));
-        assert!(glob_matches("src/*", "src/bar/baz.rs"));
+        // Single `*` does NOT match across `/`
+        assert!(!glob_matches("src/*", "src/bar/baz.rs"));
         assert!(!glob_matches("src/*", "lib/foo.rs"));
     }
 
@@ -296,5 +314,71 @@ mod tests {
     fn glob_middle_star() {
         assert!(glob_matches("src/*.rs", "src/foo.rs"));
         assert!(!glob_matches("src/*.rs", "src/foo.py"));
+        assert!(!glob_matches("src/*.rs", "src/sub/foo.rs"));
+    }
+
+    #[test]
+    fn glob_double_star() {
+        // `**` matches across directory boundaries
+        assert!(glob_matches("**/*.rs", "foo.rs"));
+        assert!(glob_matches("**/*.rs", "src/foo.rs"));
+        assert!(glob_matches("**/*.rs", "src/sub/foo.rs"));
+        assert!(!glob_matches("**/*.rs", "src/foo.py"));
+
+        assert!(glob_matches("src/**/*.rs", "src/foo.rs"));
+        assert!(glob_matches("src/**/*.rs", "src/sub/foo.rs"));
+        assert!(glob_matches("src/**/*.rs", "src/a/b/c.rs"));
+        assert!(!glob_matches("src/**/*.rs", "lib/foo.rs"));
+    }
+
+    #[test]
+    fn glob_empty_inputs() {
+        assert!(glob_matches("", ""));
+        assert!(!glob_matches("", "foo"));
+        assert!(!glob_matches("foo", ""));
+    }
+
+    #[test]
+    fn glob_double_star_at_end() {
+        // `src/**` matches everything under src/
+        assert!(glob_matches("src/**", "src/foo.rs"));
+        assert!(glob_matches("src/**", "src/a/b/c.rs"));
+        assert!(!glob_matches("src/**", "lib/foo.rs"));
+    }
+
+    #[test]
+    fn glob_bare_double_star() {
+        // `**` alone matches anything
+        assert!(glob_matches("**", "foo.rs"));
+        assert!(glob_matches("**", "src/bar/baz.rs"));
+        assert!(glob_matches("**", ""));
+    }
+
+    #[test]
+    fn glob_multiple_double_stars() {
+        assert!(glob_matches("**/src/**/*.rs", "src/foo.rs"));
+        assert!(glob_matches("**/src/**/*.rs", "a/src/bar.rs"));
+        assert!(glob_matches("**/src/**/*.rs", "a/b/src/c/d.rs"));
+        assert!(!glob_matches("**/src/**/*.rs", "a/lib/foo.rs"));
+    }
+
+    #[test]
+    fn glob_dot_files() {
+        assert!(glob_matches("**/.*", ".gitignore"));
+        assert!(glob_matches("**/.*", "src/.hidden"));
+        assert!(glob_matches("**/.hidden/*.rs", ".hidden/foo.rs"));
+    }
+
+    #[test]
+    fn glob_no_wildcards_mismatch_length() {
+        assert!(!glob_matches("src/foo.rs", "src/foo.rsx"));
+        assert!(!glob_matches("src/foo.rsx", "src/foo.rs"));
+    }
+
+    #[test]
+    fn glob_star_matches_empty() {
+        // `*` can match zero characters
+        assert!(glob_matches("src/*.rs", "src/.rs"));
+        assert!(glob_matches("*", ""));
     }
 }

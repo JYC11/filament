@@ -40,6 +40,20 @@ pub async fn audit(cli: &Cli, args: &AuditArgs) -> Result<()> {
         ));
     }
 
+    // Guard: refuse to switch branches if working tree is dirty
+    let dirty_check = std::process::Command::new("git")
+        .args(["diff", "--quiet", "HEAD"])
+        .current_dir(&root)
+        .status()
+        .map_err(FilamentError::Io)?;
+
+    if !dirty_check.success() {
+        return Err(FilamentError::Validation(
+            "working tree has uncommitted changes — commit or stash before running audit"
+                .to_string(),
+        ));
+    }
+
     // Get current branch to restore later
     let current_branch = git_current_branch(&root)?;
 
@@ -57,7 +71,7 @@ pub async fn audit(cli: &Cli, args: &AuditArgs) -> Result<()> {
     } else {
         // Create orphan branch
         run_git(&root, &["checkout", "--orphan", &args.branch])?;
-        run_git(&root, &["rm", "-rf", "--cached", "."])?;
+        run_git(&root, &["rm", "-rf", "--cached", "--ignore-unmatch", "."])?;
     }
 
     // Stage the audit file
@@ -72,8 +86,8 @@ pub async fn audit(cli: &Cli, args: &AuditArgs) -> Result<()> {
         .unwrap_or_else(|| format!("audit: {entity_count} entities, {relation_count} relations"));
     run_git(&root, &["commit", "-m", &msg, "--allow-empty"])?;
 
-    // Switch back to original branch
-    run_git(&root, &["checkout", &current_branch])?;
+    // Switch back to original branch (force to handle files left untracked by orphan branch)
+    run_git(&root, &["checkout", "-f", &current_branch])?;
 
     if cli.json {
         output_json(&serde_json::json!({

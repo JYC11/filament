@@ -6,14 +6,21 @@ Filament gives AI coding agents (and humans) a shared project brain — a knowle
 
 ## Key Features
 
-- **Knowledge graph** — entities (tasks, modules, services, agents, plans, docs) connected by typed relations (blocks, depends_on, produces, owns, relates_to, assigned_to)
+- **Knowledge graph** — entities (tasks, modules, services, agents, plans, docs, lessons) connected by typed relations (blocks, depends_on, produces, owns, relates_to, assigned_to)
 - **Task management** — priority-ranked ready queues, critical path analysis, dependency tracking, impact scoring
+- **Lesson capture** — structured knowledge capture of gotchas, solutions, and recurring patterns with problem/solution/learned fields
+- **Full-text search** — FTS5-powered search across all entities with BM25 relevance ranking
 - **Multi-agent orchestration** — dispatch AI agents with specialized roles (coder, reviewer, planner, dockeeper), monitor runs, handle agent death gracefully
 - **Inter-agent messaging** — targeted message passing between agents with typed messages (text, question, blocker, artifact)
 - **Advisory file reservations** — TTL-based file locks to coordinate concurrent edits across agents
+- **Graph analytics** — PageRank and degree centrality to identify high-impact entities and bottlenecks
 - **MCP server** — 16-tool Model Context Protocol interface for AI agent integration
 - **TUI dashboard** — real-time terminal UI showing tasks, agent runs, and reservations
 - **Hybrid architecture** — direct SQLite for single-user, Unix socket daemon for multi-agent
+- **Project config** — layered `filament.toml` configuration with environment variable overrides
+- **Real-time watch** — live event stream from the daemon for monitoring agent activity
+- **Git integration** — pre-commit hooks for reservation conflict checks, audit snapshots to git branches
+- **Seed command** — bootstrap the knowledge graph from existing CLAUDE.md documentation
 
 ## Installation
 
@@ -95,6 +102,7 @@ Filament's core data model is a knowledge graph of **entities** connected by **r
 | `agent`   | **Actors** — AI agents or human operators. Required for `task assign`, `message send`, `reserve`. The dispatch system tracks who's working on what. | Structural (no workflow) | "planner-agent", "code-reviewer", "alice" |
 | `plan`    | **Planning documents** — group tasks via `owns` relations. Always use `--content` to point at the actual `.md` file. The entity summary is a 1-2 sentence description; the file is the source of truth. | Structural (no workflow) | "phase-3-plan", "architecture-overview" |
 | `doc`     | **Reference material** — ADRs, specs, runbooks, knowledge. Like plans, always use `--content` to reference the file on disk. The graph adds queryable structure; the file has the content. | Structural (no workflow) | "adr-003-unified-graph", "api-spec", "gotchas" |
+| `lesson`  | **Knowledge capture** — gotchas, solutions, recurring patterns. Structured fields: `problem`, `solution`, `learned`, optional `pattern`. Use `filament lesson add` to create. Searchable via FTS5. | Structural (no workflow) | "SQLite CHECK constraint gotcha", "N+1 query fix" |
 
 **Design principle**: The graph is lightweight. Entities store short summaries + pointers to files. For `doc` and `plan` types, always use `--content path/to/file.md` so the physical file remains the source of truth. The graph adds queryable relations, dependency tracking, and context queries on top.
 
@@ -283,6 +291,58 @@ filament task assign abc12345 --to agent_slug
 ```
 
 Creates an `assigned_to` relation from the agent to the task.
+
+---
+
+## Lessons
+
+Structured knowledge capture for gotchas, solutions, and recurring patterns. Each lesson has four fields stored in the entity's `key_facts` JSON.
+
+### Add a Lesson
+
+```bash
+filament lesson add "SQLite CHECK constraint gotcha" \
+  --problem "Cannot ALTER TABLE to modify CHECK constraints" \
+  --solution "Recreate the table with the new constraint, copy data, drop old" \
+  --learned "SQLite CHECK constraints are immutable after table creation" \
+  --pattern "schema-migration-gotcha"
+```
+
+### List Lessons
+
+```bash
+filament lesson list                              # all lessons
+filament lesson list --pattern "migration"        # filter by pattern name
+filament lesson list --status open                # filter by status
+```
+
+### Show Lesson Details
+
+```bash
+filament lesson show abc12345
+```
+
+Displays the structured problem/solution/learned/pattern fields.
+
+### Delete a Lesson
+
+```bash
+filament lesson delete abc12345
+```
+
+---
+
+## Search
+
+Full-text search across all entities using SQLite FTS5 with BM25 relevance ranking. Searches entity names, summaries, and key_facts.
+
+```bash
+filament search "migration"                       # search all entities
+filament search "connection pool" --type lesson   # filter by entity type
+filament search "deployment" --limit 5            # limit results
+```
+
+Supports FTS5 query syntax: words, phrases (`"like this"`), `OR`, `NOT`.
 
 ---
 
@@ -603,6 +663,107 @@ Supported shells: `bash`, `zsh`, `fish`, `elvish`, `powershell`.
 
 ---
 
+## Configuration
+
+Filament uses a layered config system. Create `.filament/config.toml` in your project:
+
+```bash
+filament config init > .filament/config.toml    # generate template
+filament config show                             # show resolved values
+filament config path                             # show config file path
+```
+
+Resolution order: environment variables (`FILAMENT_*`) > config file > defaults.
+
+| Setting | Env Var | Default |
+|---------|---------|---------|
+| `default_priority` | — | `2` |
+| `output_format` | — | `text` |
+| `agent_command` | `FILAMENT_AGENT_COMMAND` | `claude` |
+| `auto_dispatch` | `FILAMENT_AUTO_DISPATCH` | `false` |
+| `context_depth` | `FILAMENT_CONTEXT_DEPTH` | `2` |
+| `max_auto_dispatch` | `FILAMENT_MAX_AUTO_DISPATCH` | `3` |
+| `cleanup_interval_secs` | `FILAMENT_CLEANUP_INTERVAL` | `60` |
+
+---
+
+## Watch
+
+Real-time event stream from the daemon. Requires `filament serve` to be running.
+
+```bash
+filament watch                                   # all events
+filament watch --events entity_created,status_change   # filter by type
+```
+
+---
+
+## Graph Analytics
+
+### PageRank
+
+Identify the most connected/important entities in the knowledge graph:
+
+```bash
+filament pagerank                                # top 20 by PageRank score
+filament pagerank --damping 0.85 --iterations 50 --limit 10
+```
+
+### Degree Centrality
+
+Show entities with the most connections:
+
+```bash
+filament degree                                  # top 20 by total degree
+filament degree --limit 10
+```
+
+---
+
+## Git Hooks
+
+Pre-commit hook that blocks commits when staged files conflict with exclusive file reservations held by other agents.
+
+```bash
+filament hook install                            # add to .git/hooks/pre-commit
+filament hook uninstall                          # remove from pre-commit
+filament hook check                              # run the check manually
+filament hook check --agent coder-1              # exclude own reservations
+```
+
+---
+
+## Seed
+
+Bootstrap the knowledge graph from markdown documentation:
+
+```bash
+filament seed                                    # parse project CLAUDE.md
+filament seed --file path/to/any/CLAUDE.md       # parse a specific markdown file
+filament seed --files paths.txt                  # ingest multiple files listed one per line
+filament seed --dry-run                          # preview without creating
+```
+
+Parses `## Section` headings as Doc entities with summaries from the first content line. Skips duplicates.
+
+The `--files` flag accepts a text file with one markdown path per line (blank lines and `#` comments are skipped). Combine with `--dry-run` to preview before ingesting.
+
+---
+
+## Audit
+
+Snapshot the knowledge graph to a git branch for version-controlled audit trails:
+
+```bash
+filament audit                                   # commit to filament-audit branch
+filament audit --branch my-audit                 # custom branch name
+filament audit --message "milestone snapshot"    # custom commit message
+```
+
+Exports entities, relations, messages, and events as JSON. Creates an orphan branch on first run.
+
+---
+
 ## JSON Output
 
 All commands support `--json` for machine-readable output. Errors are also structured:
@@ -649,6 +810,8 @@ make adr TITLE="Decision name"  # create a new ADR
 ## Inspiration
 
 Filament was directly inspired by [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (task management and error patterns) and [Flywheel](https://github.com/Dicklesworthstone#the-agentic-coding-flywheel) (multi-agent orchestration ecosystem), both by [Jeff Emanuel](https://github.com/Dicklesworthstone). Those projects demonstrated powerful ideas across separate tools — Filament consolidates them into a single Rust binary that handles knowledge graph, task management, agent orchestration, messaging, and file coordination all in one place.
+
+The lessons feature — structured knowledge capture of gotchas, solutions, and recurring patterns — was inspired by [runes](https://github.com/sleeplesslord/runes).
 
 ## License
 

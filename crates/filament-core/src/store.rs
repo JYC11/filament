@@ -271,6 +271,41 @@ pub async fn list_entities(
         .collect())
 }
 
+/// List lessons, optionally filtered by pattern name (SQL `LIKE` on `key_facts.pattern`).
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_lessons(
+    pool: &Pool<Sqlite>,
+    status: Option<&str>,
+    pattern: Option<&str>,
+) -> Result<Vec<Entity>> {
+    let mut query =
+        String::from("SELECT * FROM entities WHERE entity_type = 'lesson'");
+    if status.is_some() {
+        query.push_str(" AND status = ?");
+    }
+    if pattern.is_some() {
+        query.push_str(" AND json_extract(key_facts, '$.pattern') LIKE ?");
+    }
+    query.push_str(" ORDER BY priority ASC, created_at ASC");
+
+    let mut q = sqlx::query_as::<_, EntityRow>(&query);
+    if let Some(s) = status {
+        q = q.bind(s);
+    }
+    if let Some(p) = pattern {
+        q = q.bind(format!("%{p}%"));
+    }
+
+    Ok(q.fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(Entity::from)
+        .collect())
+}
+
 /// Search entities using FTS5 full-text search with BM25 ranking.
 ///
 /// Searches across `name`, `summary`, and `key_facts` fields.
@@ -317,8 +352,10 @@ pub async fn search_entities(
         .await?
         .into_iter()
         .map(|row| {
-            let rank = row.rank;
-            (Entity::from(row.entity), rank)
+            // FTS5 BM25 rank is negative (lower = better). Negate for display
+            // so higher values mean more relevant.
+            let relevance = -row.rank;
+            (Entity::from(row.entity), relevance)
         })
         .collect())
 }

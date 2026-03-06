@@ -11,8 +11,8 @@ use crate::dto::{
 use crate::error::{FilamentError, Result};
 use crate::graph::KnowledgeGraph;
 use crate::models::{
-    Entity, EntityCommon, EntityId, EntityStatus, EntityType, Event, Message, MessageId, Relation,
-    RelationId, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
+    Entity, EntityCommon, EntityId, EntityStatus, EntityType, Event, LessonFields, Message,
+    MessageId, Relation, RelationId, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
 };
 use crate::schema::init_pool;
 use crate::store::{self, FilamentStore};
@@ -162,6 +162,39 @@ impl FilamentConnection {
                 .await
             }
             Self::Socket(c) => c.list_entities(entity_type, status).await,
+        }
+    }
+
+    pub async fn list_lessons(
+        &mut self,
+        status: Option<EntityStatus>,
+        pattern: Option<&str>,
+    ) -> Result<Vec<Entity>> {
+        match self {
+            Self::Direct(s) => {
+                store::list_lessons(
+                    s.pool(),
+                    status.as_ref().map(EntityStatus::as_str),
+                    pattern,
+                )
+                .await
+            }
+            Self::Socket(_c) => {
+                // Daemon path: fall back to list_entities + in-memory filter
+                // (list_lessons is a store-level optimization for direct mode)
+                let mut entities = self
+                    .list_entities(Some(EntityType::Lesson), status)
+                    .await?;
+                if let Some(pat) = pattern {
+                    let pat_lower = pat.to_lowercase();
+                    entities.retain(|e| {
+                        LessonFields::from_entity(e)
+                            .and_then(|f| f.pattern)
+                            .is_some_and(|p| p.to_lowercase().contains(&pat_lower))
+                    });
+                }
+                Ok(entities)
+            }
         }
     }
 

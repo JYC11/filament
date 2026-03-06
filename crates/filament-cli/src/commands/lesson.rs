@@ -123,19 +123,9 @@ async fn list(cli: &Cli, args: &LessonListArgs) -> Result<()> {
         other => Some(other.parse()?),
     };
 
-    let mut entities = conn
-        .list_entities(Some(EntityType::Lesson), status_filter)
+    let entities = conn
+        .list_lessons(status_filter, args.pattern.as_deref())
         .await?;
-
-    // Filter by pattern if specified
-    if let Some(ref pat) = args.pattern {
-        let pat_lower = pat.to_lowercase();
-        entities.retain(|e| {
-            LessonFields::from_entity(e)
-                .and_then(|f| f.pattern)
-                .is_some_and(|p| p.to_lowercase().contains(&pat_lower))
-        });
-    }
 
     print_entity_list(cli, &entities, "No lessons found.");
     Ok(())
@@ -157,8 +147,9 @@ async fn delete(cli: &Cli, args: &LessonDeleteArgs) -> Result<()> {
 
 async fn show(cli: &Cli, args: &LessonShowArgs) -> Result<()> {
     let mut conn = connect().await?;
+    // Use resolve_lesson for type safety — rejects non-lesson entities
+    let c = conn.resolve_lesson(&args.slug).await?;
     let entity = conn.resolve_entity(&args.slug).await?;
-    let c = entity.common();
 
     if cli.json {
         let out = serde_json::json!({

@@ -151,7 +151,7 @@ Send `--type blocker` or `--type question` TO `user` to create escalations.
 | `filament config show` / `init` / `path` | Configuration (`filament.toml`) |
 | `filament watch [--events ...]` | Real-time change notifications |
 | `filament hook install` / `uninstall` / `check` | Git pre-commit reservation checks |
-| `filament seed [--dry-run]` | Parse CLAUDE.md into Doc entities |
+| `filament seed [--file PATH] [--files PATH] [--dry-run]` | Parse CLAUDE.md into Doc entities |
 | `filament audit [--branch NAME]` | Snapshot graph to git branch |
 | `filament completions bash\|zsh\|fish` | Shell completions |
 
