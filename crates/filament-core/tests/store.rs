@@ -1,7 +1,8 @@
 mod common;
 
 use common::{
-    blocks_req, depends_on_req, sample_entity_req, sample_message_req, task_req, test_db,
+    blocks_req, depends_on_req, lesson_req, sample_entity_req, sample_message_req, task_req,
+    test_db,
 };
 use filament_core::dto::*;
 use filament_core::error::FilamentError;
@@ -2530,4 +2531,192 @@ async fn search_special_chars_dont_crash() {
     let _r1 = search_entities(store.pool(), "foo*bar", None, 10).await;
     let _r2 = search_entities(store.pool(), "test()", None, 10).await;
     let _r3 = search_entities(store.pool(), "hello & world", None, 10).await;
+}
+
+// ---------------------------------------------------------------------------
+// Store edge cases: filters, reservations, messages, special chars
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_entities_both_type_and_status_filter() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (_a, _) = create_entity(conn, &task_req("OpenTask", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("ClosedTask", 1)).await?;
+                update_entity_status(conn, b.as_str(), EntityStatus::Closed).await?;
+                let mod_req = ValidCreateEntityRequest {
+                    name: NonEmptyString::new("AModule").unwrap(),
+                    entity_type: EntityType::Module,
+                    summary: "mod".to_string(),
+                    key_facts: serde_json::json!({}),
+                    content_path: None,
+                    priority: Priority::DEFAULT,
+                };
+                create_entity(conn, &mod_req).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let results = list_entities(
+        store.pool(),
+        Some("task"),
+        Some("open"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name().as_str(), "OpenTask");
+}
+
+#[tokio::test]
+async fn search_entities_empty_results() {
+    let store = test_db().await;
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &task_req("MyTask", 1)).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let results = search_entities(store.pool(), "zzzznonexistent", None, 10)
+        .await
+        .unwrap();
+    assert!(results.is_empty());
+}
+
+#[tokio::test]
+async fn create_entity_with_special_chars_in_name() {
+    let store = test_db().await;
+
+    let req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Task with 'quotes' and \"doubles\"").unwrap(),
+        entity_type: EntityType::Task,
+        summary: "Has special chars".to_string(),
+        key_facts: serde_json::json!({"note": "it's a test"}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    let id = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move {
+                let (id, _) = create_entity(conn, &req).await?;
+                Ok(id)
+            })
+        })
+        .await
+        .unwrap();
+
+    let entity = get_entity(store.pool(), id.as_str()).await.unwrap();
+    assert!(entity.name().as_str().contains("'quotes'"));
+    assert!(entity.name().as_str().contains("\"doubles\""));
+}
+
+#[tokio::test]
+async fn shared_reservations_dont_conflict() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                acquire_reservation(
+                    conn, "agent-a", "src/*.rs",
+                    ReservationMode::Shared,
+                    TtlSeconds::new(3600).unwrap(),
+                ).await
+            })
+        })
+        .await
+        .unwrap();
+
+    // Second shared reservation on same glob should succeed
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                acquire_reservation(
+                    conn, "agent-b", "src/*.rs",
+                    ReservationMode::Shared,
+                    TtlSeconds::new(3600).unwrap(),
+                ).await
+            })
+        })
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn exclusive_conflicts_with_shared() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                acquire_reservation(
+                    conn, "agent-a", "src/*.rs",
+                    ReservationMode::Shared,
+                    TtlSeconds::new(3600).unwrap(),
+                ).await
+            })
+        })
+        .await
+        .unwrap();
+
+    let result = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                acquire_reservation(
+                    conn, "agent-b", "src/*.rs",
+                    ReservationMode::Exclusive,
+                    TtlSeconds::new(3600).unwrap(),
+                ).await
+            })
+        })
+        .await;
+    assert!(result.is_err(), "exclusive should conflict with existing shared");
+}
+
+#[tokio::test]
+async fn message_mark_read_nonexistent() {
+    let store = test_db().await;
+    let result = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                mark_message_read(conn, "nonexistent-msg-id").await
+            })
+        })
+        .await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn list_lessons_pattern_with_sql_wildcards() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &lesson_req("Lesson 1", "sql bug", "fix it", "learned")).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // SQL wildcards in pattern filter should be treated as literal text
+    let results = list_lessons(store.pool(), None, Some("%")).await.unwrap();
+    // If % is passed through as a LIKE wildcard, it would match everything
+    // The function should escape it so it matches literally
+    assert!(results.is_empty(), "% should not match as SQL wildcard");
+
+    let results = list_lessons(store.pool(), None, Some("_")).await.unwrap();
+    assert!(results.is_empty(), "_ should not match as SQL wildcard");
 }

@@ -1,8 +1,10 @@
 mod common;
 
 use common::{blocks_req, depends_on_req, task_req, test_db};
+use filament_core::dto::ValidCreateEntityRequest;
 use filament_core::error::FilamentError;
 use filament_core::graph::KnowledgeGraph;
+use filament_core::models::{EntityStatus, EntityType, NonEmptyString, Priority};
 use filament_core::store::*;
 
 // ---------------------------------------------------------------------------
@@ -851,4 +853,282 @@ async fn degree_centrality_disconnected_components() {
     assert_eq!(b_in, 1);
     assert_eq!(b_out, 0);
     assert_eq!(b_total, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Graph edge cases: nonexistent entities, empty graphs, BFS depth=0
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn critical_path_nonexistent_entity() {
+    let store = test_db().await;
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &task_req("A", 1)).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let path = graph.critical_path("nonexistent-id");
+    assert!(path.is_empty());
+}
+
+#[tokio::test]
+async fn impact_score_nonexistent_entity() {
+    let store = test_db().await;
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &task_req("A", 1)).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    assert_eq!(graph.impact_score("nonexistent-id"), 0);
+}
+
+#[tokio::test]
+async fn traverse_bfs_nonexistent_entity() {
+    let store = test_db().await;
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &task_req("A", 1)).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let nodes = graph.traverse_bfs("nonexistent-id", 5);
+    assert!(nodes.is_empty());
+}
+
+#[tokio::test]
+async fn traverse_bfs_depth_zero() {
+    let store = test_db().await;
+
+    let a_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                Ok(a)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    // depth=0 means no neighbors, just the start node (which is excluded from results)
+    let nodes = graph.traverse_bfs(a_id.as_str(), 0);
+    assert!(nodes.is_empty());
+}
+
+#[tokio::test]
+async fn ready_tasks_empty_graph() {
+    let graph = KnowledgeGraph::new();
+    let ready = graph.ready_tasks();
+    assert!(ready.is_empty());
+}
+
+#[tokio::test]
+async fn ready_tasks_single_open_task() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &task_req("Solo", 1)).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let ready = graph.ready_tasks();
+    assert_eq!(ready.len(), 1);
+    assert_eq!(ready[0].name.as_str(), "Solo");
+}
+
+#[tokio::test]
+async fn ready_tasks_excludes_closed() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("Done", 1)).await?;
+                update_entity_status(conn, a.as_str(), EntityStatus::Closed).await?;
+                create_entity(conn, &task_req("Open", 1)).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let ready = graph.ready_tasks();
+    assert_eq!(ready.len(), 1);
+    assert_eq!(ready[0].name.as_str(), "Open");
+}
+
+#[tokio::test]
+async fn ready_tasks_excludes_non_task_entities() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &task_req("MyTask", 1)).await?;
+                // Create a module entity — should not appear in ready_tasks
+                let module_req = ValidCreateEntityRequest {
+                    name: NonEmptyString::new("MyModule").unwrap(),
+                    entity_type: EntityType::Module,
+                    summary: "A module".to_string(),
+                    key_facts: serde_json::json!({}),
+                    content_path: None,
+                    priority: Priority::DEFAULT,
+                };
+                create_entity(conn, &module_req).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let ready = graph.ready_tasks();
+    assert_eq!(ready.len(), 1);
+    assert_eq!(ready[0].name.as_str(), "MyTask");
+}
+
+#[tokio::test]
+async fn remove_edge_nonexistent_returns_false() {
+    let store = test_db().await;
+
+    let (a_id, b_id) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                Ok((a, b))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    // No edge exists — should return false
+    assert!(!graph.remove_edge(
+        a_id.as_str(),
+        b_id.as_str(),
+        &filament_core::models::RelationType::Blocks
+    ));
+}
+
+#[tokio::test]
+async fn remove_edge_nonexistent_nodes_returns_false() {
+    let mut graph = KnowledgeGraph::new();
+    assert!(!graph.remove_edge("fake-src", "fake-tgt", &filament_core::models::RelationType::Blocks));
+}
+
+#[tokio::test]
+async fn context_bundle_nonexistent_entity() {
+    let graph = KnowledgeGraph::new();
+    let bundle = graph.build_context_bundle("nonexistent", 2);
+    assert!(bundle.summaries.is_empty());
+    assert!(bundle.critical_path.is_empty());
+    assert_eq!(bundle.impact_score, 0);
+    assert!(bundle.upstream_artifacts.is_empty());
+}
+
+#[tokio::test]
+async fn context_bundle_prompt_lines_empty_for_isolated_node() {
+    let store = test_db().await;
+
+    let a_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("Isolated", 1)).await?;
+                Ok(a)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let bundle = graph.build_context_bundle(a_id.as_str(), 2);
+    assert!(bundle.summaries.is_empty());
+    assert_eq!(bundle.impact_score, 0);
+    let lines = bundle.to_prompt_lines();
+    // Critical path includes self, so prompt lines has the critical path section
+    assert_eq!(lines.len(), 2); // "--- CRITICAL PATH ---" + "Isolated"
+    assert!(lines[0].contains("CRITICAL PATH"));
+}
+
+#[tokio::test]
+async fn newly_unblocked_by_nonexistent() {
+    let graph = KnowledgeGraph::new();
+    let unblocked = graph.newly_unblocked_by("nonexistent");
+    assert!(unblocked.is_empty());
+}
+
+#[tokio::test]
+async fn upstream_artifacts_nonexistent() {
+    let graph = KnowledgeGraph::new();
+    let artifacts = graph.upstream_artifacts("nonexistent");
+    assert!(artifacts.is_empty());
+}
+
+#[tokio::test]
+async fn different_relation_types_between_same_entities() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                // A blocks B AND A depends_on B — different relation types, should both work
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                create_relation(conn, &depends_on_req(a.as_str(), b.as_str())).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    assert_eq!(graph.edge_count(), 2);
 }

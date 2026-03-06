@@ -167,4 +167,55 @@ mod tests {
         let fields = fields_in_diff(&Value::Null);
         assert!(fields.is_empty());
     }
+
+    #[test]
+    fn update_diff_both_empty_strings() {
+        let diff = DiffBuilder::new().field("summary", "", "").build();
+        assert!(diff.is_none(), "identical empty strings should be skipped");
+    }
+
+    #[test]
+    fn update_diff_special_json_chars() {
+        let diff = DiffBuilder::new()
+            .field("summary", "has \"quotes\"", "has 'single'")
+            .build()
+            .unwrap();
+        assert_eq!(diff["summary"]["old"], "has \"quotes\"");
+        assert_eq!(diff["summary"]["new"], "has 'single'");
+    }
+
+    #[test]
+    fn update_diff_newlines_in_values() {
+        let diff = DiffBuilder::new()
+            .field("summary", "line1\nline2", "line1\nline2\nline3")
+            .build()
+            .unwrap();
+        assert!(diff["summary"]["new"].as_str().unwrap().contains('\n'));
+    }
+
+    #[test]
+    fn create_diff_returns_none_when_all_empty() {
+        let diff = DiffBuilder::create()
+            .value("name", "")
+            .value("summary", "")
+            .build();
+        assert!(diff.is_none());
+    }
+
+    #[test]
+    fn fields_in_diff_non_object_types() {
+        assert!(fields_in_diff(&json!("string")).is_empty());
+        assert!(fields_in_diff(&json!(42)).is_empty());
+        assert!(fields_in_diff(&json!([1, 2])).is_empty());
+        assert!(fields_in_diff(&json!(true)).is_empty());
+    }
+
+    #[test]
+    fn default_diff_builder_is_update_mode() {
+        let diff = DiffBuilder::default()
+            .field("status", "open", "closed")
+            .build()
+            .unwrap();
+        assert!(diff["status"]["old"].is_string());
+    }
 }

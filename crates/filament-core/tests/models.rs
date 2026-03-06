@@ -534,3 +534,420 @@ fn entity_adt_all_variants_type_check() {
         assert_eq!(entity.entity_type(), expected_type);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Value type edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn slug_try_from_trims_whitespace() {
+    let s = Slug::try_from("  ab12cd34  ".to_string()).unwrap();
+    assert_eq!(s.as_str(), "ab12cd34");
+}
+
+#[test]
+fn slug_try_from_trims_tabs_and_newlines() {
+    // Slug::try_from trims all whitespace (including tabs/newlines),
+    // so "\tab12cd34\n" becomes "ab12cd34" which is valid.
+    let s = Slug::try_from("\tab12cd34\n".to_string());
+    assert!(s.is_ok(), "tabs/newlines are trimmed, leaving a valid 8-char slug");
+    assert_eq!(s.unwrap().as_str(), "ab12cd34");
+}
+
+#[test]
+fn slug_try_from_rejects_empty() {
+    assert!(Slug::try_from("".to_string()).is_err());
+}
+
+#[test]
+fn priority_display() {
+    assert_eq!(Priority::new(0).unwrap().to_string(), "0");
+    assert_eq!(Priority::new(4).unwrap().to_string(), "4");
+}
+
+#[test]
+fn weight_zero_is_valid() {
+    let w = Weight::new(0.0).unwrap();
+    assert_eq!(w.value(), 0.0);
+}
+
+#[test]
+fn weight_rejects_negative_zero() {
+    // -0.0 is NOT negative in IEEE 754 (it equals 0.0), so should be valid
+    let w = Weight::new(-0.0);
+    assert!(w.is_ok(), "-0.0 should be valid (IEEE 754: -0.0 == 0.0)");
+}
+
+#[test]
+fn budget_pct_negative_zero_valid() {
+    // -0.0 == 0.0 in IEEE 754, should be in range
+    let b = BudgetPct::new(-0.0);
+    assert!(b.is_ok(), "-0.0 should be valid");
+}
+
+#[test]
+fn budget_pct_display_formatting() {
+    assert_eq!(BudgetPct::new(0.0).unwrap().to_string(), "0%");
+    assert_eq!(BudgetPct::new(0.5).unwrap().to_string(), "50%");
+    assert_eq!(BudgetPct::new(1.0).unwrap().to_string(), "100%");
+}
+
+#[test]
+fn budget_pct_serde_roundtrip() {
+    let b = BudgetPct::new(0.75).unwrap();
+    let json = serde_json::to_string(&b).unwrap();
+    assert_eq!(json, "0.75");
+    let parsed: BudgetPct = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, b);
+}
+
+#[test]
+fn budget_pct_serde_rejects_out_of_range() {
+    let result: Result<BudgetPct, _> = serde_json::from_str("1.5");
+    assert!(result.is_err());
+    let result: Result<BudgetPct, _> = serde_json::from_str("-0.1");
+    assert!(result.is_err());
+}
+
+#[test]
+fn non_empty_string_rejects_tabs_and_newlines_only() {
+    assert!(NonEmptyString::new("\t\n\r").is_err());
+}
+
+#[test]
+fn non_empty_string_preserves_inner_whitespace() {
+    let s = NonEmptyString::new("  hello   world  ").unwrap();
+    assert_eq!(s.as_str(), "hello   world");
+}
+
+#[test]
+fn ttl_seconds_u32_max_valid() {
+    let t = TtlSeconds::new(u32::MAX).unwrap();
+    assert_eq!(t.value(), u32::MAX);
+}
+
+#[test]
+fn ttl_seconds_display() {
+    assert_eq!(TtlSeconds::new(60).unwrap().to_string(), "60s");
+}
+
+#[test]
+fn ttl_seconds_as_duration() {
+    let t = TtlSeconds::new(3600).unwrap();
+    let d = t.as_duration();
+    assert_eq!(d.num_seconds(), 3600);
+}
+
+// ---------------------------------------------------------------------------
+// Enum FromStr edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn entity_type_fromstr_case_insensitive() {
+    use std::str::FromStr;
+    assert_eq!(EntityType::from_str("TASK").unwrap(), EntityType::Task);
+    assert_eq!(EntityType::from_str("Task").unwrap(), EntityType::Task);
+    assert_eq!(EntityType::from_str("tAsK").unwrap(), EntityType::Task);
+    assert_eq!(EntityType::from_str("LESSON").unwrap(), EntityType::Lesson);
+}
+
+#[test]
+fn entity_type_fromstr_rejects_with_spaces() {
+    use std::str::FromStr;
+    assert!(EntityType::from_str("  task  ").is_err());
+    assert!(EntityType::from_str(" ").is_err());
+    assert!(EntityType::from_str("").is_err());
+}
+
+#[test]
+fn entity_type_fromstr_rejects_substring() {
+    use std::str::FromStr;
+    assert!(EntityType::from_str("tas").is_err());
+    assert!(EntityType::from_str("taskk").is_err());
+}
+
+#[test]
+fn relation_type_fromstr_case_insensitive() {
+    use std::str::FromStr;
+    assert_eq!(RelationType::from_str("BLOCKS").unwrap(), RelationType::Blocks);
+    assert_eq!(RelationType::from_str("Depends_On").unwrap(), RelationType::DependsOn);
+}
+
+#[test]
+fn entity_status_fromstr_case_insensitive() {
+    use std::str::FromStr;
+    assert_eq!(EntityStatus::from_str("IN_PROGRESS").unwrap(), EntityStatus::InProgress);
+    assert_eq!(EntityStatus::from_str("CLOSED").unwrap(), EntityStatus::Closed);
+}
+
+#[test]
+fn event_type_fromstr_all_variants() {
+    use std::str::FromStr;
+    let variants = [
+        ("entity_created", EventType::EntityCreated),
+        ("entity_updated", EventType::EntityUpdated),
+        ("entity_deleted", EventType::EntityDeleted),
+        ("status_change", EventType::StatusChange),
+        ("relation_created", EventType::RelationCreated),
+        ("relation_deleted", EventType::RelationDeleted),
+        ("message_sent", EventType::MessageSent),
+        ("message_read", EventType::MessageRead),
+        ("reservation_acquired", EventType::ReservationAcquired),
+        ("reservation_released", EventType::ReservationReleased),
+        ("agent_started", EventType::AgentStarted),
+        ("agent_finished", EventType::AgentFinished),
+    ];
+    for (s, expected) in variants {
+        assert_eq!(EventType::from_str(s).unwrap(), expected, "failed for: {s}");
+    }
+}
+
+#[test]
+fn agent_role_fromstr_case_insensitive() {
+    use std::str::FromStr;
+    assert_eq!(AgentRole::from_str("CODER").unwrap(), AgentRole::Coder);
+    assert_eq!(AgentRole::from_str("Reviewer").unwrap(), AgentRole::Reviewer);
+}
+
+#[test]
+fn reservation_mode_fromstr() {
+    use std::str::FromStr;
+    assert_eq!(ReservationMode::from_str("exclusive").unwrap(), ReservationMode::Exclusive);
+    assert_eq!(ReservationMode::from_str("shared").unwrap(), ReservationMode::Shared);
+    // ReservationMode does NOT use impl_enum_str, so case-sensitivity is exact
+    assert!(ReservationMode::from_str("EXCLUSIVE").is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Entity ADT edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn entity_adt_lesson_variant() {
+    let e = Entity::Lesson(sample_common());
+    assert_eq!(e.entity_type(), EntityType::Lesson);
+    assert!(matches!(e, Entity::Lesson(_)));
+}
+
+#[test]
+fn entity_into_task_type_mismatch_preserves_info() {
+    let e = Entity::Agent(sample_common());
+    let err = e.into_task().unwrap_err();
+    match err {
+        FilamentError::TypeMismatch { expected, actual, .. } => {
+            assert_eq!(expected, EntityType::Task);
+            assert_eq!(actual, EntityType::Agent);
+        }
+        other => panic!("expected TypeMismatch, got: {other:?}"),
+    }
+}
+
+#[test]
+fn entity_into_lesson_type_mismatch() {
+    let e = Entity::Doc(sample_common());
+    let err = e.into_lesson().unwrap_err();
+    assert!(matches!(err, FilamentError::TypeMismatch { .. }));
+}
+
+#[test]
+fn entity_into_agent_success() {
+    let e = Entity::Agent(sample_common());
+    let c = e.into_agent().unwrap();
+    assert_eq!(c.name.as_str(), "test-entity");
+}
+
+// ---------------------------------------------------------------------------
+// LessonFields edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lesson_fields_from_key_facts_missing_problem() {
+    let kf = serde_json::json!({"solution": "fix", "learned": "stuff"});
+    assert!(LessonFields::from_key_facts(&kf).is_none());
+}
+
+#[test]
+fn lesson_fields_from_key_facts_missing_solution() {
+    let kf = serde_json::json!({"problem": "bug", "learned": "stuff"});
+    assert!(LessonFields::from_key_facts(&kf).is_none());
+}
+
+#[test]
+fn lesson_fields_from_key_facts_missing_learned() {
+    let kf = serde_json::json!({"problem": "bug", "solution": "fix"});
+    assert!(LessonFields::from_key_facts(&kf).is_none());
+}
+
+#[test]
+fn lesson_fields_from_key_facts_null_values() {
+    let kf = serde_json::json!({"problem": null, "solution": "fix", "learned": "stuff"});
+    assert!(LessonFields::from_key_facts(&kf).is_none());
+}
+
+#[test]
+fn lesson_fields_from_key_facts_integer_values() {
+    let kf = serde_json::json!({"problem": 123, "solution": "fix", "learned": "stuff"});
+    assert!(LessonFields::from_key_facts(&kf).is_none());
+}
+
+#[test]
+fn lesson_fields_from_key_facts_empty_object() {
+    let kf = serde_json::json!({});
+    assert!(LessonFields::from_key_facts(&kf).is_none());
+}
+
+#[test]
+fn lesson_fields_from_key_facts_not_object() {
+    let kf = serde_json::json!("just a string");
+    assert!(LessonFields::from_key_facts(&kf).is_none());
+}
+
+#[test]
+fn lesson_fields_from_key_facts_array() {
+    let kf = serde_json::json!([1, 2, 3]);
+    assert!(LessonFields::from_key_facts(&kf).is_none());
+}
+
+#[test]
+fn lesson_fields_pattern_optional() {
+    let kf = serde_json::json!({
+        "problem": "bug",
+        "solution": "fix",
+        "learned": "insight"
+    });
+    let fields = LessonFields::from_key_facts(&kf).unwrap();
+    assert!(fields.pattern.is_none());
+}
+
+#[test]
+fn lesson_fields_roundtrip() {
+    let fields = LessonFields {
+        problem: "some bug".to_string(),
+        solution: "the fix".to_string(),
+        pattern: Some("sqlx".to_string()),
+        learned: "always check".to_string(),
+    };
+    let kf = fields.to_key_facts();
+    let back = LessonFields::from_key_facts(&kf).unwrap();
+    assert_eq!(back.problem, "some bug");
+    assert_eq!(back.solution, "the fix");
+    assert_eq!(back.pattern.as_deref(), Some("sqlx"));
+    assert_eq!(back.learned, "always check");
+}
+
+#[test]
+fn lesson_fields_from_entity_non_lesson() {
+    let e = Entity::Task(sample_common());
+    assert!(LessonFields::from_entity(&e).is_none());
+}
+
+// ---------------------------------------------------------------------------
+// DTO edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn entity_changeset_is_empty_all_none() {
+    let cs = EntityChangeset {
+        name: None,
+        summary: None,
+        status: None,
+        priority: None,
+        key_facts: None,
+        content_path: None,
+        expected_version: 0,
+    };
+    assert!(cs.is_empty());
+    assert!(cs.changed_field_names().is_empty());
+}
+
+#[test]
+fn entity_changeset_not_empty_with_summary() {
+    let cs = EntityChangeset {
+        name: None,
+        summary: Some("updated".to_string()),
+        status: None,
+        priority: None,
+        key_facts: None,
+        content_path: None,
+        expected_version: 1,
+    };
+    assert!(!cs.is_empty());
+    assert_eq!(cs.changed_field_names(), vec!["summary"]);
+}
+
+#[test]
+fn entity_changeset_multiple_fields() {
+    let cs = EntityChangeset {
+        name: Some(NonEmptyString::new("new name").unwrap()),
+        summary: None,
+        status: Some(EntityStatus::Closed),
+        priority: Some(Priority::new(0).unwrap()),
+        key_facts: None,
+        content_path: None,
+        expected_version: 2,
+    };
+    let fields = cs.changed_field_names();
+    assert!(fields.contains(&"name"));
+    assert!(fields.contains(&"status"));
+    assert!(fields.contains(&"priority"));
+    assert_eq!(fields.len(), 3);
+}
+
+#[test]
+fn send_message_empty_from_rejected() {
+    let req = SendMessageRequest {
+        from_agent: "  ".to_string(),
+        to_agent: "b".to_string(),
+        body: "hello".to_string(),
+        msg_type: None,
+        in_reply_to: None,
+        task_id: None,
+    };
+    let err = ValidSendMessageRequest::try_from(req).unwrap_err();
+    assert!(matches!(err, FilamentError::Validation(_)));
+}
+
+#[test]
+fn send_message_empty_to_rejected() {
+    let req = SendMessageRequest {
+        from_agent: "a".to_string(),
+        to_agent: "  ".to_string(),
+        body: "hello".to_string(),
+        msg_type: None,
+        in_reply_to: None,
+        task_id: None,
+    };
+    let err = ValidSendMessageRequest::try_from(req).unwrap_err();
+    assert!(matches!(err, FilamentError::Validation(_)));
+}
+
+#[test]
+fn send_message_defaults_to_text_type() {
+    let req = SendMessageRequest {
+        from_agent: "a".to_string(),
+        to_agent: "b".to_string(),
+        body: "hello".to_string(),
+        msg_type: None,
+        in_reply_to: None,
+        task_id: None,
+    };
+    let valid = ValidSendMessageRequest::try_from(req).unwrap();
+    assert_eq!(valid.msg_type, MessageType::Text);
+}
+
+#[test]
+fn create_entity_with_facts_and_content() {
+    let req = CreateEntityRequest {
+        name: "Doc Entity".to_string(),
+        entity_type: EntityType::Doc,
+        summary: Some("A doc".to_string()),
+        key_facts: Some(serde_json::json!({"key": "val"})),
+        content_path: Some("/path/to/file.md".to_string()),
+        priority: Some(Priority::new(1).unwrap()),
+    };
+    let valid = ValidCreateEntityRequest::try_from(req).unwrap();
+    assert_eq!(valid.name, "Doc Entity");
+    assert_eq!(valid.priority.value(), 1);
+    assert_eq!(valid.content_path.as_deref(), Some("/path/to/file.md"));
+    assert_eq!(valid.key_facts["key"], "val");
+}

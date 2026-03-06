@@ -335,3 +335,54 @@ fn task_filter_cycle() {
     filter.cycle();
     assert_eq!(filter.label(), "open");
 }
+
+// ---------------------------------------------------------------------------
+// format_seconds edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn format_seconds_zero() {
+    assert_eq!(filament_tui::views::format_seconds(0), "0s");
+}
+
+#[test]
+fn format_seconds_one() {
+    assert_eq!(filament_tui::views::format_seconds(1), "1s");
+}
+
+#[test]
+fn format_seconds_59() {
+    assert_eq!(filament_tui::views::format_seconds(59), "59s");
+}
+
+#[test]
+fn format_seconds_60() {
+    assert_eq!(filament_tui::views::format_seconds(60), "1m00s");
+}
+
+#[test]
+fn format_seconds_119() {
+    assert_eq!(filament_tui::views::format_seconds(119), "1m59s");
+}
+
+#[test]
+fn format_seconds_3599() {
+    assert_eq!(filament_tui::views::format_seconds(3599), "59m59s");
+}
+
+#[test]
+fn format_seconds_3600() {
+    assert_eq!(filament_tui::views::format_seconds(3600), "1h00m");
+}
+
+#[test]
+fn format_seconds_7322() {
+    assert_eq!(filament_tui::views::format_seconds(7322), "2h02m");
+}
+
+#[test]
+fn format_seconds_negative() {
+    // Negative seconds — behavior is defined by signed integer arithmetic
+    let result = filament_tui::views::format_seconds(-5);
+    assert_eq!(result, "-5s");
+}

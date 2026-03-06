@@ -1,7 +1,7 @@
 mod app;
 mod event;
 pub mod ui;
-mod views;
+pub mod views;
 
 pub use app::{App, Tab, TaskFilter, TaskRow};
 
