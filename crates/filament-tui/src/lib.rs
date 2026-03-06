@@ -3,7 +3,7 @@ mod event;
 pub mod ui;
 pub mod views;
 
-pub use app::{App, Tab, TaskFilter, TaskRow};
+pub use app::{App, EntityRow, FilterBar, FilterState, Tab};
 
 use std::io;
 

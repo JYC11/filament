@@ -59,7 +59,12 @@ pub fn depends_on_req(source: &str, target: &str) -> ValidCreateRelationRequest 
     }
 }
 
-pub fn lesson_req(name: &str, problem: &str, solution: &str, learned: &str) -> ValidCreateEntityRequest {
+pub fn lesson_req(
+    name: &str,
+    problem: &str,
+    solution: &str,
+    learned: &str,
+) -> ValidCreateEntityRequest {
     use filament_core::models::LessonFields;
     let fields = LessonFields {
         problem: problem.to_string(),

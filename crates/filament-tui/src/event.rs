@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::{App, Tab};
+use filament_core::models::{EntityStatus, EntityType, Priority};
+
+use crate::app::{App, FilterBar, Tab};
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -32,7 +34,7 @@ pub async fn handle_events(app: &mut App) {
 }
 
 async fn handle_key(app: &mut App, key: KeyEvent) {
-    // Global keys
+    // Global keys (always active)
     match key.code {
         KeyCode::Char('q') => {
             app.should_quit = true;
@@ -42,6 +44,21 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
             app.should_quit = true;
             return;
         }
+        KeyCode::Char('r') => {
+            app.refresh_all().await;
+            return;
+        }
+        _ => {}
+    }
+
+    // If a filter bar is open, capture keys for it
+    if app.filter.active_bar.is_some() {
+        handle_filter_bar_key(app, key).await;
+        return;
+    }
+
+    // Global navigation keys (only when no filter bar is open)
+    match key.code {
         KeyCode::Tab => {
             app.active_tab = app.active_tab.next();
             return;
@@ -51,7 +68,7 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
             return;
         }
         KeyCode::Char('1') => {
-            app.active_tab = Tab::Tasks;
+            app.active_tab = Tab::Entities;
             return;
         }
         KeyCode::Char('2') => {
@@ -66,14 +83,6 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
             app.active_tab = Tab::Messages;
             return;
         }
-        KeyCode::Char('5') => {
-            app.active_tab = Tab::Graph;
-            return;
-        }
-        KeyCode::Char('r') => {
-            app.refresh_all().await;
-            return;
-        }
         _ => {}
     }
 
@@ -81,14 +90,88 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => app.select_next(),
         KeyCode::Char('k') | KeyCode::Up => app.select_prev(),
-        KeyCode::Char('c') if app.active_tab == Tab::Tasks => {
-            if let Err(e) = app.close_selected_task().await {
-                app.status_message = Some(format!("Error closing task: {e}"));
-            }
+        // Entities tab filter keys
+        KeyCode::Char('t') if app.active_tab == Tab::Entities && !app.filter.ready_only => {
+            app.filter.active_bar = Some(FilterBar::Type);
         }
-        KeyCode::Char('f') if app.active_tab == Tab::Tasks => {
-            app.task_filter.cycle();
-            app.refresh_tasks().await;
+        KeyCode::Char('f') if app.active_tab == Tab::Entities && !app.filter.ready_only => {
+            app.filter.active_bar = Some(FilterBar::Status);
+        }
+        KeyCode::Char('P') if app.active_tab == Tab::Entities => {
+            app.filter.active_bar = Some(FilterBar::Priority);
+        }
+        KeyCode::Char('F') if app.active_tab == Tab::Entities => {
+            app.filter.toggle_ready_only();
+            app.refresh_entities().await;
+        }
+        _ => {}
+    }
+}
+
+async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
+    let bar = app.filter.active_bar.expect("bar is Some");
+
+    match key.code {
+        KeyCode::Esc => {
+            app.filter.active_bar = None;
+        }
+        // Close bar with same key that opened it
+        KeyCode::Char('t') if bar == FilterBar::Type => {
+            app.filter.active_bar = None;
+        }
+        KeyCode::Char('f') if bar == FilterBar::Status => {
+            app.filter.active_bar = None;
+        }
+        KeyCode::Char('P') if bar == FilterBar::Priority => {
+            app.filter.active_bar = None;
+        }
+        KeyCode::Char('0') => {
+            match bar {
+                FilterBar::Type => app.filter.clear_types(),
+                FilterBar::Status => app.filter.clear_statuses(),
+                FilterBar::Priority => app.filter.clear_priorities(),
+            }
+            app.refresh_entities().await;
+        }
+        KeyCode::Char(c @ '1'..='7') => {
+            let idx = (c as u8 - b'1') as usize;
+            match bar {
+                FilterBar::Type => {
+                    let types = [
+                        EntityType::Task,
+                        EntityType::Module,
+                        EntityType::Service,
+                        EntityType::Agent,
+                        EntityType::Plan,
+                        EntityType::Doc,
+                        EntityType::Lesson,
+                    ];
+                    if let Some(&t) = types.get(idx) {
+                        app.filter.toggle_type(t);
+                        app.refresh_entities().await;
+                    }
+                }
+                FilterBar::Status => {
+                    let statuses = [
+                        EntityStatus::Open,
+                        EntityStatus::InProgress,
+                        EntityStatus::Blocked,
+                        EntityStatus::Closed,
+                    ];
+                    if let Some(&s) = statuses.get(idx) {
+                        app.filter.toggle_status(s);
+                        app.refresh_entities().await;
+                    }
+                }
+                FilterBar::Priority => {
+                    if let Ok(val) = u8::try_from(idx) {
+                        if let Ok(p) = Priority::new(val) {
+                            app.filter.toggle_priority(p);
+                            app.refresh_entities().await;
+                        }
+                    }
+                }
+            }
         }
         _ => {}
     }

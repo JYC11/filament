@@ -73,8 +73,7 @@ fn task_add_with_blocks() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("blocked-task")
-                .and(predicate::str::contains("blocker").not()),
+            predicate::str::contains("blocked-task").and(predicate::str::contains("blocker").not()),
         );
 }
 
@@ -105,10 +104,7 @@ fn task_list_status_all() {
         .args(["task", "list", "--status", "all"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("will-close")
-                .and(predicate::str::contains("stays-open")),
-        );
+        .stdout(predicate::str::contains("will-close").and(predicate::str::contains("stays-open")));
 }
 
 // ---------------------------------------------------------------------------
@@ -315,10 +311,7 @@ fn export_import_roundtrip() {
 fn config_show_without_config_file() {
     let dir = init_project();
 
-    filament(&dir)
-        .args(["config", "show"])
-        .assert()
-        .success();
+    filament(&dir).args(["config", "show"]).assert().success();
 }
 
 #[test]

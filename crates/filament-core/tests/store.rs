@@ -1820,7 +1820,10 @@ async fn lesson_create_and_retrieve() {
 
     // Verify lesson fields round-trip through key_facts
     let fields = LessonFields::from_entity(&entity).unwrap();
-    assert_eq!(fields.problem, "INSERT fails with CHECK constraint violation");
+    assert_eq!(
+        fields.problem,
+        "INSERT fails with CHECK constraint violation"
+    );
     assert_eq!(
         fields.solution,
         "Recreate table with updated CHECK constraint in migration"
@@ -1832,7 +1835,9 @@ async fn lesson_create_and_retrieve() {
     );
 
     // Verify slug lookup works
-    let by_slug = get_entity_by_slug(store.pool(), slug.as_str()).await.unwrap();
+    let by_slug = get_entity_by_slug(store.pool(), slug.as_str())
+        .await
+        .unwrap();
     assert_eq!(by_slug.entity_type(), EntityType::Lesson);
 }
 
@@ -1873,12 +1878,7 @@ async fn lesson_listed_by_type_filter() {
 
     // Create a task and a lesson
     let task_req = common::task_req("Some task", 1);
-    let lesson_req = common::lesson_req(
-        "A gotcha",
-        "problem",
-        "solution",
-        "learned",
-    );
+    let lesson_req = common::lesson_req("A gotcha", "problem", "solution", "learned");
 
     store
         .with_transaction(|conn| {
@@ -2251,9 +2251,9 @@ async fn list_lessons_filters_by_status() {
     store
         .with_transaction(|conn| {
             let id = id.clone();
-            Box::pin(async move {
-                update_entity_status(conn, id.as_str(), EntityStatus::Closed).await
-            })
+            Box::pin(
+                async move { update_entity_status(conn, id.as_str(), EntityStatus::Closed).await },
+            )
         })
         .await
         .unwrap();
@@ -2272,7 +2272,9 @@ async fn list_lessons_filters_by_status() {
         .unwrap();
 
     // Filter open: only the second
-    let open = list_lessons(store.pool(), Some("open"), None).await.unwrap();
+    let open = list_lessons(store.pool(), Some("open"), None)
+        .await
+        .unwrap();
     assert_eq!(open.len(), 1);
     assert_eq!(open[0].name(), "Still open");
 
@@ -2365,9 +2367,9 @@ async fn list_lessons_filters_by_status_and_pattern() {
     store
         .with_transaction(|conn| {
             let id = id.clone();
-            Box::pin(async move {
-                update_entity_status(conn, id.as_str(), EntityStatus::Closed).await
-            })
+            Box::pin(
+                async move { update_entity_status(conn, id.as_str(), EntityStatus::Closed).await },
+            )
         })
         .await
         .unwrap();
@@ -2562,13 +2564,9 @@ async fn list_entities_both_type_and_status_filter() {
         .await
         .unwrap();
 
-    let results = list_entities(
-        store.pool(),
-        Some("task"),
-        Some("open"),
-    )
-    .await
-    .unwrap();
+    let results = list_entities(store.pool(), Some("task"), Some("open"))
+        .await
+        .unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].name().as_str(), "OpenTask");
 }
@@ -2629,10 +2627,13 @@ async fn shared_reservations_dont_conflict() {
         .with_transaction(|conn| {
             Box::pin(async move {
                 acquire_reservation(
-                    conn, "agent-a", "src/*.rs",
+                    conn,
+                    "agent-a",
+                    "src/*.rs",
                     ReservationMode::Shared,
                     TtlSeconds::new(3600).unwrap(),
-                ).await
+                )
+                .await
             })
         })
         .await
@@ -2643,10 +2644,13 @@ async fn shared_reservations_dont_conflict() {
         .with_transaction(|conn| {
             Box::pin(async move {
                 acquire_reservation(
-                    conn, "agent-b", "src/*.rs",
+                    conn,
+                    "agent-b",
+                    "src/*.rs",
                     ReservationMode::Shared,
                     TtlSeconds::new(3600).unwrap(),
-                ).await
+                )
+                .await
             })
         })
         .await
@@ -2661,10 +2665,13 @@ async fn exclusive_conflicts_with_shared() {
         .with_transaction(|conn| {
             Box::pin(async move {
                 acquire_reservation(
-                    conn, "agent-a", "src/*.rs",
+                    conn,
+                    "agent-a",
+                    "src/*.rs",
                     ReservationMode::Shared,
                     TtlSeconds::new(3600).unwrap(),
-                ).await
+                )
+                .await
             })
         })
         .await
@@ -2674,14 +2681,20 @@ async fn exclusive_conflicts_with_shared() {
         .with_transaction(|conn| {
             Box::pin(async move {
                 acquire_reservation(
-                    conn, "agent-b", "src/*.rs",
+                    conn,
+                    "agent-b",
+                    "src/*.rs",
                     ReservationMode::Exclusive,
                     TtlSeconds::new(3600).unwrap(),
-                ).await
+                )
+                .await
             })
         })
         .await;
-    assert!(result.is_err(), "exclusive should conflict with existing shared");
+    assert!(
+        result.is_err(),
+        "exclusive should conflict with existing shared"
+    );
 }
 
 #[tokio::test]
@@ -2689,9 +2702,7 @@ async fn message_mark_read_nonexistent() {
     let store = test_db().await;
     let result = store
         .with_transaction(|conn| {
-            Box::pin(async move {
-                mark_message_read(conn, "nonexistent-msg-id").await
-            })
+            Box::pin(async move { mark_message_read(conn, "nonexistent-msg-id").await })
         })
         .await;
     assert!(result.is_err());
@@ -2704,7 +2715,11 @@ async fn list_lessons_pattern_with_sql_wildcards() {
     store
         .with_transaction(|conn| {
             Box::pin(async move {
-                create_entity(conn, &lesson_req("Lesson 1", "sql bug", "fix it", "learned")).await?;
+                create_entity(
+                    conn,
+                    &lesson_req("Lesson 1", "sql bug", "fix it", "learned"),
+                )
+                .await?;
                 Ok(())
             })
         })

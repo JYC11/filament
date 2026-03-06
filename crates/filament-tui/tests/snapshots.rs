@@ -2,12 +2,12 @@ use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
 use filament_core::connection::FilamentConnection;
-use filament_core::dto::{CreateEntityRequest, CreateRelationRequest};
-use filament_core::models::{EntityType, RelationType};
+use filament_core::dto::CreateEntityRequest;
+use filament_core::models::EntityType;
 use filament_core::schema::init_test_pool;
 use filament_core::store::FilamentStore;
 
-use filament_tui::{App, Tab, TaskFilter};
+use filament_tui::{App, FilterState, Tab};
 
 async fn test_conn() -> FilamentConnection {
     let pool = init_test_pool().await.unwrap();
@@ -29,7 +29,7 @@ fn buffer_to_string(terminal: &Terminal<TestBackend>) -> String {
 }
 
 #[tokio::test]
-async fn task_view_empty() {
+async fn entity_view_empty() {
     let conn = test_conn().await;
     let mut app = App::new(conn);
     app.refresh_all().await;
@@ -42,7 +42,10 @@ async fn task_view_empty() {
         .unwrap();
 
     let output = buffer_to_string(&terminal);
-    assert!(output.contains("Tasks"), "should show tab bar with Tasks");
+    assert!(
+        output.contains("Entities"),
+        "should show tab bar with Entities"
+    );
     assert!(output.contains("Agents"), "should show tab bar with Agents");
     assert!(
         output.contains("Reservations"),
@@ -52,26 +55,24 @@ async fn task_view_empty() {
         output.contains("Messages"),
         "should show tab bar with Messages"
     );
-    assert!(output.contains("Graph"), "should show tab bar with Graph");
     assert!(
         output.contains("Slug"),
-        "should show task table header Slug"
+        "should show entity table header Slug"
     );
     assert!(
         output.contains("Name"),
-        "should show task table header Name"
+        "should show entity table header Name"
     );
     assert!(
         output.contains("Status"),
-        "should show task table header Status"
+        "should show entity table header Status"
     );
 }
 
 #[tokio::test]
-async fn task_view_with_data() {
+async fn entity_view_with_data() {
     let mut conn = test_conn().await;
 
-    // Insert a task via the public CreateEntityRequest API
     conn.create_entity(CreateEntityRequest {
         name: "Build widget".to_string(),
         entity_type: EntityType::Task,
@@ -86,8 +87,8 @@ async fn task_view_with_data() {
     let mut app = App::new(conn);
     app.refresh_all().await;
 
-    assert_eq!(app.tasks.len(), 1, "should have one task");
-    assert_eq!(app.tasks[0].entity.name().as_str(), "Build widget");
+    assert_eq!(app.entities.len(), 1, "should have one entity");
+    assert_eq!(app.entities[0].entity.name().as_str(), "Build widget");
 
     let backend = TestBackend::new(80, 20);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -99,7 +100,7 @@ async fn task_view_with_data() {
     let output = buffer_to_string(&terminal);
     assert!(
         output.contains("Build widget"),
-        "should render task name in table"
+        "should render entity name in table"
     );
 }
 
@@ -189,106 +190,15 @@ async fn message_view_empty() {
 
 #[test]
 fn tab_switching() {
-    assert_eq!(Tab::Tasks.next(), Tab::Agents);
+    assert_eq!(Tab::Entities.next(), Tab::Agents);
     assert_eq!(Tab::Agents.next(), Tab::Reservations);
     assert_eq!(Tab::Reservations.next(), Tab::Messages);
-    assert_eq!(Tab::Messages.next(), Tab::Graph);
-    assert_eq!(Tab::Graph.next(), Tab::Tasks);
+    assert_eq!(Tab::Messages.next(), Tab::Entities);
 
-    assert_eq!(Tab::Tasks.prev(), Tab::Graph);
-    assert_eq!(Tab::Agents.prev(), Tab::Tasks);
+    assert_eq!(Tab::Entities.prev(), Tab::Messages);
+    assert_eq!(Tab::Agents.prev(), Tab::Entities);
     assert_eq!(Tab::Reservations.prev(), Tab::Agents);
     assert_eq!(Tab::Messages.prev(), Tab::Reservations);
-    assert_eq!(Tab::Graph.prev(), Tab::Messages);
-}
-
-#[tokio::test]
-async fn graph_view_empty() {
-    let conn = test_conn().await;
-    let mut app = App::new(conn);
-    app.active_tab = Tab::Graph;
-    app.refresh_all().await;
-
-    let backend = TestBackend::new(80, 20);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
-        .unwrap();
-
-    let output = buffer_to_string(&terminal);
-    assert!(output.contains("Graph"), "should show Graph block title");
-    assert!(
-        output.contains("No entities"),
-        "should show empty graph message"
-    );
-}
-
-#[tokio::test]
-async fn graph_view_with_data() {
-    let mut conn = test_conn().await;
-
-    // Create two tasks with a blocks relation
-    let (id_a, slug_a) = conn
-        .create_entity(CreateEntityRequest {
-            name: "Setup DB".to_string(),
-            entity_type: EntityType::Task,
-            summary: Some("Initialize database".to_string()),
-            key_facts: None,
-            content_path: None,
-            priority: None,
-        })
-        .await
-        .unwrap();
-
-    let (id_b, _slug_b) = conn
-        .create_entity(CreateEntityRequest {
-            name: "Build API".to_string(),
-            entity_type: EntityType::Task,
-            summary: Some("REST API layer".to_string()),
-            key_facts: None,
-            content_path: None,
-            priority: None,
-        })
-        .await
-        .unwrap();
-
-    // A blocks B (B depends on A)
-    conn.create_relation(CreateRelationRequest {
-        source_id: id_a.to_string(),
-        target_id: id_b.to_string(),
-        relation_type: RelationType::Blocks,
-        weight: None,
-        summary: None,
-        metadata: None,
-    })
-    .await
-    .unwrap();
-
-    let mut app = App::new(conn);
-    app.active_tab = Tab::Graph;
-    app.refresh_all().await;
-
-    let backend = TestBackend::new(80, 20);
-    let mut terminal = Terminal::new(backend).unwrap();
-
-    terminal
-        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
-        .unwrap();
-
-    let output = buffer_to_string(&terminal);
-    assert!(
-        output.contains("Setup DB"),
-        "should render parent task name: {output}"
-    );
-    assert!(
-        output.contains("Build API"),
-        "should render child task name: {output}"
-    );
-    assert!(
-        output.contains(&slug_a.to_string()),
-        "should show slug in graph: {output}"
-    );
 }
 
 #[tokio::test]
@@ -316,24 +226,115 @@ async fn status_bar_renders() {
 }
 
 #[test]
-fn task_filter_cycle() {
-    let mut filter = TaskFilter::default();
-    assert_eq!(filter.label(), "open");
+fn filter_state_defaults() {
+    let filter = FilterState::default();
+    assert!(filter.types.contains(&EntityType::Task));
+    assert!(filter
+        .statuses
+        .contains(&filament_core::models::EntityStatus::Open));
+    assert!(filter.priorities.is_empty());
+    assert!(!filter.ready_only);
+    assert!(filter.active_bar.is_none());
+    assert_eq!(filter.label(), "task | open");
+}
 
-    filter.cycle();
-    assert_eq!(filter.label(), "in_progress");
+#[test]
+fn filter_state_toggle_type() {
+    let mut filter = FilterState::default();
+    // Start with {Task}, toggle Module on
+    filter.toggle_type(EntityType::Module);
+    assert!(filter.types.contains(&EntityType::Task));
+    assert!(filter.types.contains(&EntityType::Module));
+    // Toggle Task off
+    filter.toggle_type(EntityType::Task);
+    assert!(!filter.types.contains(&EntityType::Task));
+    assert!(filter.is_single_type(EntityType::Module));
+}
 
-    filter.cycle();
-    assert_eq!(filter.label(), "blocked");
-
-    filter.cycle();
-    assert_eq!(filter.label(), "closed");
-
-    filter.cycle();
+#[test]
+fn filter_state_clear() {
+    let mut filter = FilterState::default();
+    filter.clear_types();
+    assert!(filter.types.is_empty());
+    filter.clear_statuses();
+    assert!(filter.statuses.is_empty());
     assert_eq!(filter.label(), "all");
+}
 
-    filter.cycle();
-    assert_eq!(filter.label(), "open");
+#[test]
+fn filter_state_ready_only() {
+    let mut filter = FilterState::default();
+    filter.toggle_ready_only();
+    assert!(filter.ready_only);
+    assert_eq!(filter.label(), "ready");
+    filter.toggle_ready_only();
+    assert!(!filter.ready_only);
+}
+
+#[test]
+fn filter_state_priority_toggle() {
+    use filament_core::models::Priority;
+    let mut filter = FilterState::default();
+    let p0 = Priority::new(0).unwrap();
+    let p1 = Priority::new(1).unwrap();
+    filter.toggle_priority(p0);
+    filter.toggle_priority(p1);
+    assert!(filter.priorities.contains(&p0));
+    assert!(filter.priorities.contains(&p1));
+    // Toggle p0 off
+    filter.toggle_priority(p0);
+    assert!(!filter.priorities.contains(&p0));
+}
+
+#[tokio::test]
+async fn entity_view_multi_type_columns() {
+    let mut conn = test_conn().await;
+
+    conn.create_entity(CreateEntityRequest {
+        name: "My Task".to_string(),
+        entity_type: EntityType::Task,
+        summary: Some("A task".to_string()),
+        key_facts: None,
+        content_path: None,
+        priority: None,
+    })
+    .await
+    .unwrap();
+
+    conn.create_entity(CreateEntityRequest {
+        name: "My Module".to_string(),
+        entity_type: EntityType::Module,
+        summary: Some("A module".to_string()),
+        key_facts: None,
+        content_path: None,
+        priority: None,
+    })
+    .await
+    .unwrap();
+
+    let mut app = App::new(conn);
+    // Show all types
+    app.filter.types.clear();
+    app.filter.statuses.clear();
+    app.refresh_all().await;
+
+    assert_eq!(app.entities.len(), 2, "should have two entities");
+
+    let backend = TestBackend::new(80, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
+        .unwrap();
+
+    let output = buffer_to_string(&terminal);
+    // Generic columns should show Type column
+    assert!(
+        output.contains("Type"),
+        "multi-type view should show Type column header: {output}"
+    );
+    assert!(output.contains("My Task"), "should show task: {output}");
+    assert!(output.contains("My Module"), "should show module: {output}");
 }
 
 // ---------------------------------------------------------------------------
@@ -382,7 +383,6 @@ fn format_seconds_7322() {
 
 #[test]
 fn format_seconds_negative() {
-    // Negative seconds — behavior is defined by signed integer arithmetic
     let result = filament_tui::views::format_seconds(-5);
     assert_eq!(result, "-5s");
 }

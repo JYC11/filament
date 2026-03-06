@@ -776,7 +776,10 @@ async fn pagerank_disconnected_components() {
 
     let scores = graph.pagerank(0.85, 50);
     assert_eq!(scores.len(), 4);
-    assert!(scores.values().all(|&s| s > 0.0), "all nodes should have positive scores");
+    assert!(
+        scores.values().all(|&s| s > 0.0),
+        "all nodes should have positive scores"
+    );
 
     let sum: f64 = scores.values().sum();
     assert!(
@@ -1056,7 +1059,11 @@ async fn remove_edge_nonexistent_returns_false() {
 #[tokio::test]
 async fn remove_edge_nonexistent_nodes_returns_false() {
     let mut graph = KnowledgeGraph::new();
-    assert!(!graph.remove_edge("fake-src", "fake-tgt", &filament_core::models::RelationType::Blocks));
+    assert!(!graph.remove_edge(
+        "fake-src",
+        "fake-tgt",
+        &filament_core::models::RelationType::Blocks
+    ));
 }
 
 #[tokio::test]

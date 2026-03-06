@@ -1,8 +1,8 @@
 pub mod agents;
-pub mod graph;
+pub mod entities;
+pub mod filter_bar;
 pub mod messages;
 pub mod reservations;
-pub mod tasks;
 
 /// Format a duration in seconds to a human-readable string (e.g., "42s", "3m05s", "1h30m").
 pub fn format_seconds(secs: i64) -> String {

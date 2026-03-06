@@ -550,7 +550,10 @@ fn slug_try_from_trims_tabs_and_newlines() {
     // Slug::try_from trims all whitespace (including tabs/newlines),
     // so "\tab12cd34\n" becomes "ab12cd34" which is valid.
     let s = Slug::try_from("\tab12cd34\n".to_string());
-    assert!(s.is_ok(), "tabs/newlines are trimmed, leaving a valid 8-char slug");
+    assert!(
+        s.is_ok(),
+        "tabs/newlines are trimmed, leaving a valid 8-char slug"
+    );
     assert_eq!(s.unwrap().as_str(), "ab12cd34");
 }
 
@@ -669,15 +672,27 @@ fn entity_type_fromstr_rejects_substring() {
 #[test]
 fn relation_type_fromstr_case_insensitive() {
     use std::str::FromStr;
-    assert_eq!(RelationType::from_str("BLOCKS").unwrap(), RelationType::Blocks);
-    assert_eq!(RelationType::from_str("Depends_On").unwrap(), RelationType::DependsOn);
+    assert_eq!(
+        RelationType::from_str("BLOCKS").unwrap(),
+        RelationType::Blocks
+    );
+    assert_eq!(
+        RelationType::from_str("Depends_On").unwrap(),
+        RelationType::DependsOn
+    );
 }
 
 #[test]
 fn entity_status_fromstr_case_insensitive() {
     use std::str::FromStr;
-    assert_eq!(EntityStatus::from_str("IN_PROGRESS").unwrap(), EntityStatus::InProgress);
-    assert_eq!(EntityStatus::from_str("CLOSED").unwrap(), EntityStatus::Closed);
+    assert_eq!(
+        EntityStatus::from_str("IN_PROGRESS").unwrap(),
+        EntityStatus::InProgress
+    );
+    assert_eq!(
+        EntityStatus::from_str("CLOSED").unwrap(),
+        EntityStatus::Closed
+    );
 }
 
 #[test]
@@ -706,14 +721,23 @@ fn event_type_fromstr_all_variants() {
 fn agent_role_fromstr_case_insensitive() {
     use std::str::FromStr;
     assert_eq!(AgentRole::from_str("CODER").unwrap(), AgentRole::Coder);
-    assert_eq!(AgentRole::from_str("Reviewer").unwrap(), AgentRole::Reviewer);
+    assert_eq!(
+        AgentRole::from_str("Reviewer").unwrap(),
+        AgentRole::Reviewer
+    );
 }
 
 #[test]
 fn reservation_mode_fromstr() {
     use std::str::FromStr;
-    assert_eq!(ReservationMode::from_str("exclusive").unwrap(), ReservationMode::Exclusive);
-    assert_eq!(ReservationMode::from_str("shared").unwrap(), ReservationMode::Shared);
+    assert_eq!(
+        ReservationMode::from_str("exclusive").unwrap(),
+        ReservationMode::Exclusive
+    );
+    assert_eq!(
+        ReservationMode::from_str("shared").unwrap(),
+        ReservationMode::Shared
+    );
     // ReservationMode does NOT use impl_enum_str, so case-sensitivity is exact
     assert!(ReservationMode::from_str("EXCLUSIVE").is_err());
 }
@@ -734,7 +758,9 @@ fn entity_into_task_type_mismatch_preserves_info() {
     let e = Entity::Agent(sample_common());
     let err = e.into_task().unwrap_err();
     match err {
-        FilamentError::TypeMismatch { expected, actual, .. } => {
+        FilamentError::TypeMismatch {
+            expected, actual, ..
+        } => {
             assert_eq!(expected, EntityType::Task);
             assert_eq!(actual, EntityType::Agent);
         }

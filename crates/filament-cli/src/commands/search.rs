@@ -20,7 +20,7 @@ pub struct SearchArgs {
 pub async fn search(cli: &Cli, args: &SearchArgs) -> Result<()> {
     let mut conn = connect().await?;
     let results = conn
-        .search_entities(&args.query, args.r#type.clone(), args.limit)
+        .search_entities(&args.query, args.r#type, args.limit)
         .await?;
 
     if cli.json {

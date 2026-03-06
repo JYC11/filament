@@ -5,21 +5,39 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::{App, Tab};
-use crate::views::{agents, graph, messages, reservations, tasks};
+use crate::views::{agents, entities, filter_bar, messages, reservations};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
+    let has_filter_bar = app.active_tab == Tab::Entities && app.filter.active_bar.is_some();
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // tab bar
-            Constraint::Min(0),    // content
-            Constraint::Length(1), // status bar
-        ])
+        .constraints(if has_filter_bar {
+            vec![
+                Constraint::Length(3), // tab bar
+                Constraint::Length(1), // filter bar
+                Constraint::Min(0),    // content
+                Constraint::Length(1), // status bar
+            ]
+        } else {
+            vec![
+                Constraint::Length(3), // tab bar
+                Constraint::Min(0),    // content
+                Constraint::Length(1), // status bar
+            ]
+        })
         .split(frame.area());
 
     draw_tab_bar(frame, app, chunks[0]);
-    draw_content(frame, app, chunks[1]);
-    draw_status_bar(frame, app, chunks[2]);
+
+    if has_filter_bar {
+        filter_bar::render_filter_bar(&app.filter, frame, chunks[1]);
+        draw_content(frame, app, chunks[2]);
+        draw_status_bar(frame, app, chunks[3]);
+    } else {
+        draw_content(frame, app, chunks[1]);
+        draw_status_bar(frame, app, chunks[2]);
+    }
 }
 
 fn draw_tab_bar(frame: &mut Frame, app: &App, area: Rect) {
@@ -39,11 +57,16 @@ fn draw_tab_bar(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
     match app.active_tab {
-        Tab::Tasks => {
-            let filter_label = app.task_filter.label().to_string();
-            let mut state = app.task_table_state.clone();
-            tasks::render_task_table_stateful(&app.tasks, &filter_label, &mut state, frame, area);
-            app.task_table_state = state;
+        Tab::Entities => {
+            let mut state = app.entity_table_state.clone();
+            entities::render_entity_table_stateful(
+                &app.entities,
+                &app.filter,
+                &mut state,
+                frame,
+                area,
+            );
+            app.entity_table_state = state;
         }
         Tab::Agents => {
             let mut state = app.agent_table_state.clone();
@@ -64,9 +87,6 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
             let mut state = app.message_table_state.clone();
             messages::render_message_table_stateful(&app.messages, &mut state, frame, area);
             app.message_table_state = state;
-        }
-        Tab::Graph => {
-            graph::render_graph(&app.graph_data, frame, area);
         }
     }
 }
@@ -97,6 +117,11 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Span::raw("")
     };
 
+    let help_text = match app.active_tab {
+        Tab::Entities => " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri F:ready",
+        _ => " | q:quit Tab:switch r:refresh j/k:nav",
+    };
+
     let line = Line::from(vec![
         Span::styled(
             format!(" [{mode}] "),
@@ -108,10 +133,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         escalation_span,
         Span::raw(format!(" refreshed {refresh_time} ")),
         Span::styled(status_text, Style::default().fg(Color::Yellow)),
-        Span::raw(match app.active_tab {
-            Tab::Tasks => " | q:quit Tab:switch r:refresh j/k:nav f:filter c:close",
-            _ => " | q:quit Tab:switch r:refresh j/k:nav",
-        }),
+        Span::raw(help_text),
     ]);
 
     let bar = Paragraph::new(line);

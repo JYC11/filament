@@ -58,7 +58,14 @@ fn audit_creates_snapshot_on_branch() {
 
     // Add an entity so the graph is non-empty
     filament(&dir)
-        .args(["add", "test-module", "--type", "module", "--summary", "a test module"])
+        .args([
+            "add",
+            "test-module",
+            "--type",
+            "module",
+            "--summary",
+            "a test module",
+        ])
         .assert()
         .success();
 
@@ -89,7 +96,9 @@ fn audit_creates_snapshot_on_branch() {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    let current = String::from_utf8_lossy(&head_output.stdout).trim().to_string();
+    let current = String::from_utf8_lossy(&head_output.stdout)
+        .trim()
+        .to_string();
     assert!(
         current == "main" || current == "master",
         "should be back on original branch, got: {current}"

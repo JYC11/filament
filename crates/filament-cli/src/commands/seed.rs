@@ -138,7 +138,7 @@ async fn create_seed_entities(cli: &Cli, items: &[SeedItem]) -> Result<()> {
 
         conn.create_entity(CreateEntityRequest {
             name: item.name.clone(),
-            entity_type: item.entity_type.clone(),
+            entity_type: item.entity_type,
             summary: Some(item.summary.clone()),
             key_facts: None,
             content_path: None,
@@ -160,9 +160,10 @@ async fn create_seed_entities(cli: &Cli, items: &[SeedItem]) -> Result<()> {
 }
 
 fn parse_markdown_file(path: &Path) -> Vec<SeedItem> {
-    let source = path
-        .file_name()
-        .map_or_else(|| path.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string());
+    let source = path.file_name().map_or_else(
+        || path.to_string_lossy().to_string(),
+        |n| n.to_string_lossy().to_string(),
+    );
     parse_markdown_file_with_source(path, &source)
 }
 

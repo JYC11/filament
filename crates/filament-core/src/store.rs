@@ -281,8 +281,7 @@ pub async fn list_lessons(
     status: Option<&str>,
     pattern: Option<&str>,
 ) -> Result<Vec<Entity>> {
-    let mut query =
-        String::from("SELECT * FROM entities WHERE entity_type = 'lesson'");
+    let mut query = String::from("SELECT * FROM entities WHERE entity_type = 'lesson'");
     if status.is_some() {
         query.push_str(" AND status = ?");
     }

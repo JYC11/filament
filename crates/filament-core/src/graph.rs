@@ -91,7 +91,7 @@ impl KnowledgeGraph {
             slug: c.slug.clone(),
             name: c.name.clone(),
             entity_type: entity.entity_type(),
-            status: c.status.clone(),
+            status: c.status,
             priority: c.priority,
             summary: c.summary.clone(),
         };

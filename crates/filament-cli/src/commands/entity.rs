@@ -116,7 +116,7 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
 
     let req = CreateEntityRequest {
         name: args.name.clone(),
-        entity_type: args.r#type.clone(),
+        entity_type: args.r#type,
         summary: Some(args.summary.clone()),
         key_facts,
         content_path: args.content.clone(),
@@ -169,7 +169,7 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     let changeset = filament_core::dto::EntityChangeset {
         name: None,
         summary: args.summary.clone(),
-        status: args.status.clone(),
+        status: args.status,
         priority: None,
         key_facts: None,
         content_path: None,
@@ -313,9 +313,7 @@ pub async fn list(cli: &Cli, args: &ListArgs) -> Result<()> {
         Some(other) => Some(other.parse()?),
     };
 
-    let entities = conn
-        .list_entities(args.r#type.clone(), status_filter)
-        .await?;
+    let entities = conn.list_entities(args.r#type, status_filter).await?;
 
     print_entity_list(cli, &entities, "No entities found.");
     Ok(())
@@ -367,7 +365,7 @@ pub async fn resolve(cli: &Cli, args: &ResolveArgs) -> Result<()> {
     let changeset = filament_core::dto::EntityChangeset {
         name: None,
         summary: args.summary.clone(),
-        status: args.status.clone(),
+        status: args.status,
         priority: None,
         key_facts: None,
         content_path: None,

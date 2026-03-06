@@ -129,7 +129,7 @@ pub async fn update_status(
         .store
         .with_transaction(|conn| {
             let id = p.id.clone();
-            let status = p.status.clone();
+            let status = p.status;
             Box::pin(async move { store::update_entity_status(conn, &id, status).await })
         })
         .await?;

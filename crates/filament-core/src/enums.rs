@@ -43,7 +43,9 @@ macro_rules! impl_enum_str {
 // Enums
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, sqlx::Type, Serialize, Deserialize, JsonSchema,
+)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum EntityType {
@@ -87,7 +89,9 @@ impl_enum_str!(RelationType {
     AssignedTo => "assigned_to",
 });
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, sqlx::Type, Serialize, Deserialize, JsonSchema,
+)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum EntityStatus {

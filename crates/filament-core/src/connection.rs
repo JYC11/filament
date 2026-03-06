@@ -172,19 +172,13 @@ impl FilamentConnection {
     ) -> Result<Vec<Entity>> {
         match self {
             Self::Direct(s) => {
-                store::list_lessons(
-                    s.pool(),
-                    status.as_ref().map(EntityStatus::as_str),
-                    pattern,
-                )
-                .await
+                store::list_lessons(s.pool(), status.as_ref().map(EntityStatus::as_str), pattern)
+                    .await
             }
             Self::Socket(_c) => {
                 // Daemon path: fall back to list_entities + in-memory filter
                 // (list_lessons is a store-level optimization for direct mode)
-                let mut entities = self
-                    .list_entities(Some(EntityType::Lesson), status)
-                    .await?;
+                let mut entities = self.list_entities(Some(EntityType::Lesson), status).await?;
                 if let Some(pat) = pattern {
                     let pat_lower = pat.to_lowercase();
                     entities.retain(|e| {
@@ -260,7 +254,6 @@ impl FilamentConnection {
                 let id = id.to_string();
                 s.with_transaction(|conn| {
                     let id = id.clone();
-                    let status = status.clone();
                     Box::pin(async move { store::update_entity_status(conn, &id, status).await })
                 })
                 .await
