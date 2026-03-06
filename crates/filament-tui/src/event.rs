@@ -102,7 +102,14 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('F') if app.active_tab == Tab::Entities => {
             app.filter.toggle_ready_only();
+            app.reset_page();
             app.refresh_entities().await;
+        }
+        KeyCode::Char('n') if app.active_tab == Tab::Entities => {
+            app.next_page();
+        }
+        KeyCode::Char('p') if app.active_tab == Tab::Entities => {
+            app.prev_page();
         }
         _ => {}
     }
@@ -131,6 +138,7 @@ async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
                 FilterBar::Status => app.filter.clear_statuses(),
                 FilterBar::Priority => app.filter.clear_priorities(),
             }
+            app.reset_page();
             app.refresh_entities().await;
         }
         KeyCode::Char(c @ '1'..='7') => {
@@ -148,6 +156,7 @@ async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
                     ];
                     if let Some(&t) = types.get(idx) {
                         app.filter.toggle_type(t);
+                        app.reset_page();
                         app.refresh_entities().await;
                     }
                 }
@@ -160,6 +169,7 @@ async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
                     ];
                     if let Some(&s) = statuses.get(idx) {
                         app.filter.toggle_status(s);
+                        app.reset_page();
                         app.refresh_entities().await;
                     }
                 }
@@ -167,6 +177,7 @@ async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
                     if let Ok(val) = u8::try_from(idx) {
                         if let Ok(p) = Priority::new(val) {
                             app.filter.toggle_priority(p);
+                            app.reset_page();
                             app.refresh_entities().await;
                         }
                     }

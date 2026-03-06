@@ -7,9 +7,19 @@ use filament_core::models::{EntityStatus, EntityType};
 
 use crate::app::{EntityRow, FilterState};
 
-pub fn render_entity_table<'a>(entities: &'a [EntityRow], filter: &FilterState) -> Table<'a> {
+pub fn render_entity_table<'a>(
+    entities: &'a [EntityRow],
+    filter: &FilterState,
+    page: usize,
+    total_pages: usize,
+) -> Table<'a> {
     let label = filter.label();
-    let title = format!(" Entities [{label}] ");
+    let page_info = if total_pages > 1 {
+        format!(" | {}/{}", page + 1, total_pages)
+    } else {
+        String::new()
+    };
+    let title = format!(" Entities [{label}{page_info}] ");
 
     let is_task_only = filter.ready_only || filter.is_single_type(EntityType::Task);
     let is_lesson_only = !filter.ready_only && filter.is_single_type(EntityType::Lesson);
@@ -170,11 +180,13 @@ fn render_generic_columns<'a>(entities: &'a [EntityRow], title: &str) -> Table<'
 pub fn render_entity_table_stateful(
     entities: &[EntityRow],
     filter: &FilterState,
+    page: usize,
+    total_pages: usize,
     state: &mut TableState,
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
 ) {
-    let table = render_entity_table(entities, filter);
+    let table = render_entity_table(entities, filter, page, total_pages);
     frame.render_stateful_widget(table, area, state);
 }
 

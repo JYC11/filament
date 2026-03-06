@@ -9,6 +9,7 @@ use filament_core::dto::Escalation;
 use filament_core::models::{AgentRun, Entity, EntityStatus, EntityType, Priority, Reservation};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const DEFAULT_PAGE_SIZE: usize = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -213,6 +214,8 @@ pub struct App {
     pub reservation_table_state: TableState,
     pub message_table_state: TableState,
     pub filter: FilterState,
+    pub page: usize,
+    pub page_size: usize,
     pub last_refresh: DateTime<Utc>,
     pub status_message: Option<String>,
     pub escalation_count: usize,
@@ -235,6 +238,8 @@ impl App {
             reservation_table_state: TableState::default(),
             message_table_state: TableState::default(),
             filter: FilterState::default(),
+            page: 0,
+            page_size: DEFAULT_PAGE_SIZE,
             last_refresh: Utc::now(),
             status_message: None,
             escalation_count: 0,
@@ -405,9 +410,9 @@ impl App {
         state.select(Some(i));
     }
 
-    const fn current_list_len(&self) -> usize {
+    fn current_list_len(&self) -> usize {
         match self.active_tab {
-            Tab::Entities => self.entities.len(),
+            Tab::Entities => self.visible_entities().len(),
             Tab::Agents => self.agent_runs.len(),
             Tab::Reservations => self.reservations.len(),
             Tab::Messages => self.messages.len(),
@@ -424,7 +429,7 @@ impl App {
     }
 
     fn clamp_entity_selection(&mut self) {
-        let len = self.entities.len();
+        let len = self.visible_entities().len();
         if let Some(idx) = self.entity_table_state.selected() {
             if len == 0 {
                 self.entity_table_state.select(None);
@@ -432,5 +437,48 @@ impl App {
                 self.entity_table_state.select(Some(len - 1));
             }
         }
+    }
+
+    pub fn visible_entities(&self) -> &[EntityRow] {
+        let start = self.page * self.page_size;
+        if start >= self.entities.len() {
+            return &[];
+        }
+        let end = (start + self.page_size).min(self.entities.len());
+        &self.entities[start..end]
+    }
+
+    pub const fn total_pages(&self) -> usize {
+        if self.entities.is_empty() || self.page_size == 0 {
+            return 1;
+        }
+        self.entities.len().div_ceil(self.page_size)
+    }
+
+    pub const fn has_next_page(&self) -> bool {
+        self.page + 1 < self.total_pages()
+    }
+
+    pub const fn has_prev_page(&self) -> bool {
+        self.page > 0
+    }
+
+    pub fn next_page(&mut self) {
+        if self.has_next_page() {
+            self.page += 1;
+            self.entity_table_state.select(Some(0));
+        }
+    }
+
+    pub fn prev_page(&mut self) {
+        if self.has_prev_page() {
+            self.page -= 1;
+            self.entity_table_state.select(Some(0));
+        }
+    }
+
+    pub fn reset_page(&mut self) {
+        self.page = 0;
+        self.entity_table_state.select(None);
     }
 }

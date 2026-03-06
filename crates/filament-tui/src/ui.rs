@@ -58,10 +58,13 @@ fn draw_tab_bar(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
     match app.active_tab {
         Tab::Entities => {
+            let visible = app.visible_entities();
             let mut state = app.entity_table_state.clone();
             entities::render_entity_table_stateful(
-                &app.entities,
+                visible,
                 &app.filter,
+                app.page,
+                app.total_pages(),
                 &mut state,
                 frame,
                 area,
@@ -118,7 +121,9 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let help_text = match app.active_tab {
-        Tab::Entities => " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri F:ready",
+        Tab::Entities => {
+            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri F:ready n/p:page"
+        }
         _ => " | q:quit Tab:switch r:refresh j/k:nav",
     };
 

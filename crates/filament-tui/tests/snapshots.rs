@@ -338,6 +338,142 @@ async fn entity_view_multi_type_columns() {
 }
 
 // ---------------------------------------------------------------------------
+// Paging
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn paging_basics() {
+    let mut conn = test_conn().await;
+
+    // Create 3 tasks, set page_size to 2 so we get 2 pages
+    for i in 1..=3 {
+        conn.create_entity(CreateEntityRequest {
+            name: format!("Task {i}"),
+            entity_type: EntityType::Task,
+            summary: Some(format!("task {i}")),
+            key_facts: None,
+            content_path: None,
+            priority: None,
+        })
+        .await
+        .unwrap();
+    }
+
+    let mut app = App::new(conn);
+    app.page_size = 2;
+    app.refresh_all().await;
+
+    assert_eq!(app.entities.len(), 3);
+    assert_eq!(app.total_pages(), 2);
+    assert_eq!(app.visible_entities().len(), 2);
+    assert!(!app.has_prev_page());
+    assert!(app.has_next_page());
+
+    app.next_page();
+    assert_eq!(app.page, 1);
+    assert_eq!(app.visible_entities().len(), 1);
+    assert!(app.has_prev_page());
+    assert!(!app.has_next_page());
+
+    app.prev_page();
+    assert_eq!(app.page, 0);
+    assert_eq!(app.visible_entities().len(), 2);
+}
+
+#[tokio::test]
+async fn paging_reset_on_filter_change() {
+    let mut conn = test_conn().await;
+    for i in 1..=3 {
+        conn.create_entity(CreateEntityRequest {
+            name: format!("Task {i}"),
+            entity_type: EntityType::Task,
+            summary: Some(format!("task {i}")),
+            key_facts: None,
+            content_path: None,
+            priority: None,
+        })
+        .await
+        .unwrap();
+    }
+
+    let mut app = App::new(conn);
+    app.page_size = 2;
+    app.refresh_all().await;
+    app.next_page();
+    assert_eq!(app.page, 1);
+
+    // Changing filter resets page
+    app.reset_page();
+    assert_eq!(app.page, 0);
+}
+
+#[tokio::test]
+async fn paging_no_indicator_single_page() {
+    let mut conn = test_conn().await;
+    conn.create_entity(CreateEntityRequest {
+        name: "Only task".to_string(),
+        entity_type: EntityType::Task,
+        summary: Some("one task".to_string()),
+        key_facts: None,
+        content_path: None,
+        priority: None,
+    })
+    .await
+    .unwrap();
+
+    let mut app = App::new(conn);
+    app.refresh_all().await;
+
+    assert_eq!(app.total_pages(), 1);
+
+    let backend = TestBackend::new(100, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
+        .unwrap();
+
+    let output = buffer_to_string(&terminal);
+    // Single page should NOT show page indicator
+    assert!(
+        !output.contains("1/1"),
+        "single page should not show page indicator: {output}"
+    );
+}
+
+#[tokio::test]
+async fn page_indicator_in_title() {
+    let mut conn = test_conn().await;
+    for i in 1..=3 {
+        conn.create_entity(CreateEntityRequest {
+            name: format!("Task {i}"),
+            entity_type: EntityType::Task,
+            summary: Some(format!("task {i}")),
+            key_facts: None,
+            content_path: None,
+            priority: None,
+        })
+        .await
+        .unwrap();
+    }
+
+    let mut app = App::new(conn);
+    app.page_size = 2;
+    app.refresh_all().await;
+
+    let backend = TestBackend::new(100, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
+        .unwrap();
+
+    let output = buffer_to_string(&terminal);
+    assert!(
+        output.contains("1/2"),
+        "should show page 1/2 in title: {output}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // format_seconds edge cases
 // ---------------------------------------------------------------------------
 
