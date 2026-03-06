@@ -89,7 +89,11 @@ fn build_detail_lines(data: &DetailData) -> Vec<Line<'static>> {
     // Blocker depth (tasks only)
     if entity.entity_type() == EntityType::Task && data.blocker_depth > 0 {
         lines.push(section_header("Blocker Depth"));
-        let label = if data.blocker_depth == 1 { "layer" } else { "layers" };
+        let label = if data.blocker_depth == 1 {
+            "layer"
+        } else {
+            "layers"
+        };
         lines.push(Line::from(format!(
             "  {} {label} of unclosed prerequisites",
             data.blocker_depth
@@ -179,10 +183,7 @@ fn status_style(status: filament_core::models::EntityStatus) -> Style {
 }
 
 fn resolve_name(name_map: &HashMap<String, String>, id: &str) -> String {
-    name_map
-        .get(id)
-        .cloned()
-        .unwrap_or_else(|| id.to_string())
+    name_map.get(id).cloned().unwrap_or_else(|| id.to_string())
 }
 
 fn summarize_diff(diff_json: &str) -> String {

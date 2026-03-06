@@ -29,7 +29,8 @@ async fn start_test_daemon() -> (DaemonClient, CancellationToken, tempfile::Temp
         db_path,
         pid_path,
         cleanup_interval_secs: 3600, // long interval for tests
-        idle_timeout_secs: 0,       // no idle timeout in tests
+        idle_timeout_secs: 0,        // no idle timeout in tests
+        reconciliation_interval_secs: 3600,
     };
 
     let cancel = CancellationToken::new();
@@ -416,6 +417,7 @@ async fn stale_reservation_cleanup() {
         pid_path,
         cleanup_interval_secs: 1, // very fast cleanup
         idle_timeout_secs: 0,
+        reconciliation_interval_secs: 3600,
     };
 
     let cancel = CancellationToken::new();
@@ -1335,7 +1337,10 @@ async fn multi_agent_full_workflow() {
         .blocker_depth(review.as_str())
         .await
         .expect("blocker depth");
-    assert_eq!(depth, 0, "all upstream blockers are closed, depth should be 0");
+    assert_eq!(
+        depth, 0,
+        "all upstream blockers are closed, depth should be 0"
+    );
 
     // Events were recorded for design entity
     let events = verify

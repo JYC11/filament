@@ -5,7 +5,9 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::{App, Tab};
-use crate::views::{agents, analytics, config, detail, entities, filter_bar, messages, reservations};
+use crate::views::{
+    agents, analytics, config, detail, entities, filter_bar, messages, reservations,
+};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let has_filter_bar = app.active_tab == Tab::Entities && app.filter.active_bar.is_some();
@@ -165,9 +167,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let health_span = if app.has_cycle {
         Span::styled(
             format!(" {entity_count} entities ⚠ cycle "),
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )
     } else {
         Span::raw(format!(" {entity_count} entities "))

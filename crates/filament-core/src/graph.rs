@@ -295,9 +295,7 @@ impl KnowledgeGraph {
             for edge in self.graph.edges_directed(node, Direction::Outgoing) {
                 if edge.weight().relation_type == RelationType::DependsOn {
                     let target = edge.target();
-                    if self.graph[target].status != EntityStatus::Closed
-                        && visited.insert(target)
-                    {
+                    if self.graph[target].status != EntityStatus::Closed && visited.insert(target) {
                         let next_depth = depth + 1;
                         max_depth = max_depth.max(next_depth);
                         queue.push_back((target, next_depth));
@@ -309,9 +307,7 @@ impl KnowledgeGraph {
             for edge in self.graph.edges_directed(node, Direction::Incoming) {
                 if edge.weight().relation_type == RelationType::Blocks {
                     let source = edge.source();
-                    if self.graph[source].status != EntityStatus::Closed
-                        && visited.insert(source)
-                    {
+                    if self.graph[source].status != EntityStatus::Closed && visited.insert(source) {
                         let next_depth = depth + 1;
                         max_depth = max_depth.max(next_depth);
                         queue.push_back((source, next_depth));

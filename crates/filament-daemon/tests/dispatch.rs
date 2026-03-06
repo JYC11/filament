@@ -67,6 +67,14 @@ exit {exit_code}
 async fn start_test_daemon(
     mock: &MockConfig,
 ) -> (DaemonClient, CancellationToken, tempfile::TempDir) {
+    start_test_daemon_with_timeout(mock, 0).await
+}
+
+/// Like `start_test_daemon` but with a configurable agent timeout.
+async fn start_test_daemon_with_timeout(
+    mock: &MockConfig,
+    agent_timeout_secs: u64,
+) -> (DaemonClient, CancellationToken, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let runtime_dir = tmp.path().join(".filament");
     std::fs::create_dir_all(&runtime_dir).expect("create runtime dir");
@@ -89,6 +97,7 @@ async fn start_test_daemon(
         pid_path,
         cleanup_interval_secs: 3600,
         idle_timeout_secs: 0,
+        reconciliation_interval_secs: 3600, // long interval for tests
     };
 
     // Pass dispatch config directly — no env var contamination
@@ -98,6 +107,7 @@ async fn start_test_daemon(
         context_depth: 2,
         auto_dispatch: false,
         max_auto_dispatch: 3,
+        agent_timeout_secs,
     };
 
     let cancel = CancellationToken::new();
@@ -369,6 +379,166 @@ async fn sequential_multi_dispatch() {
         .expect("list runs 2");
     assert_eq!(runs1.len(), 1);
     assert_eq!(runs2.len(), 1);
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dispatch_agent_timeout_kills_long_running() {
+    // Mock agent sleeps for 60s — will be killed by 2s timeout
+    let mock = MockConfig {
+        delay_ms: 60_000,
+        ..MockConfig::default()
+    };
+    let (mut client, cancel, _tmp) = start_test_daemon_with_timeout(&mock, 2).await;
+
+    let (task_id, slug) = create_test_task(&mut client, "timeout-test").await;
+
+    let run_id = client
+        .dispatch_agent(&slug, "coder")
+        .await
+        .expect("dispatch agent");
+
+    // Should be marked failed after ~2s timeout (give extra margin)
+    let status = wait_for_run_completion(&mut client, run_id.as_str(), 15).await;
+    assert_eq!(status, "failed", "agent should be killed by timeout");
+
+    // Task should be reverted to open
+    let task = client.get_entity(&task_id).await.expect("get task");
+    assert_eq!(
+        task.status(),
+        &EntityStatus::Open,
+        "task should revert to open after timeout"
+    );
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reconcile_dead_agent_process() {
+    use filament_core::store;
+
+    // Start daemon with fast reconciliation interval (1s)
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let runtime_dir = tmp.path().join(".filament");
+    std::fs::create_dir_all(&runtime_dir).expect("create runtime dir");
+
+    let db_path = runtime_dir.join("filament.db");
+    let socket_path = runtime_dir.join("filament.sock");
+    let pid_path = runtime_dir.join("filament.pid");
+
+    let pool = init_pool(db_path.to_str().unwrap())
+        .await
+        .expect("init pool");
+
+    // Create a task via validated DTO
+    let task_id = {
+        use filament_core::dto::{CreateEntityRequest, ValidCreateEntityRequest};
+        let store_tmp = filament_core::store::FilamentStore::new(pool.clone());
+        let req = ValidCreateEntityRequest::try_from(CreateEntityRequest {
+            name: "reconcile-test-task".to_string(),
+            entity_type: filament_core::models::EntityType::Task,
+            summary: Some("test task for reconciliation".to_string()),
+            key_facts: None,
+            content_path: None,
+            priority: None,
+        })
+        .expect("valid request");
+        let (id, _slug) = store_tmp
+            .with_transaction(|conn| {
+                Box::pin(async move { store::create_entity(conn, &req).await })
+            })
+            .await
+            .expect("create task");
+        id.to_string()
+    };
+
+    // Spawn a dummy process that exits immediately to get a dead PID
+    let child = std::process::Command::new("true")
+        .spawn()
+        .expect("spawn true");
+    #[allow(clippy::cast_possible_wrap)]
+    let dead_pid = child.id() as i32;
+    // Wait for process to definitely exit
+    let _ = child.wait_with_output();
+
+    // Insert a fake "running" agent_run with the dead PID
+    {
+        let store_tmp = filament_core::store::FilamentStore::new(pool.clone());
+        store_tmp
+            .with_transaction(|conn| {
+                let tid = task_id.clone();
+                Box::pin(async move {
+                    store::create_agent_run(conn, &tid, "coder", Some(dead_pid)).await
+                })
+            })
+            .await
+            .expect("create agent run");
+
+        // Mark task as in_progress
+        store_tmp
+            .with_transaction(|conn| {
+                let tid = task_id.clone();
+                Box::pin(async move {
+                    store::update_entity_status(conn, &tid, EntityStatus::InProgress).await
+                })
+            })
+            .await
+            .expect("update task status");
+    }
+    drop(pool);
+
+    // Start daemon with 1s reconciliation interval
+    let config = ServeConfig {
+        socket_path: socket_path.clone(),
+        db_path,
+        pid_path,
+        cleanup_interval_secs: 3600,
+        idle_timeout_secs: 0,
+        reconciliation_interval_secs: 1,
+    };
+
+    let cancel = CancellationToken::new();
+    let cancel_clone = cancel.clone();
+    tokio::spawn(async move {
+        filament_daemon::serve(config, cancel_clone)
+            .await
+            .expect("daemon serve");
+    });
+
+    // Wait for socket
+    for _ in 0..50 {
+        if socket_path.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut client = DaemonClient::connect(&socket_path)
+        .await
+        .expect("connect to daemon");
+
+    // Wait for reconciliation to run (interval is 1s, give it 3s)
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // Verify: the agent run should now be marked failed
+    let running = client
+        .list_running_agents()
+        .await
+        .expect("list running agents");
+    assert!(
+        running.is_empty(),
+        "dead agent should have been reconciled, but found {} running",
+        running.len()
+    );
+
+    // Task should be reverted to open
+    let task = client.get_entity(&task_id).await.expect("get task");
+    assert_eq!(
+        task.status(),
+        &EntityStatus::Open,
+        "task should be reverted to open after reconciliation"
+    );
 
     cancel.cancel();
 }

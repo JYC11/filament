@@ -50,11 +50,15 @@ pub fn render_agent_table(runs: &[AgentRun], show_history: bool) -> Table<'_> {
         ],
     )
     .header(header)
-    .block(Block::default().borders(Borders::ALL).title(if show_history {
-        " Agents (history) "
-    } else {
-        " Agents (running) "
-    }))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(if show_history {
+                " Agents (history) "
+            } else {
+                " Agents (running) "
+            }),
+    )
     .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
 }
 

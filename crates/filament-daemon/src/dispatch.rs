@@ -139,11 +139,11 @@ pub async fn dispatch_agent(
     let summary = task.summary.clone();
 
     // Pre-dispatch checks (status)
-    let status = &task.status;
-    if !matches!(status, EntityStatus::Open | EntityStatus::InProgress) {
+    if !matches!(task.status, EntityStatus::Open | EntityStatus::InProgress) {
         return Err(FilamentError::AgentDispatchFailed {
             reason: format!(
-                "task '{task_slug}' has status '{status}', expected open or in_progress"
+                "task '{task_slug}' has status '{}', expected open or in_progress",
+                task.status
             ),
         });
     }
@@ -170,22 +170,19 @@ pub async fn dispatch_agent(
     // wait_with_output() uses direct waitpid() instead of tokio's SIGCHLD
     // machinery, which can lose notifications when multiple children exit
     // before their monitors are polled.
-    let agent_command = config.agent_command.clone();
-    let project_root = config.project_root.clone();
-
-    let mut cmd = Command::new(&agent_command);
+    let mut cmd = Command::new(&config.agent_command);
     cmd.arg("-p")
         .arg(&system_prompt)
         .arg("--mcp-config")
         .arg(&mcp_config_path)
-        .current_dir(&project_root)
+        .current_dir(&config.project_root)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
     let child = cmd
         .spawn()
         .map_err(|e| FilamentError::AgentDispatchFailed {
-            reason: format!("failed to spawn '{agent_command}': {e}"),
+            reason: format!("failed to spawn '{}': {e}", config.agent_command),
         })?;
 
     // Guard kills the child + cleans MCP config if the transaction below fails.
@@ -237,6 +234,7 @@ pub async fn dispatch_agent(
     let monitor_task_id = task_id.clone();
     let monitor_agent_name = agent_name.clone();
     let monitor_mcp_config = mcp_config_path.clone();
+    let monitor_timeout = config.agent_timeout_secs;
     tokio::spawn(async move {
         monitor_agent(
             &monitor_state,
@@ -245,6 +243,7 @@ pub async fn dispatch_agent(
             &monitor_task_id,
             &monitor_agent_name,
             &monitor_mcp_config,
+            monitor_timeout,
         )
         .await;
     });
@@ -267,11 +266,57 @@ pub async fn dispatch_agent(
     Ok(run_id)
 }
 
+/// Wait for agent child process to finish, with optional timeout.
+/// Returns `Err(message)` if the wait failed or timed out.
+async fn await_agent_output(
+    state: &Arc<SharedState>,
+    child: std::process::Child,
+    run_id: &AgentRunId,
+    timeout_secs: u64,
+) -> std::result::Result<std::process::Output, String> {
+    let blocking_wait = tokio::task::spawn_blocking(move || child.wait_with_output());
+
+    if timeout_secs > 0 {
+        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), blocking_wait)
+            .await
+        {
+            Ok(Ok(Ok(output))) => Ok(output),
+            Ok(Ok(Err(e))) => {
+                error!(run_id = %run_id, "failed to wait on agent: {e}");
+                Err(e.to_string())
+            }
+            Ok(Err(e)) => {
+                error!(run_id = %run_id, "monitor task panicked: {e}");
+                Err(e.to_string())
+            }
+            Err(_elapsed) => {
+                warn!(run_id = %run_id, timeout_secs = timeout_secs, "agent timed out, killing");
+                kill_agent_by_run_id(state, run_id).await;
+                Err(format!("agent timed out after {timeout_secs}s"))
+            }
+        }
+    } else {
+        match blocking_wait.await {
+            Ok(Ok(output)) => Ok(output),
+            Ok(Err(e)) => {
+                error!(run_id = %run_id, "failed to wait on agent: {e}");
+                Err(e.to_string())
+            }
+            Err(e) => {
+                error!(run_id = %run_id, "monitor task panicked: {e}");
+                Err(e.to_string())
+            }
+        }
+    }
+}
+
 /// Monitor a spawned agent subprocess, parse its output, and route the result.
 ///
 /// Uses `spawn_blocking` for `wait_with_output()` to avoid tokio's SIGCHLD
 /// race condition where child exit notifications are lost when monitors
 /// aren't polled before the child exits.
+///
+/// If `timeout_secs > 0`, the agent is killed after that duration.
 async fn monitor_agent(
     state: &Arc<SharedState>,
     child: std::process::Child,
@@ -279,19 +324,12 @@ async fn monitor_agent(
     task_id: &str,
     agent_name: &str,
     mcp_config_path: &Path,
+    timeout_secs: u64,
 ) {
-    // Use spawn_blocking for reliable child reaping via direct waitpid()
-    let output = match tokio::task::spawn_blocking(move || child.wait_with_output()).await {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => {
-            error!(run_id = %run_id, "failed to wait on agent: {e}");
-            finish_run_failed(state, run_id, task_id, agent_name, &e.to_string()).await;
-            cleanup_mcp_config(mcp_config_path);
-            return;
-        }
-        Err(e) => {
-            error!(run_id = %run_id, "monitor task panicked: {e}");
-            finish_run_failed(state, run_id, task_id, agent_name, &e.to_string()).await;
+    let output = match await_agent_output(state, child, run_id, timeout_secs).await {
+        Ok(output) => output,
+        Err(msg) => {
+            finish_run_failed(state, run_id, task_id, agent_name, &msg).await;
             cleanup_mcp_config(mcp_config_path);
             return;
         }
@@ -664,6 +702,38 @@ async fn finish_run_failed(
 async fn refresh_graph(state: &Arc<SharedState>) -> Result<()> {
     let mut graph = state.graph_write().await;
     graph.hydrate(state.store.pool()).await
+}
+
+/// Kill an agent process by looking up its PID from the `agent_run` record.
+async fn kill_agent_by_run_id(state: &Arc<SharedState>, run_id: &AgentRunId) {
+    let runs = match store::list_running_agents(state.store.pool()).await {
+        Ok(r) => r,
+        Err(e) => {
+            error!(run_id = %run_id, "failed to look up agent run for kill: {e}");
+            return;
+        }
+    };
+    let run_id_str = run_id.to_string();
+    if let Some(run) = runs.iter().find(|r| r.id.to_string() == run_id_str) {
+        if let Some(pid) = run.pid {
+            let _ = Command::new("kill")
+                .arg("-TERM")
+                .arg(pid.to_string())
+                .status();
+            // Give 2s for graceful exit, then SIGKILL
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let alive = Command::new("kill")
+                .arg("-0")
+                .arg(pid.to_string())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success());
+            if alive {
+                let _ = Command::new("kill").arg("-9").arg(pid.to_string()).status();
+            }
+        }
+    }
 }
 
 fn cleanup_mcp_config(path: &Path) {

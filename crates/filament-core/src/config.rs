@@ -25,6 +25,10 @@ pub struct FilamentConfig {
     pub cleanup_interval_secs: Option<u64>,
     /// Idle timeout in seconds before daemon auto-shuts down (default 1800 = 30 min, 0 = never).
     pub idle_timeout_secs: Option<u64>,
+    /// Seconds between dead-agent reconciliation sweeps (default 30).
+    pub reconciliation_interval_secs: Option<u64>,
+    /// Max seconds an agent subprocess may run before being killed (default 3600 = 1h, 0 = no limit).
+    pub agent_timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -115,6 +119,26 @@ impl FilamentConfig {
             .or(self.idle_timeout_secs)
             .unwrap_or(1800)
     }
+
+    /// Resolve reconciliation interval: env var > config > 30.
+    #[must_use]
+    pub fn resolve_reconciliation_interval_secs(&self) -> u64 {
+        std::env::var("FILAMENT_RECONCILIATION_INTERVAL")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or(self.reconciliation_interval_secs)
+            .unwrap_or(30)
+    }
+
+    /// Resolve agent timeout: env var > config > 3600 (1 hour). 0 means no limit.
+    #[must_use]
+    pub fn resolve_agent_timeout_secs(&self) -> u64 {
+        std::env::var("FILAMENT_AGENT_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .or(self.agent_timeout_secs)
+            .unwrap_or(3600)
+    }
 }
 
 #[cfg(test)]
@@ -133,6 +157,8 @@ mod tests {
         assert_eq!(cfg.resolve_max_auto_dispatch(), 3);
         assert_eq!(cfg.resolve_cleanup_interval_secs(), 60);
         assert_eq!(cfg.resolve_idle_timeout_secs(), 1800);
+        assert_eq!(cfg.resolve_reconciliation_interval_secs(), 30);
+        assert_eq!(cfg.resolve_agent_timeout_secs(), 3600);
         assert_eq!(cfg.resolve_default_priority(), 2);
         assert!(!cfg.json_output());
     }
@@ -149,6 +175,8 @@ context_depth = 4
 max_auto_dispatch = 5
 cleanup_interval_secs = 120
 idle_timeout_secs = 600
+reconciliation_interval_secs = 15
+agent_timeout_secs = 7200
 "#;
         let cfg: FilamentConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(cfg.resolve_default_priority(), 3);
@@ -159,6 +187,8 @@ idle_timeout_secs = 600
         assert_eq!(cfg.resolve_max_auto_dispatch(), 5);
         assert_eq!(cfg.resolve_cleanup_interval_secs(), 120);
         assert_eq!(cfg.resolve_idle_timeout_secs(), 600);
+        assert_eq!(cfg.resolve_reconciliation_interval_secs(), 15);
+        assert_eq!(cfg.resolve_agent_timeout_secs(), 7200);
     }
 
     #[test]
@@ -220,6 +250,42 @@ default_priority = 4
         let result_one = cfg.resolve_auto_dispatch();
         std::env::remove_var("FILAMENT_AUTO_DISPATCH");
         assert!(result_one);
+    }
+
+    #[test]
+    #[serial]
+    fn env_var_overrides_reconciliation_interval() {
+        std::env::set_var("FILAMENT_RECONCILIATION_INTERVAL", "10");
+        let cfg = FilamentConfig {
+            reconciliation_interval_secs: Some(60),
+            ..Default::default()
+        };
+        let result = cfg.resolve_reconciliation_interval_secs();
+        std::env::remove_var("FILAMENT_RECONCILIATION_INTERVAL");
+        assert_eq!(result, 10);
+    }
+
+    #[test]
+    #[serial]
+    fn env_var_overrides_agent_timeout() {
+        std::env::set_var("FILAMENT_AGENT_TIMEOUT", "120");
+        let cfg = FilamentConfig {
+            agent_timeout_secs: Some(7200),
+            ..Default::default()
+        };
+        let result = cfg.resolve_agent_timeout_secs();
+        std::env::remove_var("FILAMENT_AGENT_TIMEOUT");
+        assert_eq!(result, 120);
+    }
+
+    #[test]
+    #[serial]
+    fn agent_timeout_zero_means_no_limit() {
+        let cfg = FilamentConfig {
+            agent_timeout_secs: Some(0),
+            ..Default::default()
+        };
+        assert_eq!(cfg.resolve_agent_timeout_secs(), 0);
     }
 
     #[test]

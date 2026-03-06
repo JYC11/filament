@@ -16,11 +16,7 @@ pub fn render_analytics(data: &AnalyticsData, frame: &mut ratatui::Frame, area: 
         let hint = Paragraph::new("Press Enter to calculate analytics")
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::DarkGray))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Analytics "),
-            );
+            .block(Block::default().borders(Borders::ALL).title(" Analytics "));
         frame.render_widget(hint, area);
         return;
     }

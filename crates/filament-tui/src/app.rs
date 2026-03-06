@@ -553,7 +553,8 @@ impl App {
                     .map_or_else(|_| id.to_string(), |e| e.name().to_string());
                 pagerank_data.push((id.clone(), name, *score));
             }
-            pagerank_data.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            pagerank_data
+                .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
             pagerank_data.truncate(20);
         }
 
@@ -642,9 +643,11 @@ impl App {
         rows.sort_by(|a, b| {
             let cmp = match self.sort.field {
                 SortField::Name => a.entity.name().as_str().cmp(b.entity.name().as_str()),
-                SortField::Priority => {
-                    a.entity.priority().value().cmp(&b.entity.priority().value())
-                }
+                SortField::Priority => a
+                    .entity
+                    .priority()
+                    .value()
+                    .cmp(&b.entity.priority().value()),
                 SortField::Status => a.entity.status().as_str().cmp(b.entity.status().as_str()),
                 SortField::Updated => a
                     .entity
@@ -747,10 +750,7 @@ impl App {
             .unwrap_or_default();
 
         let blocker_depth = if entity.entity_type() == EntityType::Task {
-            self.conn
-                .blocker_depth(&entity_id)
-                .await
-                .unwrap_or(0)
+            self.conn.blocker_depth(&entity_id).await.unwrap_or(0)
         } else {
             0
         };
@@ -809,5 +809,9 @@ impl App {
 }
 
 fn source_label(from_config: bool) -> String {
-    if from_config { "config".to_string() } else { "default".to_string() }
+    if from_config {
+        "config".to_string()
+    } else {
+        "default".to_string()
+    }
 }

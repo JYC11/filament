@@ -22,6 +22,8 @@ pub struct DispatchConfig {
     pub auto_dispatch: bool,
     /// Max auto-dispatched tasks per completion event (default: 3). `FILAMENT_MAX_AUTO_DISPATCH`.
     pub max_auto_dispatch: usize,
+    /// Max seconds an agent subprocess may run (default: 3600). 0 = no limit.
+    pub agent_timeout_secs: u64,
 }
 
 impl DispatchConfig {
@@ -35,6 +37,7 @@ impl DispatchConfig {
             context_depth: cfg.resolve_context_depth(),
             auto_dispatch: cfg.resolve_auto_dispatch(),
             max_auto_dispatch: cfg.resolve_max_auto_dispatch(),
+            agent_timeout_secs: cfg.resolve_agent_timeout_secs(),
         }
     }
 }
@@ -126,6 +129,72 @@ impl SharedState {
             })
             .await
     }
+
+    /// Reconcile dead agent processes. Checks each running agent's PID via `kill -0`;
+    /// if the process is dead, marks the run as failed and reverts the task to open.
+    ///
+    /// Returns the number of reconciled runs.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FilamentError::Database` on SQL failure.
+    pub async fn reconcile_dead_agents(&self) -> Result<u64> {
+        let running = store::list_running_agents(self.store.pool()).await?;
+        if running.is_empty() {
+            return Ok(0);
+        }
+
+        let dead_run_ids: Vec<(String, String)> = running
+            .iter()
+            .filter(|run| {
+                let Some(pid) = run.pid else {
+                    // No PID recorded — treat as dead (can't check)
+                    return true;
+                };
+                !is_pid_alive(pid)
+            })
+            .map(|run| (run.id.to_string(), run.task_id.to_string()))
+            .collect();
+
+        if dead_run_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let count = dead_run_ids.len() as u64;
+        self.store
+            .with_transaction(|conn| {
+                Box::pin(async move {
+                    for (run_id, task_id) in &dead_run_ids {
+                        store::finish_agent_run(
+                            conn,
+                            run_id,
+                            filament_core::models::AgentStatus::Failed,
+                            Some("{\"error\":\"agent process died — reconciled by daemon\"}"),
+                        )
+                        .await?;
+                        store::update_entity_status(
+                            conn,
+                            task_id,
+                            filament_core::models::EntityStatus::Open,
+                        )
+                        .await?;
+                    }
+                    Ok(count)
+                })
+            })
+            .await
+    }
+}
+
+/// Check if a process is alive using `kill -0`.
+fn is_pid_alive(pid: i32) -> bool {
+    std::process::Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 fn epoch_secs() -> u64 {

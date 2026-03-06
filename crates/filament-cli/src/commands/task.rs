@@ -320,7 +320,11 @@ async fn blocker_depth(cli: &Cli, args: &TaskBlockerDepthArgs) -> Result<()> {
         println!("{}: no upstream blockers", entity.name());
     } else {
         let label = if depth == 1 { "layer" } else { "layers" };
-        println!("{}: blocker depth {} ({label} of unclosed prerequisites)", entity.name(), depth);
+        println!(
+            "{}: blocker depth {} ({label} of unclosed prerequisites)",
+            entity.name(),
+            depth
+        );
     }
     Ok(())
 }

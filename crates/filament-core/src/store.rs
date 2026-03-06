@@ -1211,12 +1211,12 @@ pub async fn list_running_agents(pool: &Pool<Sqlite>) -> Result<Vec<AgentRun>> {
 ///
 /// Returns `FilamentError::Database` on SQL failure.
 pub async fn list_all_agent_runs(pool: &Pool<Sqlite>, limit: u32) -> Result<Vec<AgentRun>> {
-    Ok(sqlx::query_as::<_, AgentRun>(
-        "SELECT * FROM agent_runs ORDER BY started_at DESC LIMIT ?",
+    Ok(
+        sqlx::query_as::<_, AgentRun>("SELECT * FROM agent_runs ORDER BY started_at DESC LIMIT ?")
+            .bind(limit)
+            .fetch_all(pool)
+            .await?,
     )
-    .bind(limit)
-    .fetch_all(pool)
-    .await?)
 }
 
 /// Mark all `running` agent runs as `failed` and revert their tasks to `open`.

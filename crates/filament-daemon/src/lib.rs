@@ -117,6 +117,12 @@ pub async fn serve_with_dispatch(
         }
     });
 
+    spawn_reconciliation_timer(
+        config.reconciliation_interval_secs,
+        Arc::clone(&state),
+        cancel.clone(),
+    );
+
     spawn_idle_watcher(config.idle_timeout_secs, Arc::clone(&state), cancel.clone());
 
     // Accept loop
@@ -168,6 +174,29 @@ fn spawn_idle_watcher(idle_timeout_secs: u64, state: Arc<SharedState>, cancel: C
                         info!(idle_secs = idle_timeout_secs, "idle timeout reached, shutting down");
                         cancel.cancel();
                         break;
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Spawn a background task that periodically checks for dead agent processes.
+fn spawn_reconciliation_timer(
+    interval_secs: u64,
+    state: Arc<SharedState>,
+    cancel: CancellationToken,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        loop {
+            tokio::select! {
+                () = cancel.cancelled() => break,
+                _ = interval.tick() => {
+                    match state.reconcile_dead_agents().await {
+                        Ok(0) => {}
+                        Ok(n) => info!(count = n, "reconciled dead agent processes"),
+                        Err(e) => error!("reconciliation error: {e}"),
                     }
                 }
             }

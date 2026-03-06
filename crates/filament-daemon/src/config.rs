@@ -15,6 +15,8 @@ pub struct ServeConfig {
     pub cleanup_interval_secs: u64,
     /// Idle timeout in seconds (0 = never auto-shutdown).
     pub idle_timeout_secs: u64,
+    /// Interval in seconds between dead-agent reconciliation sweeps.
+    pub reconciliation_interval_secs: u64,
 }
 
 impl ServeConfig {
@@ -29,6 +31,7 @@ impl ServeConfig {
             pid_path: runtime_dir.join("filament.pid"),
             cleanup_interval_secs: cfg.resolve_cleanup_interval_secs(),
             idle_timeout_secs: cfg.resolve_idle_timeout_secs(),
+            reconciliation_interval_secs: cfg.resolve_reconciliation_interval_secs(),
         }
     }
 }
