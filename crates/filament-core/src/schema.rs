@@ -16,6 +16,7 @@ pub async fn init_pool(db_path: &str) -> Result<Pool<Sqlite>> {
         .log_statements(LevelFilter::Debug);
 
     let pool = SqlitePoolOptions::new()
+        .max_connections(1)
         .after_connect(|conn, _meta| {
             Box::pin(async move {
                 sqlx::query("PRAGMA journal_mode=WAL")
