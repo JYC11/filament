@@ -1,6 +1,6 @@
 # Agent Hardening Sprint
 
-Status: Revised v2 (pruned from 5 tasks to 2)
+Status: **Complete** (2026-03-06). Commit: e4169bb
 Inspired by: [openai/symphony](https://github.com/openai/symphony)
 Created: 2026-03-06
 Revised: 2026-03-06

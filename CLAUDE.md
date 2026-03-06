@@ -152,7 +152,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**All 7 phases complete** (2026-03-06). 485 tests, zero clippy warnings.
+**All 7 phases complete + agent hardening** (2026-03-06). 510 tests, zero clippy warnings.
 
 | Phase | What | Key details |
 |-------|------|-------------|
@@ -177,6 +177,8 @@ Key architectural features:
 - **Pre-commit hooks**: `filament hook install` for reservation conflict checks
 - **Seed command**: `filament seed` parses CLAUDE.md sections into Doc entities
 - **Audit trail**: `filament audit` snapshots knowledge graph to a git branch
+- **Agent timeout**: `agent_timeout_secs` (default 1h) kills long-running agents via SIGTERM→SIGKILL
+- **Dead agent reconciliation**: daemon periodically checks PIDs, cleans up crashed agent runs
 
 ## Task Tracking with Filament
 

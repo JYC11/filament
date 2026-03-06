@@ -503,6 +503,8 @@ filament agent history abc12345        # all runs for a task
 3. Agent emits a structured `AgentResult` JSON on completion
 4. Filament parses the result, routes messages, and updates task status
 5. On agent death: task status is reverted, file reservations are released, graph is refreshed
+6. **Timeout**: agents are killed after `agent_timeout_secs` (default 1 hour, 0 = no limit)
+7. **Reconciliation**: daemon periodically checks for dead agent PIDs and cleans up orphaned runs
 
 ---
 
@@ -697,6 +699,9 @@ Resolution order: environment variables (`FILAMENT_*`) > config file > defaults.
 | `context_depth` | `FILAMENT_CONTEXT_DEPTH` | `2` |
 | `max_auto_dispatch` | `FILAMENT_MAX_AUTO_DISPATCH` | `3` |
 | `cleanup_interval_secs` | `FILAMENT_CLEANUP_INTERVAL` | `60` |
+| `idle_timeout_secs` | `FILAMENT_IDLE_TIMEOUT` | `1800` (0 = never) |
+| `reconciliation_interval_secs` | `FILAMENT_RECONCILIATION_INTERVAL` | `30` |
+| `agent_timeout_secs` | `FILAMENT_AGENT_TIMEOUT` | `3600` (0 = no limit) |
 
 ---
 
