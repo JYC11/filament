@@ -38,17 +38,23 @@ Filament gives AI coding agents (and humans) a shared project brain — a knowle
 Clone the repository and build the release binary:
 
 ```bash
-git clone https://github.com/yourname/filament.git
+git clone https://github.com/ndrewpj/filament.git
 cd filament
 make build CRATE=all RELEASE=1
 ```
 
-The binary is at `target/release/filament`. Copy it to your PATH:
+The binary is at `target/release/filament`. Install it:
 
 ```bash
-cp target/release/filament ~/.local/bin/
-# or
-sudo cp target/release/filament /usr/local/bin/
+make install                        # installs to ~/.local/bin (default)
+make install DEST=/usr/local/bin    # custom destination
+```
+
+### Uninstall
+
+```bash
+make uninstall                      # removes from ~/.local/bin (default)
+make uninstall DEST=/usr/local/bin  # custom destination
 ```
 
 ### Development Build
@@ -559,7 +565,7 @@ This runs the MCP stdio transport. All logs go to stderr; stdout is reserved for
 
 ## TUI Dashboard
 
-An interactive terminal UI for monitoring tasks, agents, and reservations in real time.
+An interactive terminal UI for monitoring the knowledge graph in real time.
 
 ### Launch
 
@@ -569,36 +575,43 @@ filament tui
 
 ### Tabs
 
-| Tab          | Key | Content                                                      |
-| ------------ | --- | ------------------------------------------------------------ |
-| Tasks        | `1` | Task list with status, priority, blocked count, impact score |
-| Agents       | `2` | Running agent processes with role, PID, duration             |
-| Reservations | `3` | Active file locks with TTL countdown                         |
-| Messages     | `4` | Messages with kind, agent, and body                          |
-| Graph        | `5` | ASCII dependency tree with status icons and priority         |
+| Tab          | Key | Content                                                          |
+| ------------ | --- | ---------------------------------------------------------------- |
+| Entities     | `1` | Unified entity table with multi-select type/status filtering     |
+| Agents       | `2` | Running agent processes with role, PID, duration                 |
+| Reservations | `3` | Active file locks with TTL countdown                             |
+| Messages     | `4` | Messages with kind, agent, and body                              |
+| Config       | `5` | Read-only view of resolved `filament.toml` configuration values  |
+| Analytics    | `6` | PageRank scores and degree centrality for graph entities         |
 
 ### Keyboard Shortcuts
 
-| Key            | Action                                                                          |
-| -------------- | ------------------------------------------------------------------------------- |
-| `q` / `Ctrl+C` | Quit                                                                            |
-| `Tab`          | Next tab                                                                        |
-| `Shift+Tab`    | Previous tab                                                                    |
-| `1`–`5`        | Jump to tab                                                                     |
-| `j` / `Down`   | Move selection down                                                             |
-| `k` / `Up`     | Move selection up                                                               |
-| `r`            | Force refresh                                                                   |
-| `f`            | Cycle task filter (Tasks tab only): open → in_progress → blocked → closed → all |
-| `c`            | Close selected task (Tasks tab only)                                            |
+| Key            | Action                                                     |
+| -------------- | ---------------------------------------------------------- |
+| `q` / `Ctrl+C` | Quit                                                       |
+| `Tab`          | Next tab                                                   |
+| `Shift+Tab`    | Previous tab                                               |
+| `1`–`6`        | Jump to tab                                                |
+| `j` / `Down`   | Move selection down                                        |
+| `k` / `Up`     | Move selection up                                          |
+| `Enter`        | Open detail pane (60/40 split with events + critical path) |
+| `Esc`          | Close detail pane                                          |
+| `n` / `p`      | Next / previous page (Entities tab)                        |
+| `t`            | Cycle type filter (Entities tab)                           |
+| `s`            | Cycle status filter (Entities tab)                         |
+| `h`            | Toggle agent history (Agents tab)                          |
+| `r`            | Force refresh + health check                               |
 
 ### Display Details
 
-- **Tasks**: status is color-coded (green=open, yellow=in_progress, red=blocked, gray=closed). Impact scores are computed for up to 50 tasks.
-- **Agents**: shows live duration for running agents. Status colors: green=running, cyan=completed, red=failed, yellow=blocked, magenta=needs_input.
+- **Entities**: client-side paging (20 per page), multi-select type/status filters, detail pane with event log and critical path on Enter.
+- **Agents**: shows live duration for running agents. Press `h` to toggle between running-only and full history. Status colors: green=running, cyan=completed, red=failed, yellow=blocked, magenta=needs_input.
 - **Reservations**: TTL countdown with yellow warning under 5 minutes and red "EXPIRED" label. Expired rows are dimmed.
 - **Messages**: escalations color-coded by kind (red=blocker, yellow=question, magenta=needs_input).
+- **Config**: read-only display of resolved configuration values.
+- **Analytics**: PageRank and degree centrality scores, calculated on demand.
 
-Auto-refreshes every 5 seconds. Status bar shows connection mode (daemon/direct) and last refresh time.
+Auto-refreshes every 5 seconds. Status bar shows entity count, connection mode (daemon/direct), health indicator, and last refresh time.
 
 ---
 

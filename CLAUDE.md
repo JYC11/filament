@@ -25,7 +25,7 @@ filament/
 
 ## Architecture Decisions
 
-Full ADRs with rationale: `.plan/adr/` (001–021). Key choices:
+Full ADRs with rationale: `.plan/adr/` (001–022). Key choices:
 
 - **Hybrid daemon** — direct SQLite single-user, daemon for multi-agent (ADR-001)
 - **Unified graph** — all data as Entity nodes + Relation edges (ADR-003)
@@ -38,6 +38,7 @@ Full ADRs with rationale: `.plan/adr/` (001–021). Key choices:
 - **Slug identity** — 8-char base36 slugs replace name-based lookup (ADR-019)
 - **Entity ADT** — tagged enum replaces flat struct, compile-time type safety (ADR-020)
 - **Lesson knowledge capture** — structured problem/solution/pattern/learned fields (ADR-021)
+- **Optimistic conflict resolution** — version checks, auto-merge non-overlapping, field-level resolve (ADR-022)
 
 ## Stack
 
@@ -153,7 +154,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 ## Current Status
 
-**All 6 phases + small features complete** (2026-03-05). 326 tests, zero clippy warnings.
+**All 7 phases complete** (2026-03-06). 485 tests, zero clippy warnings.
 
 | Phase | What | Key details |
 |-------|------|-------------|
@@ -161,7 +162,7 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 | 2 | CLI | entity, task, relation, query, message, reserve, export, import, escalations |
 | 3 | Daemon | NDJSON Unix socket server + MCP server (16 tools via `rmcp`) |
 | 4 | Dispatch | subprocess management, roles (Coder/Reviewer/Planner/Dockeeper), death cleanup |
-| 5 | TUI | task list, agent status, reservation views, graph, messages, escalation indicator |
+| 5 | TUI | 6-tab dashboard (entities, agents, reservations, messages, config, analytics), detail pane, paging, filters |
 | 6 | Integration | context bundles, auto-dispatch, escalation routing, export/import |
 | 7 | Small features | config file, watch, graph analytics, hooks, seed, audit, completions |
 
@@ -200,6 +201,5 @@ The `.filament/` directory is gitignored (local per-user DB). The task list here
   - https://github.com/affaan-m/everything-claude-code
   - https://github.com/VoltAgent/awesome-claude-code-subagents
   - https://github.com/obra/superpowers
-- Cool ideas to implement
+- Interesting patterns
   - https://github.com/openai/symphony
-  - https://github.com/sleeplesslord/runes
