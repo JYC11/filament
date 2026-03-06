@@ -2197,3 +2197,337 @@ async fn search_reflects_deletes() {
         .unwrap();
     assert!(after.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// list_lessons
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn list_lessons_no_filter() {
+    let store = test_db().await;
+
+    let l1 = common::lesson_req("Lesson A", "p1", "s1", "l1");
+    let l2 = common::lesson_req("Lesson B", "p2", "s2", "l2");
+    let task = common::task_req("Not a lesson", 1);
+
+    store
+        .with_transaction(|conn| {
+            let l1 = l1.clone();
+            let l2 = l2.clone();
+            let t = task.clone();
+            Box::pin(async move {
+                create_entity(conn, &l1).await?;
+                create_entity(conn, &l2).await?;
+                create_entity(conn, &t).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let lessons = list_lessons(store.pool(), None, None).await.unwrap();
+    assert_eq!(lessons.len(), 2);
+    // All should be Lesson type
+    for l in &lessons {
+        assert_eq!(l.entity_type(), EntityType::Lesson);
+    }
+}
+
+#[tokio::test]
+async fn list_lessons_filters_by_status() {
+    let store = test_db().await;
+
+    let req = common::lesson_req("Open lesson", "p", "s", "l");
+    let (id, _) = store
+        .with_transaction(|conn| {
+            let r = req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    // Close the lesson
+    store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            Box::pin(async move {
+                update_entity_status(conn, id.as_str(), EntityStatus::Closed).await
+            })
+        })
+        .await
+        .unwrap();
+
+    // Create a second open lesson
+    let req2 = common::lesson_req("Still open", "p2", "s2", "l2");
+    store
+        .with_transaction(|conn| {
+            let r = req2.clone();
+            Box::pin(async move {
+                create_entity(conn, &r).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // Filter open: only the second
+    let open = list_lessons(store.pool(), Some("open"), None).await.unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].name(), "Still open");
+
+    // Filter closed: only the first
+    let closed = list_lessons(store.pool(), Some("closed"), None)
+        .await
+        .unwrap();
+    assert_eq!(closed.len(), 1);
+    assert_eq!(closed[0].name(), "Open lesson");
+}
+
+#[tokio::test]
+async fn list_lessons_filters_by_pattern() {
+    let store = test_db().await;
+
+    // Lesson with pattern
+    let fields_with = LessonFields {
+        problem: "p".to_string(),
+        solution: "s".to_string(),
+        pattern: Some("n-plus-one-fix".to_string()),
+        learned: "l".to_string(),
+    };
+    let req_with = ValidCreateEntityRequest {
+        name: NonEmptyString::new("With pattern").unwrap(),
+        entity_type: EntityType::Lesson,
+        summary: "l".to_string(),
+        key_facts: fields_with.to_key_facts(),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    // Lesson without pattern
+    let req_without = common::lesson_req("Without pattern", "p", "s", "l");
+
+    store
+        .with_transaction(|conn| {
+            let w = req_with.clone();
+            let wo = req_without.clone();
+            Box::pin(async move {
+                create_entity(conn, &w).await?;
+                create_entity(conn, &wo).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // Filter by pattern
+    let matched = list_lessons(store.pool(), None, Some("n-plus-one"))
+        .await
+        .unwrap();
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0].name(), "With pattern");
+
+    // Non-matching pattern
+    let none = list_lessons(store.pool(), None, Some("nonexistent"))
+        .await
+        .unwrap();
+    assert!(none.is_empty());
+}
+
+#[tokio::test]
+async fn list_lessons_filters_by_status_and_pattern() {
+    let store = test_db().await;
+
+    let fields = LessonFields {
+        problem: "p".to_string(),
+        solution: "s".to_string(),
+        pattern: Some("circuit-breaker".to_string()),
+        learned: "l".to_string(),
+    };
+    let req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("CB lesson").unwrap(),
+        entity_type: EntityType::Lesson,
+        summary: "l".to_string(),
+        key_facts: fields.to_key_facts(),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    let (id, _) = store
+        .with_transaction(|conn| {
+            let r = req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    // Close it
+    store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            Box::pin(async move {
+                update_entity_status(conn, id.as_str(), EntityStatus::Closed).await
+            })
+        })
+        .await
+        .unwrap();
+
+    // Open + pattern → nothing (it's closed)
+    let open_cb = list_lessons(store.pool(), Some("open"), Some("circuit"))
+        .await
+        .unwrap();
+    assert!(open_cb.is_empty());
+
+    // Closed + pattern → found
+    let closed_cb = list_lessons(store.pool(), Some("closed"), Some("circuit"))
+        .await
+        .unwrap();
+    assert_eq!(closed_cb.len(), 1);
+}
+
+#[tokio::test]
+async fn list_lessons_empty_db() {
+    let store = test_db().await;
+    let lessons = list_lessons(store.pool(), None, None).await.unwrap();
+    assert!(lessons.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// FTS5 search edge cases
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn search_empty_db_returns_empty() {
+    let store = test_db().await;
+    let results = search_entities(store.pool(), "anything", None, 10)
+        .await
+        .unwrap();
+    assert!(results.is_empty());
+}
+
+#[tokio::test]
+async fn search_phrase_query() {
+    let store = test_db().await;
+
+    let req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Pangram doc").unwrap(),
+        entity_type: EntityType::Doc,
+        summary: "the quick brown fox jumps over the lazy dog".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    store
+        .with_transaction(|conn| {
+            let r = req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    let results = search_entities(store.pool(), "\"brown fox\"", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name(), "Pangram doc");
+}
+
+#[tokio::test]
+async fn search_or_operator() {
+    let store = test_db().await;
+
+    let rust_req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Rust compiler").unwrap(),
+        entity_type: EntityType::Doc,
+        summary: "Rust compiler documentation".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    let python_req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Python interpreter").unwrap(),
+        entity_type: EntityType::Doc,
+        summary: "Python interpreter documentation".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    store
+        .with_transaction(|conn| {
+            let r = rust_req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    store
+        .with_transaction(|conn| {
+            let r = python_req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    let results = search_entities(store.pool(), "rust OR python", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 2);
+}
+
+#[tokio::test]
+async fn search_not_operator() {
+    let store = test_db().await;
+
+    let rust_req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Rust error handling").unwrap(),
+        entity_type: EntityType::Doc,
+        summary: "Rust error handling patterns".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    let python_req = ValidCreateEntityRequest {
+        name: NonEmptyString::new("Python error handling").unwrap(),
+        entity_type: EntityType::Doc,
+        summary: "Python error handling patterns".to_string(),
+        key_facts: serde_json::json!({}),
+        content_path: None,
+        priority: Priority::DEFAULT,
+    };
+
+    store
+        .with_transaction(|conn| {
+            let r = rust_req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    store
+        .with_transaction(|conn| {
+            let r = python_req.clone();
+            Box::pin(async move { create_entity(conn, &r).await })
+        })
+        .await
+        .unwrap();
+
+    let results = search_entities(store.pool(), "error NOT python", None, 10)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0.name(), "Rust error handling");
+}
+
+#[tokio::test]
+async fn search_special_chars_dont_crash() {
+    let store = test_db().await;
+
+    // These should not panic — Ok with empty results or Err are both acceptable.
+    // The key property is that none of these cause a panic/crash.
+    let _r1 = search_entities(store.pool(), "foo*bar", None, 10).await;
+    let _r2 = search_entities(store.pool(), "test()", None, 10).await;
+    let _r3 = search_entities(store.pool(), "hello & world", None, 10).await;
+}

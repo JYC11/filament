@@ -716,3 +716,139 @@ async fn degree_centrality_counts_edges() {
     assert_eq!(c_out, 0);
     assert_eq!(c_total, 1);
 }
+
+// ---------------------------------------------------------------------------
+// PageRank edge cases
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pagerank_single_node_no_edges() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &task_req("Solo", 1)).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let scores = graph.pagerank(0.85, 50);
+    assert_eq!(scores.len(), 1);
+
+    let score = scores.values().next().unwrap();
+    assert!(
+        (*score - 1.0).abs() < 0.01,
+        "single dangling node should have score ~1.0, got {score}"
+    );
+}
+
+#[tokio::test]
+async fn pagerank_disconnected_components() {
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                let (d, _) = create_entity(conn, &task_req("D", 1)).await?;
+                // Component 1: A → B
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                // Component 2: C → D
+                create_relation(conn, &blocks_req(c.as_str(), d.as_str())).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let scores = graph.pagerank(0.85, 50);
+    assert_eq!(scores.len(), 4);
+    assert!(scores.values().all(|&s| s > 0.0), "all nodes should have positive scores");
+
+    let sum: f64 = scores.values().sum();
+    assert!(
+        (sum - 1.0).abs() < 0.01,
+        "scores should sum to ~1.0, got {sum}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Degree centrality edge cases
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn degree_centrality_single_node() {
+    let store = test_db().await;
+
+    let a_id = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("Lonely", 1)).await?;
+                Ok(a)
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let degrees = graph.degree_centrality();
+    assert_eq!(degrees.len(), 1);
+
+    let (in_deg, out_deg, total) = degrees[&a_id];
+    assert_eq!(in_deg, 0);
+    assert_eq!(out_deg, 0);
+    assert_eq!(total, 0);
+}
+
+#[tokio::test]
+async fn degree_centrality_disconnected_components() {
+    let store = test_db().await;
+
+    let (a_id, b_id, c_id) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                // A → B, C is isolated
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                Ok((a, b, c))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    let degrees = graph.degree_centrality();
+    assert_eq!(degrees.len(), 3);
+
+    let (c_in, c_out, c_total) = degrees[&c_id];
+    assert_eq!(c_in, 0);
+    assert_eq!(c_out, 0);
+    assert_eq!(c_total, 0);
+
+    let (a_in, a_out, a_total) = degrees[&a_id];
+    assert_eq!(a_in, 0);
+    assert_eq!(a_out, 1);
+    assert_eq!(a_total, 1);
+
+    let (b_in, b_out, b_total) = degrees[&b_id];
+    assert_eq!(b_in, 1);
+    assert_eq!(b_out, 0);
+    assert_eq!(b_total, 1);
+}
