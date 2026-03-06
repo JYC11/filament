@@ -13,9 +13,9 @@ fn init_creates_filament_dir() {
         .success()
         .stdout(predicate::str::contains("Initialized"));
 
-    assert!(dir.path().join(".filament").is_dir());
-    assert!(dir.path().join(".filament/content").is_dir());
-    assert!(dir.path().join(".filament/filament.db").is_file());
+    assert!(dir.path().join(".fl").is_dir());
+    assert!(dir.path().join(".fl/content").is_dir());
+    assert!(dir.path().join(".fl/fl.db").is_file());
 }
 
 #[test]

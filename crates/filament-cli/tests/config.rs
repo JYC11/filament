@@ -6,7 +6,7 @@ use tempfile::TempDir;
 
 fn init_project() -> TempDir {
     let dir = TempDir::new().unwrap();
-    Command::cargo_bin("filament")
+    Command::cargo_bin("fl")
         .unwrap()
         .current_dir(dir.path())
         .arg("init")
@@ -16,7 +16,7 @@ fn init_project() -> TempDir {
 }
 
 fn filament(dir: &TempDir) -> Command {
-    let mut cmd = Command::cargo_bin("filament").unwrap();
+    let mut cmd = Command::cargo_bin("fl").unwrap();
     cmd.current_dir(dir.path());
     cmd
 }
@@ -72,7 +72,7 @@ fn config_file_overrides_defaults() {
 
     // Write a config file
     std::fs::write(
-        dir.path().join(".filament").join("config.toml"),
+        dir.path().join(".fl").join("config.toml"),
         "default_priority = 4\nagent_command = \"my-agent\"\n",
     )
     .unwrap();
@@ -91,7 +91,7 @@ fn config_file_json_output_format_applied() {
 
     // Write config that sets json as default output
     std::fs::write(
-        dir.path().join(".filament").join("config.toml"),
+        dir.path().join(".fl").join("config.toml"),
         "output_format = \"json\"\n",
     )
     .unwrap();
@@ -112,7 +112,7 @@ fn config_default_priority_used_by_task_add() {
 
     // Write config with priority 4
     std::fs::write(
-        dir.path().join(".filament").join("config.toml"),
+        dir.path().join(".fl").join("config.toml"),
         "default_priority = 4\n",
     )
     .unwrap();

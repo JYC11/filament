@@ -72,11 +72,11 @@ ci: ## Run full CI pipeline: fmt check, clippy, tests
 	@bash util-scripts/test.sh all
 
 .PHONY: install
-install: ## Build and install filament to ~/.local/bin (usage: make install [DEST=/usr/local/bin])
+install: ## Build and install fl to ~/.local/bin (usage: make install [DEST=/usr/local/bin])
 	@bash util-scripts/install.sh $(DEST)
 
 .PHONY: uninstall
-uninstall: ## Remove filament from ~/.local/bin (usage: make uninstall [DEST=/usr/local/bin])
+uninstall: ## Remove fl from ~/.local/bin (usage: make uninstall [DEST=/usr/local/bin])
 	@bash util-scripts/uninstall.sh $(DEST)
 
 .PHONY: help

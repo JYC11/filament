@@ -6,17 +6,17 @@ use filament_core::models::{Entity, EntityId, Relation};
 
 use crate::Cli;
 
-/// Find the project root by walking up from CWD looking for `.filament/`.
+/// Find the project root by walking up from CWD looking for `.fl/`.
 pub fn find_project_root() -> Result<PathBuf> {
     let mut dir = std::env::current_dir()?;
 
     loop {
-        if dir.join(".filament").is_dir() {
+        if dir.join(".fl").is_dir() {
             return Ok(dir);
         }
         if !dir.pop() {
             return Err(FilamentError::Validation(
-                "not a filament project (no .filament/ found). Run `filament init` first."
+                "not a filament project (no .fl/ found). Run `fl init` first."
                     .to_string(),
             ));
         }

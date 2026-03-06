@@ -76,7 +76,7 @@ async fn dispatch(cli: &Cli, args: &DispatchArgs) -> Result<()> {
         output_json(&serde_json::json!({ "run_id": run_id.as_str() }));
     } else {
         println!("Dispatched {} agent: {}", args.role, run_id);
-        println!("Monitor with: filament agent status {run_id}");
+        println!("Monitor with: fl agent status {run_id}");
     }
     Ok(())
 }
@@ -87,7 +87,7 @@ async fn dispatch_all(cli: &Cli, args: &DispatchAllArgs) -> Result<()> {
     // dispatch-all requires daemon mode (dispatch_agent only works via socket)
     if !conn.is_daemon_mode() {
         return Err(filament_core::error::FilamentError::AgentDispatchFailed {
-            reason: "dispatch requires daemon mode (run `filament serve` first)".to_string(),
+            reason: "dispatch requires daemon mode (run `fl serve` first)".to_string(),
         });
     }
 

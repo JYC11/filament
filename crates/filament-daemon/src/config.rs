@@ -24,11 +24,11 @@ impl ServeConfig {
     #[must_use]
     pub fn from_project_root(root: &std::path::Path) -> Self {
         let cfg = FilamentConfig::load(root);
-        let runtime_dir = root.join(".filament");
+        let runtime_dir = root.join(".fl");
         Self {
-            socket_path: runtime_dir.join("filament.sock"),
-            db_path: runtime_dir.join("filament.db"),
-            pid_path: runtime_dir.join("filament.pid"),
+            socket_path: runtime_dir.join("fl.sock"),
+            db_path: runtime_dir.join("fl.db"),
+            pid_path: runtime_dir.join("fl.pid"),
             cleanup_interval_secs: cfg.resolve_cleanup_interval_secs(),
             idle_timeout_secs: cfg.resolve_idle_timeout_secs(),
             reconciliation_interval_secs: cfg.resolve_reconciliation_interval_secs(),

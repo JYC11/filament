@@ -72,7 +72,7 @@ fn init_config() {
     print!(
         "\
 # Filament project configuration
-# Place this file at .filament/config.toml
+# Place this file at .fl/config.toml
 # All fields are optional — missing values use defaults.
 # Environment variables (FILAMENT_*) override these values.
 
@@ -106,6 +106,6 @@ fn init_config() {
 
 fn path() -> Result<()> {
     let root = helpers::find_project_root()?;
-    println!("{}", root.join(".filament").join("config.toml").display());
+    println!("{}", root.join(".fl").join("config.toml").display());
     Ok(())
 }

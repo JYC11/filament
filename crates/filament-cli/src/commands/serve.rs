@@ -34,7 +34,7 @@ pub async fn serve(cli: &Cli, args: &ServeArgs) -> Result<()> {
             // Probe if the process is still alive
             if is_process_alive(pid) {
                 return Err(FilamentError::Validation(format!(
-                    "daemon already running (PID {pid}). Stop it with `filament stop`."
+                    "daemon already running (PID {pid}). Stop it with `fl stop`."
                 )));
             }
             // Stale PID file — clean up

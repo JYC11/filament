@@ -76,15 +76,15 @@ async fn start_test_daemon_with_timeout(
     agent_timeout_secs: u64,
 ) -> (DaemonClient, CancellationToken, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let runtime_dir = tmp.path().join(".filament");
+    let runtime_dir = tmp.path().join(".fl");
     std::fs::create_dir_all(&runtime_dir).expect("create runtime dir");
 
     // Write per-test mock script — no MOCK_AGENT_* env vars needed
     let mock_script = write_mock_script(tmp.path(), mock);
 
-    let db_path = runtime_dir.join("filament.db");
-    let socket_path = runtime_dir.join("filament.sock");
-    let pid_path = runtime_dir.join("filament.pid");
+    let db_path = runtime_dir.join("fl.db");
+    let socket_path = runtime_dir.join("fl.sock");
+    let pid_path = runtime_dir.join("fl.pid");
 
     let pool = init_pool(db_path.to_str().unwrap())
         .await
@@ -420,12 +420,12 @@ async fn reconcile_dead_agent_process() {
 
     // Start daemon with fast reconciliation interval (1s)
     let tmp = tempfile::tempdir().expect("tempdir");
-    let runtime_dir = tmp.path().join(".filament");
+    let runtime_dir = tmp.path().join(".fl");
     std::fs::create_dir_all(&runtime_dir).expect("create runtime dir");
 
-    let db_path = runtime_dir.join("filament.db");
-    let socket_path = runtime_dir.join("filament.sock");
-    let pid_path = runtime_dir.join("filament.pid");
+    let db_path = runtime_dir.join("fl.db");
+    let socket_path = runtime_dir.join("fl.sock");
+    let pid_path = runtime_dir.join("fl.pid");
 
     let pool = init_pool(db_path.to_str().unwrap())
         .await

@@ -8,7 +8,7 @@ use crate::Cli;
 
 pub async fn run(cli: &Cli) -> Result<()> {
     let cwd = std::env::current_dir()?;
-    let filament_dir = cwd.join(".filament");
+    let filament_dir = cwd.join(".fl");
 
     if filament_dir.exists() {
         if cli.json {
@@ -24,7 +24,7 @@ pub async fn run(cli: &Cli) -> Result<()> {
 
     fs::create_dir_all(filament_dir.join("content"))?;
 
-    let db_path = filament_dir.join("filament.db");
+    let db_path = filament_dir.join("fl.db");
     let db_str = db_path.to_str().ok_or_else(|| {
         filament_core::error::FilamentError::Validation(format!(
             "database path is not valid UTF-8: {}",
@@ -41,7 +41,7 @@ pub async fn run(cli: &Cli) -> Result<()> {
             "path": filament_dir.display().to_string(),
         }));
     } else {
-        println!("Initialized filament project at {}", filament_dir.display());
+        println!("Initialized fl project at {}", filament_dir.display());
     }
 
     Ok(())

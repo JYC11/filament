@@ -213,7 +213,7 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
                 }
                 eprintln!();
                 eprintln!(
-                    "Re-read the entity and retry, or use: filament resolve {}",
+                    "Re-read the entity and retry, or use: fl resolve {}",
                     entity.slug()
                 );
             }
@@ -354,10 +354,10 @@ pub async fn resolve(cli: &Cli, args: &ResolveArgs) -> Result<()> {
             println!();
             println!("To resolve, specify new values:");
             println!(
-                "  filament resolve {} --summary \"...\" --status <status>",
+                "  fl resolve {} --summary \"...\" --status <status>",
                 c.slug
             );
-            println!("  filament resolve {} --theirs", c.slug);
+            println!("  fl resolve {} --theirs", c.slug);
         }
         return Ok(());
     }

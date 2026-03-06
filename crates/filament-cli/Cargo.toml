@@ -5,7 +5,7 @@ edition = "2021"
 description = "CLI binary for filament"
 
 [[bin]]
-name = "filament"
+name = "fl"
 path = "src/main.rs"
 
 [lints]

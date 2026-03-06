@@ -70,12 +70,12 @@ impl FilamentMcp {
     // -- Agent workflow tools --
 
     /// Get ranked actionable tasks (unblocked, priority-sorted).
-    #[tool(name = "filament_task_ready")]
+    #[tool(name = "fl_task_ready")]
     async fn task_ready(
         &self,
         Parameters(p): Parameters<TaskReadyParams>,
     ) -> Result<String, String> {
-        self.check_allowed("filament_task_ready")?;
+        self.check_allowed("fl_task_ready")?;
         let mut conn = self.conn.lock().await;
         match conn.ready_tasks().await {
             Ok(mut tasks) => {
@@ -89,12 +89,12 @@ impl FilamentMcp {
     }
 
     /// Mark a task as closed/complete.
-    #[tool(name = "filament_task_close")]
+    #[tool(name = "fl_task_close")]
     async fn task_close(
         &self,
         Parameters(p): Parameters<TaskCloseParams>,
     ) -> Result<String, String> {
-        self.check_allowed("filament_task_close")?;
+        self.check_allowed("fl_task_close")?;
         let mut conn = self.conn.lock().await;
         let task = conn.resolve_task(&p.slug).await.map_err(|e| map_err(&e))?;
         conn.update_entity_status(
@@ -107,9 +107,9 @@ impl FilamentMcp {
     }
 
     /// Get graph neighborhood summaries around an entity.
-    #[tool(name = "filament_context")]
+    #[tool(name = "fl_context")]
     async fn context(&self, Parameters(p): Parameters<ContextParams>) -> Result<String, String> {
-        self.check_allowed("filament_context")?;
+        self.check_allowed("fl_context")?;
         let mut conn = self.conn.lock().await;
         let entity = conn
             .resolve_entity(&p.slug)
@@ -124,12 +124,12 @@ impl FilamentMcp {
     }
 
     /// Send a targeted message to another agent.
-    #[tool(name = "filament_message_send")]
+    #[tool(name = "fl_message_send")]
     async fn message_send(
         &self,
         Parameters(p): Parameters<MessageSendParams>,
     ) -> Result<String, String> {
-        self.check_allowed("filament_message_send")?;
+        self.check_allowed("fl_message_send")?;
         let mut conn = self.conn.lock().await;
         // Validate recipient exists and is an agent
         conn.resolve_agent(&p.to_agent)
@@ -148,21 +148,21 @@ impl FilamentMcp {
     }
 
     /// Check unread messages for an agent.
-    #[tool(name = "filament_message_inbox")]
+    #[tool(name = "fl_message_inbox")]
     async fn message_inbox(
         &self,
         Parameters(p): Parameters<MessageInboxParams>,
     ) -> Result<String, String> {
-        self.check_allowed("filament_message_inbox")?;
+        self.check_allowed("fl_message_inbox")?;
         let mut conn = self.conn.lock().await;
         let msgs = conn.get_inbox(&p.agent).await.map_err(|e| map_err(&e))?;
         Ok(serde_json::to_string_pretty(&msgs).expect("JSON"))
     }
 
     /// Acquire an advisory file lock.
-    #[tool(name = "filament_reserve")]
+    #[tool(name = "fl_reserve")]
     async fn reserve(&self, Parameters(p): Parameters<ReserveParams>) -> Result<String, String> {
-        self.check_allowed("filament_reserve")?;
+        self.check_allowed("fl_reserve")?;
         let mut conn = self.conn.lock().await;
         let mode = ReservationMode::from(p.exclusive.unwrap_or(false));
         let ttl_val = p.ttl_secs.unwrap_or(300);
@@ -175,9 +175,9 @@ impl FilamentMcp {
     }
 
     /// Release a file reservation.
-    #[tool(name = "filament_release")]
+    #[tool(name = "fl_release")]
     async fn release(&self, Parameters(p): Parameters<ReleaseParams>) -> Result<String, String> {
-        self.check_allowed("filament_release")?;
+        self.check_allowed("fl_release")?;
         let mut conn = self.conn.lock().await;
         conn.release_reservation(&p.reservation_id)
             .await
@@ -186,12 +186,12 @@ impl FilamentMcp {
     }
 
     /// List active file reservations.
-    #[tool(name = "filament_reservations")]
+    #[tool(name = "fl_reservations")]
     async fn reservations(
         &self,
         Parameters(p): Parameters<ReservationsParams>,
     ) -> Result<String, String> {
-        self.check_allowed("filament_reservations")?;
+        self.check_allowed("fl_reservations")?;
         let mut conn = self.conn.lock().await;
         let reservations = conn
             .list_reservations(p.agent.as_deref())
@@ -203,9 +203,9 @@ impl FilamentMcp {
     // -- Entity CRUD tools --
 
     /// Get entity details and its relations.
-    #[tool(name = "filament_inspect")]
+    #[tool(name = "fl_inspect")]
     async fn inspect(&self, Parameters(p): Parameters<InspectParams>) -> Result<String, String> {
-        self.check_allowed("filament_inspect")?;
+        self.check_allowed("fl_inspect")?;
         let mut conn = self.conn.lock().await;
         let entity = conn
             .resolve_entity(&p.slug)
@@ -223,9 +223,9 @@ impl FilamentMcp {
     }
 
     /// List/filter entities by type and status.
-    #[tool(name = "filament_list")]
+    #[tool(name = "fl_list")]
     async fn list(&self, Parameters(p): Parameters<ListParams>) -> Result<String, String> {
-        self.check_allowed("filament_list")?;
+        self.check_allowed("fl_list")?;
         let mut conn = self.conn.lock().await;
         let entities = conn
             .list_entities(p.entity_type, p.status)
@@ -235,9 +235,9 @@ impl FilamentMcp {
     }
 
     /// Create a new entity (task, doc, module, etc.).
-    #[tool(name = "filament_add")]
+    #[tool(name = "fl_add")]
     async fn add(&self, Parameters(p): Parameters<AddParams>) -> Result<String, String> {
-        self.check_allowed("filament_add")?;
+        self.check_allowed("fl_add")?;
         let mut conn = self.conn.lock().await;
         let req = CreateEntityRequest {
             name: p.name,
@@ -252,9 +252,9 @@ impl FilamentMcp {
     }
 
     /// Update entity summary and/or status.
-    #[tool(name = "filament_update")]
+    #[tool(name = "fl_update")]
     async fn update(&self, Parameters(p): Parameters<UpdateParams>) -> Result<String, String> {
-        self.check_allowed("filament_update")?;
+        self.check_allowed("fl_update")?;
         let mut conn = self.conn.lock().await;
         let entity = conn
             .resolve_entity(&p.slug)
@@ -295,9 +295,9 @@ impl FilamentMcp {
     }
 
     /// Delete an entity and its relations.
-    #[tool(name = "filament_delete")]
+    #[tool(name = "fl_delete")]
     async fn delete(&self, Parameters(p): Parameters<DeleteParams>) -> Result<String, String> {
-        self.check_allowed("filament_delete")?;
+        self.check_allowed("fl_delete")?;
         let mut conn = self.conn.lock().await;
         let entity = conn
             .resolve_entity(&p.slug)
@@ -310,9 +310,9 @@ impl FilamentMcp {
     }
 
     /// Create a relation between two entities.
-    #[tool(name = "filament_relate")]
+    #[tool(name = "fl_relate")]
     async fn relate(&self, Parameters(p): Parameters<RelateParams>) -> Result<String, String> {
-        self.check_allowed("filament_relate")?;
+        self.check_allowed("fl_relate")?;
         let mut conn = self.conn.lock().await;
         let source = conn
             .resolve_entity(&p.source)
@@ -340,9 +340,9 @@ impl FilamentMcp {
     }
 
     /// Remove a relation between two entities.
-    #[tool(name = "filament_unrelate")]
+    #[tool(name = "fl_unrelate")]
     async fn unrelate(&self, Parameters(p): Parameters<UnrelateParams>) -> Result<String, String> {
-        self.check_allowed("filament_unrelate")?;
+        self.check_allowed("fl_unrelate")?;
         let mut conn = self.conn.lock().await;
         let source = conn
             .resolve_entity(&p.source)
@@ -368,12 +368,12 @@ impl FilamentMcp {
     }
 
     /// Mark a message as read.
-    #[tool(name = "filament_message_read")]
+    #[tool(name = "fl_message_read")]
     async fn message_read(
         &self,
         Parameters(p): Parameters<MessageReadParams>,
     ) -> Result<String, String> {
-        self.check_allowed("filament_message_read")?;
+        self.check_allowed("fl_message_read")?;
         let mut conn = self.conn.lock().await;
         conn.mark_message_read(&p.message_id)
             .await

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 INSTALL_DIR="${1:-$HOME/.local/bin}"
-BINARY_NAME="filament"
+BINARY_NAME="fl"
 
-echo "Building filament (release)..."
+echo "Building fl (release)..."
 cargo build --release --package filament-cli
 
 SRC="$(dirname "$0")/../target/release/$BINARY_NAME"

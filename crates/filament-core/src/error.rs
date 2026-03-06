@@ -113,15 +113,15 @@ impl FilamentError {
     pub fn hint(&self) -> Option<String> {
         match self {
             Self::EntityNotFound { id } => {
-                Some(format!("Check entity '{id}' exists with `filament list`"))
+                Some(format!("Check entity '{id}' exists with `fl list`"))
             }
             Self::TypeMismatch {
                 expected, slug, ..
             } => Some(format!(
-                "'{slug}' is not a {expected}. Use `filament inspect {slug}` to check its type"
+                "'{slug}' is not a {expected}. Use `fl inspect {slug}` to check its type"
             )),
             Self::MessageNotFound { id } => {
-                Some(format!("Check message ID '{id}' with `filament message inbox <agent>`"))
+                Some(format!("Check message ID '{id}' with `fl message inbox <agent>`"))
             }
             Self::MessageAlreadyRead { id } => {
                 Some(format!("Message '{id}' has already been marked as read"))
@@ -133,13 +133,13 @@ impl FilamentError {
                 Some(format!("Relation '{id}' does not exist. Check entity names and relation type"))
             }
             Self::ReservationNotFound { id } => {
-                Some(format!("Reservation '{id}' does not exist. Check active reservations with `filament reservations`"))
+                Some(format!("Reservation '{id}' does not exist. Check active reservations with `fl reservations`"))
             }
             Self::CycleDetected { .. } => {
                 Some("Remove one dependency edge to break the cycle".to_string())
             }
             Self::FileReserved { agent, glob } => Some(format!(
-                "Wait for agent '{agent}' to release '{glob}', or run `filament release '{glob}' --agent {agent}`"
+                "Wait for agent '{agent}' to release '{glob}', or run `fl release '{glob}' --agent {agent}`"
             )),
             Self::ReservationExpired => {
                 Some("Re-acquire the reservation before proceeding".to_string())
@@ -148,10 +148,10 @@ impl FilamentError {
                 Some("Check agent command and task configuration, then retry".to_string())
             }
             Self::AgentAlreadyRunning { task_id } => Some(format!(
-                "Wait for the running agent to finish, or check status with `filament agent history {task_id}`"
+                "Wait for the running agent to finish, or check status with `fl agent history {task_id}`"
             )),
             Self::VersionConflict { entity_id, .. } => Some(format!(
-                "Re-read the entity or resolve conflicts with `filament resolve {entity_id}`"
+                "Re-read the entity or resolve conflicts with `fl resolve {entity_id}`"
             )),
             Self::Validation(msg) => Some(format!("Fix input: {msg}")),
             _ => None,

@@ -9,7 +9,7 @@ use commands::Commands;
 
 /// Filament — local multi-agent orchestration, knowledge graph, and task management.
 #[derive(Parser, Debug)]
-#[command(name = "filament", version, about)]
+#[command(name = "fl", version, about)]
 pub struct Cli {
     /// Output JSON instead of human-readable text.
     #[arg(long, global = true)]

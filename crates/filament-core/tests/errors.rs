@@ -84,7 +84,7 @@ fn hints_populated_for_key_errors() {
         id: "test".to_string(),
     };
     assert!(err.hint().is_some());
-    assert!(err.hint().unwrap().contains("filament list"));
+    assert!(err.hint().unwrap().contains("fl list"));
 
     let err = FilamentError::RelationNotFound {
         id: "rel-1".to_string(),

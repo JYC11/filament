@@ -65,14 +65,14 @@ pub fn build_mcp_config(
     project_root: &Path,
     role: AgentRole,
 ) -> Result<PathBuf> {
-    let runtime_dir = project_root.join(".filament");
+    let runtime_dir = project_root.join(".fl");
     let config_path = runtime_dir.join(format!("mcp-{run_id}.json"));
 
-    let filament_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("filament"));
+    let filament_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("fl"));
 
     let config = serde_json::json!({
         "mcpServers": {
-            "filament": {
+            "fl": {
                 "command": filament_bin.to_string_lossy(),
                 "args": ["mcp"],
                 "cwd": project_root.to_string_lossy(),

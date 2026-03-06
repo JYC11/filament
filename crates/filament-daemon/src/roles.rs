@@ -12,54 +12,54 @@ pub const fn system_prompt(role: AgentRole) -> &'static str {
 }
 
 /// MCP tool whitelist for this role.
-/// Names must match MCP tool names (the `filament_*` names from mcp.rs).
+/// Names must match MCP tool names (the `fl_*` names from mcp.rs).
 /// Enforced server-side: disallowed tools return an error.
 #[must_use]
 pub const fn allowed_tools(role: AgentRole) -> &'static [&'static str] {
     match role {
         AgentRole::Coder => &[
-            "filament_inspect",
-            "filament_list",
-            "filament_message_inbox",
-            "filament_message_send",
-            "filament_message_read",
-            "filament_reserve",
-            "filament_release",
-            "filament_reservations",
-            "filament_task_ready",
-            "filament_task_close",
-            "filament_context",
+            "fl_inspect",
+            "fl_list",
+            "fl_message_inbox",
+            "fl_message_send",
+            "fl_message_read",
+            "fl_reserve",
+            "fl_release",
+            "fl_reservations",
+            "fl_task_ready",
+            "fl_task_close",
+            "fl_context",
         ],
         AgentRole::Reviewer => &[
-            "filament_inspect",
-            "filament_list",
-            "filament_message_inbox",
-            "filament_message_send",
-            "filament_message_read",
-            "filament_context",
-            "filament_reservations",
+            "fl_inspect",
+            "fl_list",
+            "fl_message_inbox",
+            "fl_message_send",
+            "fl_message_read",
+            "fl_context",
+            "fl_reservations",
         ],
         AgentRole::Planner => &[
-            "filament_inspect",
-            "filament_list",
-            "filament_add",
-            "filament_relate",
-            "filament_message_send",
-            "filament_message_inbox",
-            "filament_message_read",
-            "filament_task_ready",
-            "filament_context",
+            "fl_inspect",
+            "fl_list",
+            "fl_add",
+            "fl_relate",
+            "fl_message_send",
+            "fl_message_inbox",
+            "fl_message_read",
+            "fl_task_ready",
+            "fl_context",
         ],
         AgentRole::Dockeeper => &[
-            "filament_inspect",
-            "filament_list",
-            "filament_update",
-            "filament_message_send",
-            "filament_message_inbox",
-            "filament_message_read",
-            "filament_context",
-            "filament_reserve",
-            "filament_release",
+            "fl_inspect",
+            "fl_list",
+            "fl_update",
+            "fl_message_send",
+            "fl_message_inbox",
+            "fl_message_read",
+            "fl_context",
+            "fl_reserve",
+            "fl_release",
         ],
     }
 }
@@ -108,12 +108,12 @@ mod tests {
     }
 
     #[test]
-    fn test_allowed_tools_use_filament_prefix() {
+    fn test_allowed_tools_use_fl_prefix() {
         for role in AgentRole::ALL {
             for tool in allowed_tools(*role) {
                 assert!(
-                    tool.starts_with("filament_"),
-                    "{role}: tool '{tool}' must start with 'filament_' to match MCP names"
+                    tool.starts_with("fl_"),
+                    "{role}: tool '{tool}' must start with 'fl_' to match MCP names"
                 );
             }
         }

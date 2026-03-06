@@ -57,10 +57,10 @@ Full ADRs with rationale: `.plan/adr/` (001–022). Key choices:
 ## Key Concepts
 
 - **Entity model**: `Entity` is a tagged enum (`Task | Module | Service | Agent | Plan | Doc | Lesson`) wrapping `EntityCommon`. Each entity has a unique 8-char slug (`[a-z0-9]`) for human-facing identity, plus a UUID for internal use. Resolution: slug first, UUID fallback.
-- **Lesson entities**: Gotchas, solutions, and recurring problems go in Lesson entities (not Doc). Structured fields (`problem`, `solution`, `pattern`, `learned`) stored in `key_facts` JSON, accessed via `LessonFields` struct. CLI: `filament lesson add/list/show`.
+- **Lesson entities**: Gotchas, solutions, and recurring problems go in Lesson entities (not Doc). Structured fields (`problem`, `solution`, `pattern`, `learned`) stored in `key_facts` JSON, accessed via `LessonFields` struct. CLI: `fl lesson add/list/show`.
 - **Three-tier content**: summary (cheap traversal) → key_facts (LLM reasoning) → content_path (full reference material on disk)
 - **AgentResult protocol**: subprocesses (`claude -p`) emit JSON with status, artifacts, messages, blockers, questions. Filament parses and routes.
-- **Per-project storage**: `filament init` creates `.filament/` with SQLite DB, Unix socket, PID file, content dir.
+- **Per-project storage**: `fl init` creates `.fl/` with SQLite DB, Unix socket, PID file, content dir.
 
 ## Plans & References
 
@@ -122,7 +122,7 @@ Full ADRs with rationale: `.plan/adr/` (001–022). Key choices:
 
 ## Gotchas & Lessons
 
-New gotchas and solutions should be recorded as **Lesson entities** (`filament lesson add`), not Doc entities. Legacy gotchas remain in `.plan/gotchas.md`. Top hits:
+New gotchas and solutions should be recorded as **Lesson entities** (`fl lesson add`), not Doc entities. Legacy gotchas remain in `.plan/gotchas.md`. Top hits:
 
 - sqlx custom newtypes need `fn compatible()` override, not just `type_info()`
 - `thiserror` v2 treats fields named `source` as error sources
@@ -136,19 +136,19 @@ This project uses **both** traditional `.md` files and filament's own knowledge 
 
 | Concern | Old way (.md files) | New way (filament CLI) |
 |---------|--------------------|-----------------------|
-| Plans & phases | `.plan/filament-v1.md` | `filament list --type plan` |
-| Tasks & deps | Manual tracking in MEMORY.md | `filament task ready`, `filament task blocker-depth` |
-| Architecture | `.plan/adr/*.md` | `filament list --type doc`, `filament context --around <adr>` |
-| Code structure | This file's Project Layout section | `filament list --type module`, `filament context --around <module>` |
-| What's next | MEMORY.md "Next Steps" | `filament task ready` |
-| Gotchas & lessons | `.plan/gotchas.md` | `filament lesson list`, `filament lesson show <slug>` |
+| Plans & phases | `.plan/filament-v1.md` | `fl list --type plan` |
+| Tasks & deps | Manual tracking in MEMORY.md | `fl task ready`, `fl task blocker-depth` |
+| Architecture | `.plan/adr/*.md` | `fl list --type doc`, `fl context --around <adr>` |
+| Code structure | This file's Project Layout section | `fl list --type module`, `fl context --around <module>` |
+| What's next | MEMORY.md "Next Steps" | `fl task ready` |
+| Gotchas & lessons | `.plan/gotchas.md` | `fl lesson list`, `fl lesson show <slug>` |
 
 **Rules:**
 - When creating/closing tasks, do it in filament AND update MEMORY.md
 - When adding ADRs or plans, create both the `.md` file and a filament entity with `--content` pointing to it
-- When finishing a phase, `filament task close <phase-task>` and update Current Status below
-- `.filament/` is gitignored (local per-user DB) — `.md` files remain the committed source of truth
-- Use `filament task ready` to decide what to work on next
+- When finishing a phase, `fl task close <phase-task>` and update Current Status below
+- `.fl/` is gitignored (local per-user DB) — `.md` files remain the committed source of truth
+- Use `fl task ready` to decide what to work on next
 
 ## Current Status
 
@@ -171,12 +171,12 @@ Key architectural features:
 - **CLI routes through daemon** when running (falls back to direct DB access)
 - **Auto-dispatch**: `FILAMENT_AUTO_DISPATCH=1` chains agent runs on newly-unblocked tasks
 - **Escalations**: blockers/questions from agents routed as messages to "user"
-- **Config file** (`filament.toml`): layered resolution (defaults → config → env → CLI)
-- **Socket notifications**: pub/sub via `filament watch` for real-time entity change events
-- **Graph analytics**: `PageRank` + degree centrality via `filament pagerank`/`filament degree`
-- **Pre-commit hooks**: `filament hook install` for reservation conflict checks
-- **Seed command**: `filament seed` parses CLAUDE.md sections into Doc entities
-- **Audit trail**: `filament audit` snapshots knowledge graph to a git branch
+- **Config file** (`fl.toml`): layered resolution (defaults → config → env → CLI)
+- **Socket notifications**: pub/sub via `fl watch` for real-time entity change events
+- **Graph analytics**: `PageRank` + degree centrality via `fl pagerank`/`fl degree`
+- **Pre-commit hooks**: `fl hook install` for reservation conflict checks
+- **Seed command**: `fl seed` parses CLAUDE.md sections into Doc entities
+- **Audit trail**: `fl audit` snapshots knowledge graph to a git branch
 - **Agent timeout**: `agent_timeout_secs` (default 1h) kills long-running agents via SIGTERM→SIGKILL
 - **Dead agent reconciliation**: daemon periodically checks PIDs, cleans up crashed agent runs
 
@@ -184,14 +184,14 @@ Key architectural features:
 
 This project uses **filament itself** for task tracking. Always use the `/filament` skill for task management.
 
-- **Start of session**: Run `filament task ready` to see what to work on next
-- **Starting work**: `filament update <slug> --status in_progress`
-- **Finishing work**: `filament task close <slug>`
-- **New bugs/features**: `filament task add <name> --summary "..." --priority N`
-- **Dependencies**: `filament relate <blocker> blocks <blocked>`
-- **Full backlog**: `filament task list`
+- **Start of session**: Run `fl task ready` to see what to work on next
+- **Starting work**: `fl update <slug> --status in_progress`
+- **Finishing work**: `fl task close <slug>`
+- **New bugs/features**: `fl task add <name> --summary "..." --priority N`
+- **Dependencies**: `fl relate <blocker> blocks <blocked>`
+- **Full backlog**: `fl task list`
 
-The `.filament/` directory is gitignored (local per-user DB). The task list here is the canonical source for what needs doing.
+The `.fl/` directory is gitignored (local per-user DB). The task list here is the canonical source for what needs doing.
 
 ## References
 

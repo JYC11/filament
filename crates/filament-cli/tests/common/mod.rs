@@ -1,17 +1,17 @@
 use assert_cmd::Command;
 use tempfile::TempDir;
 
-/// Create a command that runs `filament` in a temp directory.
+/// Create a command that runs `fl` in a temp directory.
 /// Auto-start is disabled by default in tests to avoid stray daemon processes.
 pub fn filament(dir: &TempDir) -> Command {
     #[allow(deprecated)]
-    let mut cmd = Command::cargo_bin("filament").unwrap();
+    let mut cmd = Command::cargo_bin("fl").unwrap();
     cmd.current_dir(dir.path());
     cmd.env("FILAMENT_NO_AUTO_START", "1");
     cmd
 }
 
-/// Initialize a filament project and return the temp dir.
+/// Initialize a fl project and return the temp dir.
 pub fn init_project() -> TempDir {
     use predicates::prelude::*;
     let dir = TempDir::new().unwrap();
@@ -19,11 +19,11 @@ pub fn init_project() -> TempDir {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Initialized filament project"));
+        .stdout(predicate::str::contains("Initialized fl project"));
     dir
 }
 
-/// Run `filament add` and return the generated slug.
+/// Run `fl add` and return the generated slug.
 /// Parses the slug from output format: "Created entity: {slug} ({id})"
 pub fn add_entity(dir: &TempDir, name: &str, entity_type: &str, extra_args: &[&str]) -> String {
     let mut cmd = filament(dir);
@@ -41,7 +41,7 @@ pub fn add_entity(dir: &TempDir, name: &str, entity_type: &str, extra_args: &[&s
     extract_slug_from_output(&stdout)
 }
 
-/// Run `filament task add` and return the generated slug.
+/// Run `fl task add` and return the generated slug.
 /// Parses the slug from output format: "Created task: {slug} ({id})"
 pub fn add_task(dir: &TempDir, title: &str, extra_args: &[&str]) -> String {
     let mut cmd = filament(dir);

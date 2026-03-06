@@ -11,12 +11,12 @@ use tokio_util::sync::CancellationToken;
 /// Returns a `DaemonClient`, the cancel token, and the temp dir handle (for lifetime).
 async fn start_test_daemon() -> (DaemonClient, CancellationToken, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let runtime_dir = tmp.path().join(".filament");
+    let runtime_dir = tmp.path().join(".fl");
     std::fs::create_dir_all(&runtime_dir).expect("create runtime dir");
 
-    let db_path = runtime_dir.join("filament.db");
-    let socket_path = runtime_dir.join("filament.sock");
-    let pid_path = runtime_dir.join("filament.pid");
+    let db_path = runtime_dir.join("fl.db");
+    let socket_path = runtime_dir.join("fl.sock");
+    let pid_path = runtime_dir.join("fl.pid");
 
     // Init the database with migrations
     let pool = init_pool(db_path.to_str().unwrap())
@@ -360,7 +360,7 @@ async fn concurrent_clients() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client); // Don't need the initial client
 
-    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+    let socket_path: PathBuf = tmp.path().join(".fl/fl.sock");
 
     let mut handles = Vec::new();
     for i in 0..5 {
@@ -399,12 +399,12 @@ async fn concurrent_clients() {
 #[tokio::test(flavor = "multi_thread")]
 async fn stale_reservation_cleanup() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let runtime_dir = tmp.path().join(".filament");
+    let runtime_dir = tmp.path().join(".fl");
     std::fs::create_dir_all(&runtime_dir).expect("create runtime dir");
 
-    let db_path = runtime_dir.join("filament.db");
-    let socket_path = runtime_dir.join("filament.sock");
-    let pid_path = runtime_dir.join("filament.pid");
+    let db_path = runtime_dir.join("fl.db");
+    let socket_path = runtime_dir.join("fl.sock");
+    let pid_path = runtime_dir.join("fl.pid");
 
     let pool = init_pool(db_path.to_str().unwrap())
         .await
@@ -731,7 +731,7 @@ async fn multi_agent_task_scheduling() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
 
-    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+    let socket_path: PathBuf = tmp.path().join(".fl/fl.sock");
 
     // Setup: create task graph
     let mut setup = DaemonClient::connect(&socket_path).await.expect("connect");
@@ -876,7 +876,7 @@ async fn multi_agent_reservation_conflicts() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
 
-    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+    let socket_path: PathBuf = tmp.path().join(".fl/fl.sock");
 
     // Agent A: acquires exclusive reservation on src/**/*.rs
     let sp_a = socket_path.clone();
@@ -961,7 +961,7 @@ async fn multi_agent_messaging_workflow() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
 
-    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+    let socket_path: PathBuf = tmp.path().join(".fl/fl.sock");
 
     // Create a task to link messages to
     let mut setup = DaemonClient::connect(&socket_path)
@@ -1073,7 +1073,7 @@ async fn multi_agent_full_workflow() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
 
-    let socket_path: PathBuf = tmp.path().join(".filament/filament.sock");
+    let socket_path: PathBuf = tmp.path().join(".fl/fl.sock");
 
     // Setup: create linear task chain: design → implement → test → review
     let mut setup = DaemonClient::connect(&socket_path)
@@ -1362,7 +1362,7 @@ async fn invalid_request_returns_error() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
 
-    let socket_path = tmp.path().join(".filament/filament.sock");
+    let socket_path = tmp.path().join(".fl/fl.sock");
 
     // Send raw malformed JSON over the socket
     let stream = tokio::net::UnixStream::connect(&socket_path)
@@ -1392,7 +1392,7 @@ async fn subscribe_receives_entity_notifications() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
     // Create a second client for subscribing
-    let socket_path = _tmp.path().join(".filament").join("filament.sock");
+    let socket_path = _tmp.path().join(".fl").join("fl.sock");
     let mut sub_client = DaemonClient::connect(&socket_path).await.unwrap();
 
     let mut stream = sub_client
@@ -1429,7 +1429,7 @@ async fn subscribe_receives_entity_notifications() {
 async fn subscribe_with_filter_only_receives_matching() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
-    let socket_path = _tmp.path().join(".filament").join("filament.sock");
+    let socket_path = _tmp.path().join(".fl").join("fl.sock");
     let mut sub_client = DaemonClient::connect(&socket_path).await.unwrap();
 
     // Subscribe only to status_change events

@@ -15,10 +15,10 @@ pub struct WatchArgs {
 
 pub async fn watch(cli: &Cli, args: &WatchArgs) -> Result<()> {
     let root = helpers::find_project_root()?;
-    let socket_path = root.join(".filament").join("filament.sock");
+    let socket_path = root.join(".fl").join("fl.sock");
     if !socket_path.exists() {
         return Err(FilamentError::Validation(
-            "daemon not running. Start it with `filament serve`.".to_string(),
+            "daemon not running. Start it with `fl serve`.".to_string(),
         ));
     }
 

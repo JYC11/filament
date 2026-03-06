@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-/// Project-level configuration loaded from `.filament/config.toml`.
+/// Project-level configuration loaded from `.fl/config.toml`.
 ///
 /// All fields are optional — missing values fall back to defaults.
 /// Environment variables (`FILAMENT_*`) override config file values.
@@ -39,11 +39,11 @@ pub enum OutputFormat {
 }
 
 impl FilamentConfig {
-    /// Load config from `.filament/config.toml` under the given project root.
+    /// Load config from `.fl/config.toml` under the given project root.
     /// Returns default config if file doesn't exist or can't be parsed.
     #[must_use]
     pub fn load(project_root: &Path) -> Self {
-        let config_path = project_root.join(".filament").join("config.toml");
+        let config_path = project_root.join(".fl").join("config.toml");
         std::fs::read_to_string(&config_path).map_or_else(
             |_| Self::default(),
             |contents| toml::from_str(&contents).unwrap_or_default(),

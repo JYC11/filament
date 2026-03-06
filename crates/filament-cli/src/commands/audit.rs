@@ -24,7 +24,7 @@ pub async fn audit(cli: &Cli, args: &AuditArgs) -> Result<()> {
         serde_json::to_string_pretty(&data).map_err(|e| FilamentError::Protocol(e.to_string()))?;
 
     // Write export to a file in the project root
-    let audit_file = root.join(".filament").join("audit-snapshot.json");
+    let audit_file = root.join(".fl").join("audit-snapshot.json");
     std::fs::write(&audit_file, &json).map_err(FilamentError::Io)?;
 
     // Check if we're in a git repo
@@ -75,7 +75,7 @@ pub async fn audit(cli: &Cli, args: &AuditArgs) -> Result<()> {
     }
 
     // Stage the audit file
-    run_git(&root, &["add", "-f", ".filament/audit-snapshot.json"])?;
+    run_git(&root, &["add", "-f", ".fl/audit-snapshot.json"])?;
 
     // Commit
     let entity_count = data.entities.len();

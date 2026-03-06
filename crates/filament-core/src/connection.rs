@@ -25,16 +25,16 @@ pub enum FilamentConnection {
     Socket(DaemonClient),
 }
 
-/// Runtime directory name created by `filament init`.
-const RUNTIME_DIR: &str = ".filament";
-const SOCKET_NAME: &str = "filament.sock";
-const DB_NAME: &str = "filament.db";
+/// Runtime directory name created by `fl init`.
+const RUNTIME_DIR: &str = ".fl";
+const SOCKET_NAME: &str = "fl.sock";
+const DB_NAME: &str = "fl.db";
 
 #[allow(clippy::missing_errors_doc)]
 impl FilamentConnection {
     /// Auto-detect connection mode.
-    /// If `.filament/filament.sock` exists and is connectable, use Socket.
-    /// Otherwise, open a Direct connection to `.filament/filament.db`.
+    /// If `.fl/fl.sock` exists and is connectable, use Socket.
+    /// Otherwise, open a Direct connection to `.fl/fl.db`.
     ///
     /// # Errors
     ///
@@ -74,10 +74,10 @@ impl FilamentConnection {
     /// Try to auto-start the daemon as a background process and connect.
     /// Returns `None` if spawn fails or connection can't be established.
     async fn try_auto_start(project_root: &Path, sock_path: &Path) -> Option<Self> {
-        // Find the filament binary
+        // Find the fl binary
         let exe = std::env::current_exe().ok()?;
 
-        // Spawn `filament serve` as a detached background process
+        // Spawn `fl serve` as a detached background process
         let child = std::process::Command::new(&exe)
             .arg("serve")
             .current_dir(project_root)
@@ -506,7 +506,7 @@ impl FilamentConnection {
     ) -> Result<crate::models::AgentRunId> {
         match self {
             Self::Direct(_) => Err(FilamentError::AgentDispatchFailed {
-                reason: "dispatch requires daemon mode (run `filament serve` first)".to_string(),
+                reason: "dispatch requires daemon mode (run `fl serve` first)".to_string(),
             }),
             Self::Socket(c) => c.dispatch_agent(task_slug, role).await,
         }

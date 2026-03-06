@@ -37,7 +37,7 @@ impl HookCommand {
     }
 }
 
-const HOOK_MARKER: &str = "# filament-reservation-check";
+const HOOK_MARKER: &str = "# fl-reservation-check";
 
 fn install(cli: &Cli) -> Result<()> {
     let root = helpers::find_project_root()?;
@@ -60,7 +60,7 @@ fn install(cli: &Cli) -> Result<()> {
 {filament_bin} hook check
 FILAMENT_HOOK_EXIT=$?
 if [ $FILAMENT_HOOK_EXIT -ne 0 ]; then
-    echo "filament: commit blocked by file reservation conflicts"
+    echo "fl: commit blocked by file reservation conflicts"
     exit $FILAMENT_HOOK_EXIT
 fi
 {HOOK_MARKER}-end
@@ -113,7 +113,7 @@ fn uninstall(cli: &Cli) -> Result<()> {
     let content = std::fs::read_to_string(&hook_path).map_err(FilamentError::Io)?;
     if !content.contains(HOOK_MARKER) {
         if !cli.quiet {
-            println!("pre-commit hook does not contain filament check");
+            println!("pre-commit hook does not contain fl check");
         }
         return Ok(());
     }
@@ -214,7 +214,7 @@ async fn check(cli: &Cli, args: &CheckArgs) -> Result<()> {
             .collect();
         helpers::output_json(&serde_json::json!({ "conflicts": items }));
     } else {
-        eprintln!("filament: file reservation conflicts detected:");
+        eprintln!("fl: file reservation conflicts detected:");
         for (file, agent, glob) in &conflicts {
             eprintln!("  {file} — reserved by {agent} (glob: {glob})");
         }

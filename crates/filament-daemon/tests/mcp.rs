@@ -102,22 +102,22 @@ async fn tools_list_returns_all_tools() {
     // Verify expected tool names
     let names: Vec<&str> = result.tools.iter().map(|t| t.name.as_ref()).collect();
     for expected in &[
-        "filament_task_ready",
-        "filament_task_close",
-        "filament_context",
-        "filament_message_send",
-        "filament_message_inbox",
-        "filament_message_read",
-        "filament_reserve",
-        "filament_release",
-        "filament_reservations",
-        "filament_inspect",
-        "filament_list",
-        "filament_add",
-        "filament_update",
-        "filament_delete",
-        "filament_relate",
-        "filament_unrelate",
+        "fl_task_ready",
+        "fl_task_close",
+        "fl_context",
+        "fl_message_send",
+        "fl_message_inbox",
+        "fl_message_read",
+        "fl_reserve",
+        "fl_release",
+        "fl_reservations",
+        "fl_inspect",
+        "fl_list",
+        "fl_add",
+        "fl_update",
+        "fl_delete",
+        "fl_relate",
+        "fl_unrelate",
     ] {
         assert!(names.contains(expected), "missing tool: {expected}");
     }
@@ -134,7 +134,7 @@ async fn tool_add_and_list() {
     // Add an entity
     let result = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({
                 "name": "mcp-test-task",
                 "entity_type": "task",
@@ -146,7 +146,7 @@ async fn tool_add_and_list() {
 
     assert!(
         !result.is_error.unwrap_or(false),
-        "filament_add should succeed: {result:?}"
+        "fl_add should succeed: {result:?}"
     );
     let text = extract_text(&result);
     assert!(text.contains("Created:"), "expected 'Created:' in: {text}");
@@ -154,7 +154,7 @@ async fn tool_add_and_list() {
     // List entities
     let result = peer
         .call_tool(call(
-            "filament_list",
+            "fl_list",
             serde_json::json!({ "entity_type": "task" }),
         ))
         .await
@@ -178,7 +178,7 @@ async fn tool_inspect_entity() {
 
     let add_result = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({
                 "name": "inspect-me",
                 "entity_type": "doc",
@@ -192,7 +192,7 @@ async fn tool_inspect_entity() {
 
     let result = peer
         .call_tool(call(
-            "filament_inspect",
+            "fl_inspect",
             serde_json::json!({ "slug": slug }),
         ))
         .await
@@ -215,7 +215,7 @@ async fn tool_task_close() {
 
     let add_result = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({
                 "name": "closeable-task",
                 "entity_type": "task",
@@ -229,7 +229,7 @@ async fn tool_task_close() {
 
     let result = peer
         .call_tool(call(
-            "filament_task_close",
+            "fl_task_close",
             serde_json::json!({ "slug": slug }),
         ))
         .await
@@ -242,7 +242,7 @@ async fn tool_task_close() {
     // Verify it's closed via inspect
     let result = peer
         .call_tool(call(
-            "filament_inspect",
+            "fl_inspect",
             serde_json::json!({ "slug": slug }),
         ))
         .await
@@ -263,7 +263,7 @@ async fn tool_update_entity() {
 
     let add_result = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({
                 "name": "updatable",
                 "entity_type": "task",
@@ -277,7 +277,7 @@ async fn tool_update_entity() {
 
     let result = peer
         .call_tool(call(
-            "filament_update",
+            "fl_update",
             serde_json::json!({
                 "slug": slug,
                 "summary": "After update",
@@ -303,7 +303,7 @@ async fn tool_messaging() {
     // Create agent entities first (message_send validates recipient exists)
     let add_a = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({"name": "agent-a", "entity_type": "agent", "summary": "Agent A"}),
         ))
         .await
@@ -313,7 +313,7 @@ async fn tool_messaging() {
 
     let add_b = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({"name": "agent-b", "entity_type": "agent", "summary": "Agent B"}),
         ))
         .await
@@ -323,7 +323,7 @@ async fn tool_messaging() {
 
     let result = peer
         .call_tool(call(
-            "filament_message_send",
+            "fl_message_send",
             serde_json::json!({
                 "from_agent": slug_a,
                 "to_agent": slug_b,
@@ -339,7 +339,7 @@ async fn tool_messaging() {
 
     let result = peer
         .call_tool(call(
-            "filament_message_inbox",
+            "fl_message_inbox",
             serde_json::json!({ "agent": slug_b }),
         ))
         .await
@@ -363,7 +363,7 @@ async fn tool_reservations() {
 
     let result = peer
         .call_tool(call(
-            "filament_reserve",
+            "fl_reserve",
             serde_json::json!({
                 "file_glob": "src/**/*.rs",
                 "agent": "test-agent",
@@ -382,7 +382,7 @@ async fn tool_reservations() {
     // List reservations
     let result = peer
         .call_tool(call(
-            "filament_reservations",
+            "fl_reservations",
             serde_json::json!({ "agent": "test-agent" }),
         ))
         .await
@@ -395,7 +395,7 @@ async fn tool_reservations() {
     // Release
     let result = peer
         .call_tool(call(
-            "filament_release",
+            "fl_release",
             serde_json::json!({ "reservation_id": res_id }),
         ))
         .await
@@ -415,7 +415,7 @@ async fn tool_task_ready() {
 
     for name in &["ready-a", "ready-b"] {
         peer.call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({
                 "name": name,
                 "entity_type": "task",
@@ -428,7 +428,7 @@ async fn tool_task_ready() {
 
     let result = peer
         .call_tool(call(
-            "filament_task_ready",
+            "fl_task_ready",
             serde_json::json!({ "limit": 10 }),
         ))
         .await
@@ -454,7 +454,7 @@ async fn tool_error_nonexistent_entity() {
 
     let result = peer
         .call_tool(call(
-            "filament_inspect",
+            "fl_inspect",
             serde_json::json!({ "slug": "does-not-exist" }),
         ))
         .await
@@ -481,7 +481,7 @@ async fn tool_update_validation_error() {
 
     let add_result = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({
                 "name": "needs-update",
                 "entity_type": "task",
@@ -495,7 +495,7 @@ async fn tool_update_validation_error() {
 
     // Update with neither summary nor status — should error
     let result = peer
-        .call_tool(call("filament_update", serde_json::json!({ "slug": slug })))
+        .call_tool(call("fl_update", serde_json::json!({ "slug": slug })))
         .await
         .expect("update");
 
@@ -512,26 +512,26 @@ async fn tool_filtering_blocks_disallowed() {
     let (conn, _tmp) = test_connection().await;
 
     // Only allow inspect and list — not add, delete, reserve, etc.
-    let client = start_mcp_client_filtered(conn, &["filament_inspect", "filament_list"]).await;
+    let client = start_mcp_client_filtered(conn, &["fl_inspect", "fl_list"]).await;
     let peer = client.peer();
 
     // Allowed tool should work (list returns empty but no error)
     let result = peer
         .call_tool(call(
-            "filament_list",
+            "fl_list",
             serde_json::json!({ "entity_type": "task" }),
         ))
         .await
         .expect("list");
     assert!(
         !result.is_error.unwrap_or(false),
-        "filament_list should be allowed"
+        "fl_list should be allowed"
     );
 
     // Disallowed tool should return an error
     let result = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({
                 "name": "blocked-task",
                 "entity_type": "task",
@@ -542,7 +542,7 @@ async fn tool_filtering_blocks_disallowed() {
         .expect("add should return result");
     assert!(
         result.is_error.unwrap_or(false),
-        "filament_add should be blocked by filter"
+        "fl_add should be blocked by filter"
     );
     let text = extract_text(&result);
     assert!(
@@ -553,7 +553,7 @@ async fn tool_filtering_blocks_disallowed() {
     // Another disallowed tool
     let result = peer
         .call_tool(call(
-            "filament_reserve",
+            "fl_reserve",
             serde_json::json!({
                 "file_glob": "*.rs",
                 "agent": "test",
@@ -564,7 +564,7 @@ async fn tool_filtering_blocks_disallowed() {
         .expect("reserve should return result");
     assert!(
         result.is_error.unwrap_or(false),
-        "filament_reserve should be blocked by filter"
+        "fl_reserve should be blocked by filter"
     );
 
     client.cancel().await.expect("cancel");
@@ -572,7 +572,7 @@ async fn tool_filtering_blocks_disallowed() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tool_filtering_none_allows_all() {
-    // No filter = all tools allowed (unfiltered mode, like CLI `filament mcp`)
+    // No filter = all tools allowed (unfiltered mode, like CLI `fl mcp`)
     let (conn, _tmp) = test_connection().await;
     let client = start_mcp_client(conn).await;
     let peer = client.peer();
@@ -580,7 +580,7 @@ async fn tool_filtering_none_allows_all() {
     // Add should work without filter
     let result = peer
         .call_tool(call(
-            "filament_add",
+            "fl_add",
             serde_json::json!({
                 "name": "unfiltered-task",
                 "entity_type": "task",
@@ -591,7 +591,7 @@ async fn tool_filtering_none_allows_all() {
         .expect("add");
     assert!(
         !result.is_error.unwrap_or(false),
-        "filament_add should work without filter"
+        "fl_add should work without filter"
     );
 
     client.cancel().await.expect("cancel");

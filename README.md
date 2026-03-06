@@ -17,7 +17,7 @@ Filament gives AI coding agents (and humans) a shared project brain — a knowle
 - **MCP server** — 16-tool Model Context Protocol interface for AI agent integration
 - **TUI dashboard** — real-time terminal UI showing tasks, agent runs, and reservations
 - **Hybrid architecture** — direct SQLite for single-user, Unix socket daemon for multi-agent
-- **Project config** — layered `filament.toml` configuration with environment variable overrides
+- **Project config** — layered `fl.toml` configuration with environment variable overrides
 - **Real-time watch** — live event stream from the daemon for monitoring agent activity
 - **Git integration** — pre-commit hooks for reservation conflict checks, audit snapshots to git branches
 - **Seed command** — bootstrap the knowledge graph from existing CLAUDE.md documentation
@@ -43,7 +43,7 @@ cd filament
 make build CRATE=all RELEASE=1
 ```
 
-The binary is at `target/release/filament`. Install it:
+The binary is at `target/release/fl`. Install it:
 
 ```bash
 make install                        # installs to ~/.local/bin (default)
@@ -69,18 +69,18 @@ make ci                      # full CI: fmt check + clippy + tests
 
 ### Initialize a Project
 
-Create a `.filament/` directory with a SQLite database in your project root:
+Create a `.fl/` directory with a SQLite database in your project root:
 
 ```bash
 cd your-project
-filament init
+fl init
 ```
 
 This creates:
-- `.filament/filament.db` — SQLite database (WAL mode)
-- `.filament/content/` — content file storage
+- `.fl/fl.db` — SQLite database (WAL mode)
+- `.fl/content/` — content file storage
 
-Add `.filament/` to your `.gitignore`.
+Add `.fl/` to your `.gitignore`.
 
 ### Global Flags
 
@@ -108,7 +108,7 @@ Filament's core data model is a knowledge graph of **entities** connected by **r
 | `agent`   | **Actors** — AI agents or human operators. Required for `task assign`, `message send`, `reserve`. The dispatch system tracks who's working on what. | Structural (no workflow) | "planner-agent", "code-reviewer", "alice" |
 | `plan`    | **Planning documents** — group tasks via `owns` relations. Always use `--content` to point at the actual `.md` file. The entity summary is a 1-2 sentence description; the file is the source of truth. | Structural (no workflow) | "phase-3-plan", "architecture-overview" |
 | `doc`     | **Reference material** — ADRs, specs, runbooks, knowledge. Like plans, always use `--content` to reference the file on disk. The graph adds queryable structure; the file has the content. | Structural (no workflow) | "adr-003-unified-graph", "api-spec", "gotchas" |
-| `lesson`  | **Knowledge capture** — gotchas, solutions, recurring patterns. Structured fields: `problem`, `solution`, `learned`, optional `pattern`. Use `filament lesson add` to create. Searchable via FTS5. | Structural (no workflow) | "SQLite CHECK constraint gotcha", "N+1 query fix" |
+| `lesson`  | **Knowledge capture** — gotchas, solutions, recurring patterns. Structured fields: `problem`, `solution`, `learned`, optional `pattern`. Use `fl lesson add` to create. Searchable via FTS5. | Structural (no workflow) | "SQLite CHECK constraint gotcha", "N+1 query fix" |
 
 **Design principle**: The graph is lightweight. Entities store short summaries + pointers to files. For `doc` and `plan` types, always use `--content path/to/file.md` so the physical file remains the source of truth. The graph adds queryable relations, dependency tracking, and context queries on top.
 
@@ -119,15 +119,15 @@ All entities have a status field (`open`, `in_progress`, `closed`, `blocked`), b
 ### Add an Entity
 
 ```bash
-filament add "Authentication Module" --type module --summary "Handles JWT auth" --priority 1
+fl add "Authentication Module" --type module --summary "Handles JWT auth" --priority 1
 
 # With key facts (JSON object)
-filament add "API Gateway" --type service \
+fl add "API Gateway" --type service \
   --summary "Routes requests to microservices" \
   --facts '{"port": 8080, "protocol": "HTTP/2"}'
 
 # With a content file (must exist on disk)
-filament add "Architecture Decision" --type doc \
+fl add "Architecture Decision" --type doc \
   --summary "ADR-001: Database choice" \
   --content .plan/adr/001-database.md
 ```
@@ -137,7 +137,7 @@ Output: `Created: a3kf92mx (550e8400-e29b-41d4-a716-446655440000)`
 ### Inspect an Entity
 
 ```bash
-filament inspect a3kf92mx
+fl inspect a3kf92mx
 ```
 
 Shows name, slug, ID, type, status, priority, summary, facts, content path, relations, and timestamps.
@@ -145,9 +145,9 @@ Shows name, slug, ID, type, status, priority, summary, facts, content path, rela
 ### Update an Entity
 
 ```bash
-filament update a3kf92mx --status in_progress
-filament update a3kf92mx --summary "Updated description"
-filament update a3kf92mx --status closed --summary "Done"
+fl update a3kf92mx --status in_progress
+fl update a3kf92mx --summary "Updated description"
+fl update a3kf92mx --status closed --summary "Done"
 ```
 
 ### Read Entity Content
@@ -155,23 +155,23 @@ filament update a3kf92mx --status closed --summary "Done"
 Print the raw content file associated with an entity:
 
 ```bash
-filament read a3kf92mx
+fl read a3kf92mx
 ```
 
 ### List Entities
 
 ```bash
-filament list                          # all entities
-filament list --type task              # only tasks
-filament list --status open            # only open entities
-filament list --status all             # all statuses (including closed)
-filament list --type module --status in_progress
+fl list                          # all entities
+fl list --type task              # only tasks
+fl list --status open            # only open entities
+fl list --status all             # all statuses (including closed)
+fl list --type module --status in_progress
 ```
 
 ### Remove an Entity
 
 ```bash
-filament remove a3kf92mx
+fl remove a3kf92mx
 ```
 
 Removes the entity and all its relations.
@@ -196,15 +196,15 @@ Connect entities with typed, directed edges.
 ### Create a Relation
 
 ```bash
-filament relate abc12345 blocks def67890
-filament relate abc12345 depends_on def67890 --summary "needs API first"
-filament relate abc12345 owns def67890 --weight 1.0
+fl relate abc12345 blocks def67890
+fl relate abc12345 depends_on def67890 --summary "needs API first"
+fl relate abc12345 owns def67890 --weight 1.0
 ```
 
 ### Remove a Relation
 
 ```bash
-filament unrelate abc12345 blocks def67890
+fl unrelate abc12345 blocks def67890
 ```
 
 ### Explore the Graph
@@ -212,9 +212,9 @@ filament unrelate abc12345 blocks def67890
 View the neighborhood around an entity (BFS traversal):
 
 ```bash
-filament context --around abc12345              # default depth 2, limit 20
-filament context --around abc12345 --depth 3    # deeper traversal
-filament context --around abc12345 --limit 50   # more results
+fl context --around abc12345              # default depth 2, limit 20
+fl context --around abc12345 --depth 3    # deeper traversal
+fl context --around abc12345 --limit 50   # more results
 ```
 
 ---
@@ -226,26 +226,26 @@ Tasks are the primary work unit. The `task` subcommand provides specialized task
 ### Add a Task
 
 ```bash
-filament task add "Implement login endpoint" --summary "POST /auth/login" --priority 0
+fl task add "Implement login endpoint" --summary "POST /auth/login" --priority 0
 
 # With dependency relations
-filament task add "Write integration tests" \
+fl task add "Write integration tests" \
   --summary "Test the login flow" \
   --depends-on abc12345 \
   --priority 2
 
 # With blocking relation
-filament task add "Deploy to staging" --blocks def67890
+fl task add "Deploy to staging" --blocks def67890
 ```
 
 ### List Tasks
 
 ```bash
-filament task list                     # open tasks (default)
-filament task list --status all        # all tasks regardless of status
-filament task list --status in_progress
-filament task list --status closed
-filament task list --unblocked         # only tasks with no blockers
+fl task list                     # open tasks (default)
+fl task list --status all        # all tasks regardless of status
+fl task list --status in_progress
+fl task list --status closed
+fl task list --unblocked         # only tasks with no blockers
 ```
 
 Note: `--status` and `--unblocked` are mutually exclusive.
@@ -253,7 +253,7 @@ Note: `--status` and `--unblocked` are mutually exclusive.
 ### Show Task Details
 
 ```bash
-filament task show abc12345
+fl task show abc12345
 ```
 
 ### Ready Tasks
@@ -261,8 +261,8 @@ filament task show abc12345
 Show unblocked tasks ranked by priority and impact score:
 
 ```bash
-filament task ready               # top 20 by default
-filament task ready --limit 5     # top 5 only
+fl task ready               # top 20 by default
+fl task ready --limit 5     # top 5 only
 ```
 
 Impact score counts how many downstream tasks are transitively blocked by each task — higher impact tasks should be done first.
@@ -272,7 +272,7 @@ Impact score counts how many downstream tasks are transitively blocked by each t
 Show the dependency chain blocking a task:
 
 ```bash
-filament task critical-path abc12345
+fl task critical-path abc12345
 ```
 
 Output:
@@ -287,13 +287,13 @@ Critical path (3 steps):
 ### Close a Task
 
 ```bash
-filament task close abc12345
+fl task close abc12345
 ```
 
 ### Assign a Task
 
 ```bash
-filament task assign abc12345 --to agent_slug
+fl task assign abc12345 --to agent_slug
 ```
 
 Creates an `assigned_to` relation from the agent to the task.
@@ -307,7 +307,7 @@ Structured knowledge capture for gotchas, solutions, and recurring patterns. Eac
 ### Add a Lesson
 
 ```bash
-filament lesson add "SQLite CHECK constraint gotcha" \
+fl lesson add "SQLite CHECK constraint gotcha" \
   --problem "Cannot ALTER TABLE to modify CHECK constraints" \
   --solution "Recreate the table with the new constraint, copy data, drop old" \
   --learned "SQLite CHECK constraints are immutable after table creation" \
@@ -317,15 +317,15 @@ filament lesson add "SQLite CHECK constraint gotcha" \
 ### List Lessons
 
 ```bash
-filament lesson list                              # all lessons
-filament lesson list --pattern "migration"        # filter by pattern name
-filament lesson list --status open                # filter by status
+fl lesson list                              # all lessons
+fl lesson list --pattern "migration"        # filter by pattern name
+fl lesson list --status open                # filter by status
 ```
 
 ### Show Lesson Details
 
 ```bash
-filament lesson show abc12345
+fl lesson show abc12345
 ```
 
 Displays the structured problem/solution/learned/pattern fields.
@@ -333,7 +333,7 @@ Displays the structured problem/solution/learned/pattern fields.
 ### Delete a Lesson
 
 ```bash
-filament lesson delete abc12345
+fl lesson delete abc12345
 ```
 
 ---
@@ -343,9 +343,9 @@ filament lesson delete abc12345
 Full-text search across all entities using SQLite FTS5 with BM25 relevance ranking. Searches entity names, summaries, and key_facts.
 
 ```bash
-filament search "migration"                       # search all entities
-filament search "connection pool" --type lesson   # filter by entity type
-filament search "deployment" --limit 5            # limit results
+fl search "migration"                       # search all entities
+fl search "connection pool" --type lesson   # filter by entity type
+fl search "deployment" --limit 5            # limit results
 ```
 
 Supports FTS5 query syntax: words, phrases (`"like this"`), `OR`, `NOT`.
@@ -368,10 +368,10 @@ Agents communicate through targeted messages. No broadcast — every message has
 ### Send a Message
 
 ```bash
-filament message send --from coder-1 --to reviewer-1 \
+fl message send --from coder-1 --to reviewer-1 \
   --body "Login endpoint ready for review"
 
-filament message send --from reviewer-1 --to coder-1 \
+fl message send --from reviewer-1 --to coder-1 \
   --body "Missing input validation on email field" \
   --type blocker
 ```
@@ -379,7 +379,7 @@ filament message send --from reviewer-1 --to coder-1 \
 ### Check Inbox
 
 ```bash
-filament message inbox coder-1
+fl message inbox coder-1
 ```
 
 Shows unread messages with sender, type, and a preview.
@@ -387,7 +387,7 @@ Shows unread messages with sender, type, and a preview.
 ### Mark as Read
 
 ```bash
-filament message read <message-uuid>
+fl message read <message-uuid>
 ```
 
 Returns an error if the message was already read (distinct from not found).
@@ -402,10 +402,10 @@ Advisory file locks to coordinate concurrent edits. Reservations use glob patter
 
 ```bash
 # Shared reservation (default) — multiple agents can hold shared locks
-filament reserve "src/auth/*.rs" --agent coder-1 --ttl 1800
+fl reserve "src/auth/*.rs" --agent coder-1 --ttl 1800
 
 # Exclusive reservation — only one agent can hold this lock
-filament reserve "src/main.rs" --agent coder-1 --exclusive --ttl 3600
+fl reserve "src/main.rs" --agent coder-1 --exclusive --ttl 3600
 ```
 
 Default TTL is 3600 seconds (1 hour).
@@ -413,15 +413,15 @@ Default TTL is 3600 seconds (1 hour).
 ### Release Files
 
 ```bash
-filament release "src/auth/*.rs" --agent coder-1
+fl release "src/auth/*.rs" --agent coder-1
 ```
 
 ### List Reservations
 
 ```bash
-filament reservations                              # all active reservations
-filament reservations --agent coder-1              # filter by agent
-filament reservations --clean                      # clean expired, then list
+fl reservations                              # all active reservations
+fl reservations --agent coder-1              # filter by agent
+fl reservations --clean                      # clean expired, then list
 ```
 
 ---
@@ -433,25 +433,25 @@ Filament runs in two modes:
 - **Direct mode** — CLI talks directly to SQLite (single-user, default)
 - **Daemon mode** — CLI connects to a Unix socket server (multi-agent, required for dispatching)
 
-The CLI auto-detects which mode to use based on whether `.filament/filament.sock` exists.
+The CLI auto-detects which mode to use based on whether `.fl/fl.sock` exists.
 
 ### Start the Daemon
 
 ```bash
-filament serve                  # background (daemonizes)
-filament serve --foreground     # foreground (for debugging)
+fl serve                  # background (daemonizes)
+fl serve --foreground     # foreground (for debugging)
 ```
 
 ### Stop the Daemon
 
 ```bash
-filament stop
+fl stop
 ```
 
 ### Custom Socket Path
 
 ```bash
-filament serve --socket-path /tmp/filament.sock
+fl serve --socket-path /tmp/fl.sock
 ```
 
 ---
@@ -474,16 +474,16 @@ Each role has a compiled-in system prompt and a whitelist of MCP tools it can us
 ### Dispatch a Single Agent
 
 ```bash
-filament agent dispatch abc12345                     # default role: coder
-filament agent dispatch abc12345 --role reviewer
-filament agent dispatch abc12345 --role planner
+fl agent dispatch abc12345                     # default role: coder
+fl agent dispatch abc12345 --role reviewer
+fl agent dispatch abc12345 --role planner
 ```
 
 ### Dispatch to All Ready Tasks
 
 ```bash
-filament agent dispatch-all                          # up to 3 parallel, coder role
-filament agent dispatch-all --max-parallel 5 --role reviewer
+fl agent dispatch-all                          # up to 3 parallel, coder role
+fl agent dispatch-all --max-parallel 5 --role reviewer
 ```
 
 This finds all unblocked tasks and dispatches agents sequentially (one RPC per task) up to the parallel limit. Requires daemon mode.
@@ -491,9 +491,9 @@ This finds all unblocked tasks and dispatches agents sequentially (one RPC per t
 ### Monitor Agent Runs
 
 ```bash
-filament agent status <run-uuid>       # check a specific run
-filament agent list                    # list running agents
-filament agent history abc12345        # all runs for a task
+fl agent status <run-uuid>       # check a specific run
+fl agent list                    # list running agents
+fl agent history abc12345        # all runs for a task
 ```
 
 ### Agent Lifecycle
@@ -515,7 +515,7 @@ Filament exposes a [Model Context Protocol](https://modelcontextprotocol.io/) se
 ### Start the MCP Server
 
 ```bash
-filament mcp
+fl mcp
 ```
 
 This runs the MCP stdio transport. All logs go to stderr; stdout is reserved for JSON-RPC.
@@ -526,42 +526,42 @@ This runs the MCP stdio transport. All logs go to stderr; stdout is reserved for
 
 | Tool               | Description                             |
 | ------------------ | --------------------------------------- |
-| `filament_add`     | Create a new entity                     |
-| `filament_inspect` | Get entity details and relations        |
-| `filament_update`  | Update entity summary and/or status     |
-| `filament_delete`  | Delete an entity and its relations      |
-| `filament_list`    | List/filter entities by type and status |
+| `fl_add`     | Create a new entity                     |
+| `fl_inspect` | Get entity details and relations        |
+| `fl_update`  | Update entity summary and/or status     |
+| `fl_delete`  | Delete an entity and its relations      |
+| `fl_list`    | List/filter entities by type and status |
 
 #### Relation Operations
 
 | Tool                | Description                        |
 | ------------------- | ---------------------------------- |
-| `filament_relate`   | Create a relation between entities |
-| `filament_unrelate` | Remove a relation                  |
-| `filament_context`  | BFS graph neighborhood query       |
+| `fl_relate`   | Create a relation between entities |
+| `fl_unrelate` | Remove a relation                  |
+| `fl_context`  | BFS graph neighborhood query       |
 
 #### Task Operations
 
 | Tool                  | Description                |
 | --------------------- | -------------------------- |
-| `filament_task_ready` | Get ranked unblocked tasks |
-| `filament_task_close` | Mark a task as closed      |
+| `fl_task_ready` | Get ranked unblocked tasks |
+| `fl_task_close` | Mark a task as closed      |
 
 #### Messaging
 
 | Tool                     | Description                     |
 | ------------------------ | ------------------------------- |
-| `filament_message_send`  | Send a message to another agent |
-| `filament_message_inbox` | Check unread messages           |
-| `filament_message_read`  | Mark a message as read          |
+| `fl_message_send`  | Send a message to another agent |
+| `fl_message_inbox` | Check unread messages           |
+| `fl_message_read`  | Mark a message as read          |
 
 #### File Reservations
 
 | Tool                    | Description                   |
 | ----------------------- | ----------------------------- |
-| `filament_reserve`      | Acquire an advisory file lock |
-| `filament_release`      | Release a file reservation    |
-| `filament_reservations` | List active reservations      |
+| `fl_reserve`      | Acquire an advisory file lock |
+| `fl_release`      | Release a file reservation    |
+| `fl_reservations` | List active reservations      |
 
 ---
 
@@ -572,7 +572,7 @@ An interactive terminal UI for monitoring the knowledge graph in real time.
 ### Launch
 
 ```bash
-filament tui
+fl tui
 ```
 
 ### Tabs
@@ -583,7 +583,7 @@ filament tui
 | Agents       | `2` | Running agent processes with role, PID, duration                 |
 | Reservations | `3` | Active file locks with TTL countdown                             |
 | Messages     | `4` | Messages with kind, agent, and body                              |
-| Config       | `5` | Read-only view of resolved `filament.toml` configuration values  |
+| Config       | `5` | Read-only view of resolved `fl.toml` configuration values  |
 | Analytics    | `6` | PageRank scores and degree centrality for graph entities         |
 
 ### Keyboard Shortcuts
@@ -624,17 +624,17 @@ Export the entire knowledge graph (entities, relations, messages, events) as JSO
 ### Export
 
 ```bash
-filament export                        # print to stdout
-filament export --output backup.json   # write to file
-filament export --no-events            # exclude event log
+fl export                        # print to stdout
+fl export --output backup.json   # write to file
+fl export --no-events            # exclude event log
 ```
 
 ### Import
 
 ```bash
-filament import --input backup.json    # read from file
-cat backup.json | filament import      # read from stdin
-filament import --input backup.json --no-events  # skip events
+fl import --input backup.json    # read from file
+cat backup.json | fl import      # read from stdin
+fl import --input backup.json --no-events  # skip events
 ```
 
 Import reports counts of entities, relations, messages, and events imported.
@@ -646,8 +646,8 @@ Import reports counts of entities, relations, messages, and events imported.
 View pending escalations — blockers, questions, and needs-input statuses from agent runs that require human attention.
 
 ```bash
-filament escalations                   # human-readable table
-filament escalations --json            # structured JSON
+fl escalations                   # human-readable table
+fl escalations --json            # structured JSON
 ```
 
 Output shows kind, agent name, message body, and associated task (if any).
@@ -659,7 +659,7 @@ Output shows kind, agent name, message body, and associated task (if any).
 When `FILAMENT_AUTO_DISPATCH=1` is set, the daemon automatically dispatches agents to newly-unblocked tasks. When an agent closes a task, any downstream tasks that become unblocked are queued for dispatch.
 
 ```bash
-FILAMENT_AUTO_DISPATCH=1 filament serve
+FILAMENT_AUTO_DISPATCH=1 fl serve
 ```
 
 ---
@@ -669,9 +669,9 @@ FILAMENT_AUTO_DISPATCH=1 filament serve
 Generate shell completions for your preferred shell:
 
 ```bash
-filament completions bash > ~/.local/share/bash-completion/completions/filament
-filament completions zsh > ~/.zfunc/_filament
-filament completions fish > ~/.config/fish/completions/filament.fish
+fl completions bash > ~/.local/share/bash-completion/completions/fl
+fl completions zsh > ~/.zfunc/_fl
+fl completions fish > ~/.config/fish/completions/fl.fish
 ```
 
 Supported shells: `bash`, `zsh`, `fish`, `elvish`, `powershell`.
@@ -680,12 +680,12 @@ Supported shells: `bash`, `zsh`, `fish`, `elvish`, `powershell`.
 
 ## Configuration
 
-Filament uses a layered config system. Create `.filament/config.toml` in your project:
+Filament uses a layered config system. Create `.fl/config.toml` in your project:
 
 ```bash
-filament config init > .filament/config.toml    # generate template
-filament config show                             # show resolved values
-filament config path                             # show config file path
+fl config init > .fl/config.toml    # generate template
+fl config show                       # show resolved values
+fl config path                       # show config file path
 ```
 
 Resolution order: environment variables (`FILAMENT_*`) > config file > defaults.
@@ -707,11 +707,11 @@ Resolution order: environment variables (`FILAMENT_*`) > config file > defaults.
 
 ## Watch
 
-Real-time event stream from the daemon. Requires `filament serve` to be running.
+Real-time event stream from the daemon. Requires `fl serve` to be running.
 
 ```bash
-filament watch                                   # all events
-filament watch --events entity_created,status_change   # filter by type
+fl watch                                   # all events
+fl watch --events entity_created,status_change   # filter by type
 ```
 
 ---
@@ -723,8 +723,8 @@ filament watch --events entity_created,status_change   # filter by type
 Identify the most connected/important entities in the knowledge graph:
 
 ```bash
-filament pagerank                                # top 20 by PageRank score
-filament pagerank --damping 0.85 --iterations 50 --limit 10
+fl pagerank                                # top 20 by PageRank score
+fl pagerank --damping 0.85 --iterations 50 --limit 10
 ```
 
 ### Degree Centrality
@@ -732,8 +732,8 @@ filament pagerank --damping 0.85 --iterations 50 --limit 10
 Show entities with the most connections:
 
 ```bash
-filament degree                                  # top 20 by total degree
-filament degree --limit 10
+fl degree                                  # top 20 by total degree
+fl degree --limit 10
 ```
 
 ---
@@ -743,10 +743,10 @@ filament degree --limit 10
 Pre-commit hook that blocks commits when staged files conflict with exclusive file reservations held by other agents.
 
 ```bash
-filament hook install                            # add to .git/hooks/pre-commit
-filament hook uninstall                          # remove from pre-commit
-filament hook check                              # run the check manually
-filament hook check --agent coder-1              # exclude own reservations
+fl hook install                            # add to .git/hooks/pre-commit
+fl hook uninstall                          # remove from pre-commit
+fl hook check                              # run the check manually
+fl hook check --agent coder-1              # exclude own reservations
 ```
 
 ---
@@ -756,10 +756,10 @@ filament hook check --agent coder-1              # exclude own reservations
 Bootstrap the knowledge graph from markdown documentation:
 
 ```bash
-filament seed                                    # parse project CLAUDE.md
-filament seed --file path/to/any/CLAUDE.md       # parse a specific markdown file
-filament seed --files paths.txt                  # ingest multiple files listed one per line
-filament seed --dry-run                          # preview without creating
+fl seed                                    # parse project CLAUDE.md
+fl seed --file path/to/any/CLAUDE.md       # parse a specific markdown file
+fl seed --files paths.txt                  # ingest multiple files listed one per line
+fl seed --dry-run                          # preview without creating
 ```
 
 Parses `## Section` headings as Doc entities with summaries from the first content line. Skips duplicates.
@@ -773,9 +773,9 @@ The `--files` flag accepts a text file with one markdown path per line (blank li
 Snapshot the knowledge graph to a git branch for version-controlled audit trails:
 
 ```bash
-filament audit                                   # commit to filament-audit branch
-filament audit --branch my-audit                 # custom branch name
-filament audit --message "milestone snapshot"    # custom commit message
+fl audit                                   # commit to filament-audit branch
+fl audit --branch my-audit                 # custom branch name
+fl audit --message "milestone snapshot"    # custom commit message
 ```
 
 Exports entities, relations, messages, and events as JSON. Creates an orphan branch on first run.
@@ -790,7 +790,7 @@ All commands support `--json` for machine-readable output. Errors are also struc
 {
   "code": "entity_not_found",
   "message": "No entity with slug 'xyz'",
-  "hint": "Check the slug with 'filament list'",
+  "hint": "Check the slug with 'fl list'",
   "retryable": false
 }
 ```
