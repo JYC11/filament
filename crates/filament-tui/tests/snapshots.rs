@@ -601,7 +601,7 @@ async fn config_tab_renders() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn analytics_tab_renders() {
+async fn analytics_tab_renders_hint_when_empty() {
     let conn = test_conn().await;
     let mut app = App::new(conn);
     app.active_tab = Tab::Analytics;
@@ -614,12 +614,32 @@ async fn analytics_tab_renders() {
 
     let output = buffer_to_string(&terminal);
     assert!(
+        output.contains("Press Enter to calculate"),
+        "empty analytics should show calculate hint: {output}"
+    );
+}
+
+#[tokio::test]
+async fn analytics_tab_renders_after_calculate() {
+    let conn = test_conn().await;
+    let mut app = App::new(conn);
+    app.active_tab = Tab::Analytics;
+    app.refresh_analytics().await;
+
+    let backend = TestBackend::new(80, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
+        .unwrap();
+
+    let output = buffer_to_string(&terminal);
+    assert!(
         output.contains("PageRank"),
-        "analytics tab should show PageRank: {output}"
+        "analytics tab should show PageRank after calculate: {output}"
     );
     assert!(
         output.contains("Degree"),
-        "analytics tab should show Degree Centrality: {output}"
+        "analytics tab should show Degree Centrality after calculate: {output}"
     );
 }
 

@@ -96,6 +96,82 @@ pub enum FilterBar {
     Type,
     Status,
     Priority,
+    Sort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortField {
+    Name,
+    Priority,
+    Status,
+    Updated,
+    Created,
+    Impact,
+}
+
+impl SortField {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::Priority => "priority",
+            Self::Status => "status",
+            Self::Updated => "updated",
+            Self::Created => "created",
+            Self::Impact => "impact",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortDirection {
+    pub const fn flip(self) -> Self {
+        match self {
+            Self::Asc => Self::Desc,
+            Self::Desc => Self::Asc,
+        }
+    }
+
+    pub const fn arrow(self) -> &'static str {
+        match self {
+            Self::Asc => "↑",
+            Self::Desc => "↓",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SortState {
+    pub field: SortField,
+    pub direction: SortDirection,
+}
+
+impl Default for SortState {
+    fn default() -> Self {
+        Self {
+            field: SortField::Priority,
+            direction: SortDirection::Asc,
+        }
+    }
+}
+
+impl SortState {
+    pub fn set_field(&mut self, field: SortField) {
+        if self.field == field {
+            self.direction = self.direction.flip();
+        } else {
+            self.field = field;
+            self.direction = SortDirection::Asc;
+        }
+    }
+
+    pub fn label(&self) -> String {
+        format!("{}{}", self.field.label(), self.direction.arrow())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -230,6 +306,7 @@ pub struct App {
     pub reservation_table_state: TableState,
     pub message_table_state: TableState,
     pub filter: FilterState,
+    pub sort: SortState,
     pub page: usize,
     pub page_size: usize,
     pub detail: Option<DetailData>,
@@ -261,6 +338,7 @@ impl App {
             reservation_table_state: TableState::default(),
             message_table_state: TableState::default(),
             filter: FilterState::default(),
+            sort: SortState::default(),
             page: 0,
             page_size: DEFAULT_PAGE_SIZE,
             detail: None,
@@ -381,6 +459,7 @@ impl App {
             });
         }
 
+        self.sort_rows(&mut rows);
         self.entities = rows;
         self.clamp_entity_selection();
     }
@@ -490,6 +569,7 @@ impl App {
         self.analytics = AnalyticsData {
             pagerank: pagerank_data,
             degree: degree_data,
+            calculated: true,
         };
     }
 
@@ -550,6 +630,34 @@ impl App {
             Tab::Messages => &mut self.message_table_state,
             Tab::Config | Tab::Analytics => &mut self.config_table_state,
         }
+    }
+
+    fn sort_rows(&self, rows: &mut [EntityRow]) {
+        let dir = self.sort.direction;
+        rows.sort_by(|a, b| {
+            let cmp = match self.sort.field {
+                SortField::Name => a.entity.name().as_str().cmp(b.entity.name().as_str()),
+                SortField::Priority => {
+                    a.entity.priority().value().cmp(&b.entity.priority().value())
+                }
+                SortField::Status => a.entity.status().as_str().cmp(b.entity.status().as_str()),
+                SortField::Updated => a
+                    .entity
+                    .common()
+                    .updated_at
+                    .cmp(&b.entity.common().updated_at),
+                SortField::Created => a
+                    .entity
+                    .common()
+                    .created_at
+                    .cmp(&b.entity.common().created_at),
+                SortField::Impact => a.impact.cmp(&b.impact),
+            };
+            match dir {
+                SortDirection::Asc => cmp,
+                SortDirection::Desc => cmp.reverse(),
+            }
+        });
     }
 
     fn clamp_entity_selection(&mut self) {
@@ -642,11 +750,40 @@ impl App {
             Vec::new()
         };
 
+        // Collect all referenced entity IDs for batch name resolution
+        let mut ref_ids: Vec<String> = Vec::new();
+        for rel in &relations {
+            if rel.source_id.as_str() != entity_id {
+                ref_ids.push(rel.source_id.to_string());
+            }
+            if rel.target_id.as_str() != entity_id {
+                ref_ids.push(rel.target_id.to_string());
+            }
+        }
+        for cp_id in &critical_path {
+            ref_ids.push(cp_id.to_string());
+        }
+        ref_ids.sort_unstable();
+        ref_ids.dedup();
+
+        let name_map = if ref_ids.is_empty() {
+            std::collections::HashMap::new()
+        } else {
+            self.conn
+                .batch_get_entities(&ref_ids)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(id, e)| (id, format!("[{}] {}", e.slug(), e.name())))
+                .collect()
+        };
+
         self.detail = Some(DetailData {
             entity,
             relations,
             events,
             critical_path,
+            name_map,
         });
         self.detail_scroll = 0;
     }

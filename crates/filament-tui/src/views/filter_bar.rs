@@ -5,9 +5,14 @@ use ratatui::widgets::Paragraph;
 
 use filament_core::models::{EntityStatus, EntityType, Priority};
 
-use crate::app::{FilterBar, FilterState};
+use crate::app::{FilterBar, FilterState, SortField, SortState};
 
-pub fn render_filter_bar(filter: &FilterState, frame: &mut ratatui::Frame, area: Rect) {
+pub fn render_filter_bar(
+    filter: &FilterState,
+    sort: &SortState,
+    frame: &mut ratatui::Frame,
+    area: Rect,
+) {
     let Some(bar) = &filter.active_bar else {
         return;
     };
@@ -16,6 +21,7 @@ pub fn render_filter_bar(filter: &FilterState, frame: &mut ratatui::Frame, area:
         FilterBar::Type => type_bar_line(filter),
         FilterBar::Status => status_bar_line(filter),
         FilterBar::Priority => priority_bar_line(filter),
+        FilterBar::Sort => sort_bar_line(*sort),
     };
 
     let paragraph = Paragraph::new(line);
@@ -100,6 +106,37 @@ fn priority_bar_line(filter: &FilterState) -> Line<'static> {
         let selected = filter.priorities.contains(&p);
         let style = chip_style(selected);
         spans.push(Span::styled(format!(" P{i} "), style));
+        spans.push(Span::raw(" "));
+    }
+
+    spans.push(Span::styled(
+        " Esc:Close ",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    Line::from(spans)
+}
+
+fn sort_bar_line(sort: SortState) -> Line<'static> {
+    let fields = [
+        (SortField::Name, "1:Name"),
+        (SortField::Priority, "2:Priority"),
+        (SortField::Status, "3:Status"),
+        (SortField::Updated, "4:Updated"),
+        (SortField::Created, "5:Created"),
+        (SortField::Impact, "6:Impact"),
+    ];
+
+    let mut spans = vec![Span::styled(
+        " Sort: ",
+        Style::default().add_modifier(Modifier::BOLD),
+    )];
+
+    for (f, label) in &fields {
+        let selected = sort.field == *f;
+        let style = chip_style(selected);
+        let arrow = if selected { sort.direction.arrow() } else { "" };
+        spans.push(Span::styled(format!(" {label}{arrow} "), style));
         spans.push(Span::raw(" "));
     }
 

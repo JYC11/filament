@@ -4,7 +4,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 use filament_core::models::{EntityStatus, EntityType, Priority};
 
-use crate::app::{App, FilterBar, Tab};
+use crate::app::{App, FilterBar, SortField, Tab};
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -64,40 +64,20 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
     }
 
     // Global navigation keys (only when no filter bar is open)
-    match key.code {
-        KeyCode::Tab => {
-            app.active_tab = app.active_tab.next();
-            return;
-        }
-        KeyCode::BackTab => {
-            app.active_tab = app.active_tab.prev();
-            return;
-        }
-        KeyCode::Char('1') => {
-            app.active_tab = Tab::Entities;
-            return;
-        }
-        KeyCode::Char('2') => {
-            app.active_tab = Tab::Agents;
-            return;
-        }
-        KeyCode::Char('3') => {
-            app.active_tab = Tab::Reservations;
-            return;
-        }
-        KeyCode::Char('4') => {
-            app.active_tab = Tab::Messages;
-            return;
-        }
-        KeyCode::Char('5') => {
-            app.active_tab = Tab::Config;
-            return;
-        }
-        KeyCode::Char('6') => {
-            app.active_tab = Tab::Analytics;
-            return;
-        }
-        _ => {}
+    let new_tab = match key.code {
+        KeyCode::Tab => Some(app.active_tab.next()),
+        KeyCode::BackTab => Some(app.active_tab.prev()),
+        KeyCode::Char('1') => Some(Tab::Entities),
+        KeyCode::Char('2') => Some(Tab::Agents),
+        KeyCode::Char('3') => Some(Tab::Reservations),
+        KeyCode::Char('4') => Some(Tab::Messages),
+        KeyCode::Char('5') => Some(Tab::Config),
+        KeyCode::Char('6') => Some(Tab::Analytics),
+        _ => None,
+    };
+    if let Some(tab) = new_tab {
+        app.active_tab = tab;
+        return;
     }
 
     // Tab-specific keys
@@ -113,6 +93,9 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('P') if app.active_tab == Tab::Entities => {
             app.filter.active_bar = Some(FilterBar::Priority);
+        }
+        KeyCode::Char('s') if app.active_tab == Tab::Entities => {
+            app.filter.active_bar = Some(FilterBar::Sort);
         }
         KeyCode::Char('F') if app.active_tab == Tab::Entities => {
             app.filter.toggle_ready_only();
@@ -132,6 +115,9 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
             app.agent_show_history = !app.agent_show_history;
             app.refresh_agents().await;
         }
+        KeyCode::Enter if app.active_tab == Tab::Analytics => {
+            app.refresh_analytics().await;
+        }
         _ => {}
     }
 }
@@ -147,6 +133,12 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
 
 async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
     let bar = app.filter.active_bar.expect("bar is Some");
+
+    // Sort bar has its own handling
+    if bar == FilterBar::Sort {
+        handle_sort_bar_key(app, key).await;
+        return;
+    }
 
     match key.code {
         KeyCode::Esc => {
@@ -167,6 +159,7 @@ async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
                 FilterBar::Type => app.filter.clear_types(),
                 FilterBar::Status => app.filter.clear_statuses(),
                 FilterBar::Priority => app.filter.clear_priorities(),
+                FilterBar::Sort => unreachable!(),
             }
             app.reset_page();
             app.refresh_entities().await;
@@ -212,6 +205,33 @@ async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
                         }
                     }
                 }
+                FilterBar::Sort => unreachable!(),
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn handle_sort_bar_key(app: &mut App, key: KeyEvent) {
+    const SORT_FIELDS: [SortField; 6] = [
+        SortField::Name,
+        SortField::Priority,
+        SortField::Status,
+        SortField::Updated,
+        SortField::Created,
+        SortField::Impact,
+    ];
+
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('s') => {
+            app.filter.active_bar = None;
+        }
+        KeyCode::Char(c @ '1'..='6') => {
+            let idx = (c as u8 - b'1') as usize;
+            if let Some(&field) = SORT_FIELDS.get(idx) {
+                app.sort.set_field(field);
+                app.reset_page();
+                app.refresh_entities().await;
             }
         }
         _ => {}

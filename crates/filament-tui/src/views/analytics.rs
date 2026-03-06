@@ -1,6 +1,6 @@
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::widgets::{Block, Borders, Cell, Row, Table};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 
 use filament_core::types::EntityId;
 
@@ -8,9 +8,23 @@ use filament_core::types::EntityId;
 pub struct AnalyticsData {
     pub pagerank: Vec<(EntityId, String, f64)>,
     pub degree: Vec<(EntityId, String, usize, usize, usize)>,
+    pub calculated: bool,
 }
 
 pub fn render_analytics(data: &AnalyticsData, frame: &mut ratatui::Frame, area: Rect) {
+    if !data.calculated {
+        let hint = Paragraph::new("Press Enter to calculate analytics")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Analytics "),
+            );
+        frame.render_widget(hint, area);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])

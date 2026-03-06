@@ -31,7 +31,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     draw_tab_bar(frame, app, chunks[0]);
 
     if has_filter_bar {
-        filter_bar::render_filter_bar(&app.filter, frame, chunks[1]);
+        filter_bar::render_filter_bar(&app.filter, &app.sort, frame, chunks[1]);
         draw_content(frame, app, chunks[2]);
         draw_status_bar(frame, app, chunks[3]);
     } else {
@@ -72,15 +72,14 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
         Tab::Entities => {
             let visible = app.visible_entities();
             let mut state = app.entity_table_state.clone();
-            entities::render_entity_table_stateful(
+            let table = entities::render_entity_table(
                 visible,
                 &app.filter,
+                &app.sort,
                 app.page,
                 app.total_pages(),
-                &mut state,
-                frame,
-                table_area,
             );
+            entities::render_entity_table_stateful(table, &mut state, frame, table_area);
             app.entity_table_state = state;
 
             if let (Some(detail_data), Some(d_area)) = (&app.detail, detail_area) {
@@ -155,9 +154,10 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             " | q:quit Esc:close j/k:scroll"
         }
         Tab::Entities => {
-            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri F:ready n/p:page Enter:detail"
+            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri s:sort F:ready n/p:page Enter:detail"
         }
         Tab::Agents => " | q:quit Tab:switch r:refresh j/k:nav h:history",
+        Tab::Analytics => " | q:quit Tab:switch r:refresh Enter:calculate",
         _ => " | q:quit Tab:switch r:refresh j/k:nav",
     };
 

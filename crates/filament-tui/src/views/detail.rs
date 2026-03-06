@@ -3,6 +3,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
+use std::collections::HashMap;
+
 use filament_core::models::{Entity, EntityType, Event, LessonFields, Relation};
 use filament_core::types::EntityId;
 
@@ -11,6 +13,8 @@ pub struct DetailData {
     pub relations: Vec<Relation>,
     pub events: Vec<Event>,
     pub critical_path: Vec<EntityId>,
+    /// Maps entity ID -> "slug name" for human-readable display of related entities.
+    pub name_map: HashMap<String, String>,
 }
 
 pub fn render_detail(data: &DetailData, scroll: u16, frame: &mut ratatui::Frame, area: Rect) {
@@ -86,18 +90,27 @@ fn build_detail_lines(data: &DetailData) -> Vec<Line<'static>> {
     // Critical path (tasks only)
     if entity.entity_type() == EntityType::Task && !data.critical_path.is_empty() {
         lines.push(section_header("Critical Path"));
-        let chain: Vec<String> = data.critical_path.iter().map(ToString::to_string).collect();
+        let chain: Vec<String> = data
+            .critical_path
+            .iter()
+            .map(|id| resolve_name(&data.name_map, id.as_str()))
+            .collect();
         lines.push(Line::from(format!("  {}", chain.join(" -> "))));
         lines.push(Line::from(""));
     }
 
-    append_relations(&mut lines, entity, &data.relations);
+    append_relations(&mut lines, entity, &data.relations, &data.name_map);
     append_events(&mut lines, &data.events);
 
     lines
 }
 
-fn append_relations(lines: &mut Vec<Line<'static>>, entity: &Entity, relations: &[Relation]) {
+fn append_relations(
+    lines: &mut Vec<Line<'static>>,
+    entity: &Entity,
+    relations: &[Relation],
+    name_map: &HashMap<String, String>,
+) {
     if relations.is_empty() {
         return;
     }
@@ -108,6 +121,7 @@ fn append_relations(lines: &mut Vec<Line<'static>>, entity: &Entity, relations: 
         } else {
             ("<-", &rel.source_id)
         };
+        let other_label = resolve_name(name_map, other_id.as_str());
         let rel_type = rel.relation_type.as_str();
         let summary_suffix = if rel.summary.is_empty() {
             String::new()
@@ -115,7 +129,7 @@ fn append_relations(lines: &mut Vec<Line<'static>>, entity: &Entity, relations: 
             format!(" ({})", rel.summary)
         };
         lines.push(Line::from(format!(
-            "  {direction} {rel_type} {other_id}{summary_suffix}"
+            "  {direction} {rel_type} {other_label}{summary_suffix}"
         )));
     }
     lines.push(Line::from(""));
@@ -164,6 +178,13 @@ fn status_style(status: filament_core::models::EntityStatus) -> Style {
         filament_core::models::EntityStatus::Blocked => Style::default().fg(Color::Red),
         filament_core::models::EntityStatus::Closed => Style::default().fg(Color::DarkGray),
     }
+}
+
+fn resolve_name(name_map: &HashMap<String, String>, id: &str) -> String {
+    name_map
+        .get(id)
+        .cloned()
+        .unwrap_or_else(|| id.to_string())
 }
 
 fn summarize_diff(diff_json: &str) -> String {
