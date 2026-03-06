@@ -495,6 +495,16 @@ impl FilamentConnection {
         }
     }
 
+    pub async fn list_all_agent_runs(
+        &mut self,
+        limit: u32,
+    ) -> Result<Vec<crate::models::AgentRun>> {
+        match self {
+            Self::Direct(s) => store::list_all_agent_runs(s.pool(), limit).await,
+            Self::Socket(c) => c.list_all_agent_runs(limit).await,
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Graph dispatch methods
     // -----------------------------------------------------------------------

@@ -193,12 +193,16 @@ fn tab_switching() {
     assert_eq!(Tab::Entities.next(), Tab::Agents);
     assert_eq!(Tab::Agents.next(), Tab::Reservations);
     assert_eq!(Tab::Reservations.next(), Tab::Messages);
-    assert_eq!(Tab::Messages.next(), Tab::Entities);
+    assert_eq!(Tab::Messages.next(), Tab::Config);
+    assert_eq!(Tab::Config.next(), Tab::Analytics);
+    assert_eq!(Tab::Analytics.next(), Tab::Entities);
 
-    assert_eq!(Tab::Entities.prev(), Tab::Messages);
+    assert_eq!(Tab::Entities.prev(), Tab::Analytics);
     assert_eq!(Tab::Agents.prev(), Tab::Entities);
     assert_eq!(Tab::Reservations.prev(), Tab::Agents);
     assert_eq!(Tab::Messages.prev(), Tab::Reservations);
+    assert_eq!(Tab::Config.prev(), Tab::Messages);
+    assert_eq!(Tab::Analytics.prev(), Tab::Config);
 }
 
 #[tokio::test]
@@ -554,6 +558,69 @@ async fn detail_scroll() {
     assert_eq!(app.detail_scroll, 0);
     app.scroll_detail_up(); // should not go below 0
     assert_eq!(app.detail_scroll, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Config tab
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn config_tab_renders() {
+    let conn = test_conn().await;
+    let mut app = App::new(conn);
+    app.load_config(None); // loads defaults
+    app.active_tab = Tab::Config;
+
+    let backend = TestBackend::new(80, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
+        .unwrap();
+
+    let output = buffer_to_string(&terminal);
+    assert!(
+        output.contains("Key"),
+        "config tab should show Key header: {output}"
+    );
+    assert!(
+        output.contains("Value"),
+        "config tab should show Value header: {output}"
+    );
+    assert!(
+        output.contains("default_priority"),
+        "config tab should show default_priority row: {output}"
+    );
+    assert!(
+        output.contains("default"),
+        "config tab should show 'default' source: {output}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Analytics tab
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn analytics_tab_renders() {
+    let conn = test_conn().await;
+    let mut app = App::new(conn);
+    app.active_tab = Tab::Analytics;
+
+    let backend = TestBackend::new(80, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| filament_tui::ui::draw(frame, &mut app))
+        .unwrap();
+
+    let output = buffer_to_string(&terminal);
+    assert!(
+        output.contains("PageRank"),
+        "analytics tab should show PageRank: {output}"
+    );
+    assert!(
+        output.contains("Degree"),
+        "analytics tab should show Degree Centrality: {output}"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 
 use filament_core::models::{AgentRun, AgentStatus};
 
-pub fn render_agent_table(runs: &[AgentRun]) -> Table<'_> {
+pub fn render_agent_table(runs: &[AgentRun], show_history: bool) -> Table<'_> {
     let header = Row::new(vec![
         Cell::from("Task ID"),
         Cell::from("Role"),
@@ -50,17 +50,22 @@ pub fn render_agent_table(runs: &[AgentRun]) -> Table<'_> {
         ],
     )
     .header(header)
-    .block(Block::default().borders(Borders::ALL).title(" Agents "))
+    .block(Block::default().borders(Borders::ALL).title(if show_history {
+        " Agents (history) "
+    } else {
+        " Agents (running) "
+    }))
     .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
 }
 
 pub fn render_agent_table_stateful(
     runs: &[AgentRun],
+    show_history: bool,
     state: &mut TableState,
     frame: &mut ratatui::Frame,
     area: ratatui::layout::Rect,
 ) {
-    let table = render_agent_table(runs);
+    let table = render_agent_table(runs, show_history);
     frame.render_stateful_widget(table, area, state);
 }
 

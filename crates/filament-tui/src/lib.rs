@@ -56,6 +56,9 @@ async fn run_app(conn: FilamentConnection) -> Result<()> {
     let mut terminal = Terminal::new(backend).map_err(FilamentError::Io)?;
 
     let mut app = App::new(conn);
+    // Load config from current directory (best effort)
+    let cwd = std::env::current_dir().ok();
+    app.load_config(cwd.as_deref());
     app.refresh_all().await;
 
     loop {

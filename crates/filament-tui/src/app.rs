@@ -4,10 +4,12 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use ratatui::widgets::TableState;
 
+use filament_core::config::{FilamentConfig, OutputFormat};
 use filament_core::connection::FilamentConnection;
 use filament_core::dto::Escalation;
 use filament_core::models::{AgentRun, Entity, EntityStatus, EntityType, Priority, Reservation};
 
+use crate::views::analytics::AnalyticsData;
 use crate::views::detail::DetailData;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
@@ -19,14 +21,18 @@ pub enum Tab {
     Agents,
     Reservations,
     Messages,
+    Config,
+    Analytics,
 }
 
 impl Tab {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 6] = [
         Self::Entities,
         Self::Agents,
         Self::Reservations,
         Self::Messages,
+        Self::Config,
+        Self::Analytics,
     ];
 
     #[must_use]
@@ -35,17 +41,21 @@ impl Tab {
             Self::Entities => Self::Agents,
             Self::Agents => Self::Reservations,
             Self::Reservations => Self::Messages,
-            Self::Messages => Self::Entities,
+            Self::Messages => Self::Config,
+            Self::Config => Self::Analytics,
+            Self::Analytics => Self::Entities,
         }
     }
 
     #[must_use]
     pub const fn prev(self) -> Self {
         match self {
-            Self::Entities => Self::Messages,
+            Self::Entities => Self::Analytics,
             Self::Agents => Self::Entities,
             Self::Reservations => Self::Agents,
             Self::Messages => Self::Reservations,
+            Self::Config => Self::Messages,
+            Self::Analytics => Self::Config,
         }
     }
 
@@ -56,6 +66,8 @@ impl Tab {
             Self::Agents => "Agents",
             Self::Reservations => "Reservations",
             Self::Messages => "Messages",
+            Self::Config => "Config",
+            Self::Analytics => "Analytics",
         }
     }
 
@@ -66,6 +78,8 @@ impl Tab {
             Self::Agents => 1,
             Self::Reservations => 2,
             Self::Messages => 3,
+            Self::Config => 4,
+            Self::Analytics => 5,
         }
     }
 }
@@ -223,6 +237,11 @@ pub struct App {
     pub last_refresh: DateTime<Utc>,
     pub status_message: Option<String>,
     pub escalation_count: usize,
+    pub config_rows: Vec<(String, String, String)>,
+    pub config_table_state: TableState,
+    pub analytics: AnalyticsData,
+    pub agent_show_history: bool,
+    pub has_cycle: bool,
     last_tick: Instant,
 }
 
@@ -249,6 +268,11 @@ impl App {
             last_refresh: Utc::now(),
             status_message: None,
             escalation_count: 0,
+            config_rows: Vec::new(),
+            config_table_state: TableState::default(),
+            analytics: AnalyticsData::default(),
+            agent_show_history: false,
+            has_cycle: false,
             last_tick: Instant::now(),
         }
     }
@@ -262,6 +286,7 @@ impl App {
         self.refresh_agents().await;
         self.refresh_reservations().await;
         self.refresh_messages().await;
+        self.refresh_health().await;
         self.last_refresh = Utc::now();
         self.last_tick = Instant::now();
     }
@@ -361,7 +386,12 @@ impl App {
     }
 
     pub async fn refresh_agents(&mut self) {
-        match self.conn.list_running_agents().await {
+        let result = if self.agent_show_history {
+            self.conn.list_all_agent_runs(100).await
+        } else {
+            self.conn.list_running_agents().await
+        };
+        match result {
             Ok(runs) => {
                 self.agent_runs = runs;
             }
@@ -382,6 +412,87 @@ impl App {
         }
     }
 
+    pub fn load_config(&mut self, project_root: Option<&std::path::Path>) {
+        let config = project_root.map_or_else(FilamentConfig::default, FilamentConfig::load);
+        let output_fmt = match config.output_format {
+            Some(OutputFormat::Json) => "json",
+            Some(OutputFormat::Text) | None => "text",
+        };
+
+        self.config_rows = vec![
+            (
+                "default_priority".to_string(),
+                config.resolve_default_priority().to_string(),
+                source_label(config.default_priority.is_some()),
+            ),
+            (
+                "output_format".to_string(),
+                output_fmt.to_string(),
+                source_label(config.output_format.is_some()),
+            ),
+            (
+                "agent_command".to_string(),
+                config.resolve_agent_command(),
+                source_label(config.agent_command.is_some()),
+            ),
+            (
+                "auto_dispatch".to_string(),
+                config.resolve_auto_dispatch().to_string(),
+                source_label(config.auto_dispatch.is_some()),
+            ),
+            (
+                "context_depth".to_string(),
+                config.resolve_context_depth().to_string(),
+                source_label(config.context_depth.is_some()),
+            ),
+            (
+                "max_auto_dispatch".to_string(),
+                config.resolve_max_auto_dispatch().to_string(),
+                source_label(config.max_auto_dispatch.is_some()),
+            ),
+            (
+                "cleanup_interval_secs".to_string(),
+                config.resolve_cleanup_interval_secs().to_string(),
+                source_label(config.cleanup_interval_secs.is_some()),
+            ),
+        ];
+    }
+
+    pub async fn refresh_analytics(&mut self) {
+        let mut pagerank_data = Vec::new();
+        if let Ok(scores) = self.conn.pagerank(None, None).await {
+            for (id, score) in &scores {
+                let name = self
+                    .conn
+                    .get_entity(id.as_str())
+                    .await
+                    .map_or_else(|_| id.to_string(), |e| e.name().to_string());
+                pagerank_data.push((id.clone(), name, *score));
+            }
+            pagerank_data.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            pagerank_data.truncate(20);
+        }
+
+        let mut degree_data = Vec::new();
+        if let Ok(degrees) = self.conn.degree_centrality().await {
+            for (id, (in_deg, out_deg, total)) in &degrees {
+                let name = self
+                    .conn
+                    .get_entity(id.as_str())
+                    .await
+                    .map_or_else(|_| id.to_string(), |e| e.name().to_string());
+                degree_data.push((id.clone(), name, *in_deg, *out_deg, *total));
+            }
+            degree_data.sort_by(|a, b| b.4.cmp(&a.4));
+            degree_data.truncate(20);
+        }
+
+        self.analytics = AnalyticsData {
+            pagerank: pagerank_data,
+            degree: degree_data,
+        };
+    }
+
     pub async fn refresh_messages(&mut self) {
         if let Ok(items) = self.conn.list_pending_escalations().await {
             self.escalation_count = items.len();
@@ -390,6 +501,10 @@ impl App {
             self.escalation_count = 0;
             self.messages = Vec::new();
         }
+    }
+
+    pub async fn refresh_health(&mut self) {
+        self.has_cycle = self.conn.check_cycle().await.unwrap_or(false);
     }
 
     pub fn select_next(&mut self) {
@@ -422,6 +537,8 @@ impl App {
             Tab::Agents => self.agent_runs.len(),
             Tab::Reservations => self.reservations.len(),
             Tab::Messages => self.messages.len(),
+            Tab::Config => self.config_rows.len(),
+            Tab::Analytics => 0, // Analytics has no selectable rows
         }
     }
 
@@ -431,6 +548,7 @@ impl App {
             Tab::Agents => &mut self.agent_table_state,
             Tab::Reservations => &mut self.reservation_table_state,
             Tab::Messages => &mut self.message_table_state,
+            Tab::Config | Tab::Analytics => &mut self.config_table_state,
         }
     }
 
@@ -549,4 +667,8 @@ impl App {
     pub const fn scroll_detail_up(&mut self) {
         self.detail_scroll = self.detail_scroll.saturating_sub(1);
     }
+}
+
+fn source_label(from_config: bool) -> String {
+    if from_config { "config".to_string() } else { "default".to_string() }
 }

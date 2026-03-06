@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::{App, Tab};
-use crate::views::{agents, detail, entities, filter_bar, messages, reservations};
+use crate::views::{agents, analytics, config, detail, entities, filter_bar, messages, reservations};
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let has_filter_bar = app.active_tab == Tab::Entities && app.filter.active_bar.is_some();
@@ -89,7 +89,13 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
         }
         Tab::Agents => {
             let mut state = app.agent_table_state.clone();
-            agents::render_agent_table_stateful(&app.agent_runs, &mut state, frame, table_area);
+            agents::render_agent_table_stateful(
+                &app.agent_runs,
+                app.agent_show_history,
+                &mut state,
+                frame,
+                table_area,
+            );
             app.agent_table_state = state;
         }
         Tab::Reservations => {
@@ -106,6 +112,14 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
             let mut state = app.message_table_state.clone();
             messages::render_message_table_stateful(&app.messages, &mut state, frame, table_area);
             app.message_table_state = state;
+        }
+        Tab::Config => {
+            let mut state = app.config_table_state.clone();
+            config::render_config_table(&app.config_rows, &mut state, frame, table_area);
+            app.config_table_state = state;
+        }
+        Tab::Analytics => {
+            analytics::render_analytics(&app.analytics, frame, table_area);
         }
     }
 }
@@ -143,7 +157,20 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Tab::Entities => {
             " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri F:ready n/p:page Enter:detail"
         }
+        Tab::Agents => " | q:quit Tab:switch r:refresh j/k:nav h:history",
         _ => " | q:quit Tab:switch r:refresh j/k:nav",
+    };
+
+    let entity_count = app.entities.len();
+    let health_span = if app.has_cycle {
+        Span::styled(
+            format!(" {entity_count} entities ⚠ cycle "),
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::raw(format!(" {entity_count} entities "))
     };
 
     let line = Line::from(vec![
@@ -155,7 +182,8 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         escalation_span,
-        Span::raw(format!(" refreshed {refresh_time} ")),
+        health_span,
+        Span::raw(format!("refreshed {refresh_time} ")),
         Span::styled(status_text, Style::default().fg(Color::Yellow)),
         Span::raw(help_text),
     ]);

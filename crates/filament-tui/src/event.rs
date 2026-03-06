@@ -89,6 +89,14 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
             app.active_tab = Tab::Messages;
             return;
         }
+        KeyCode::Char('5') => {
+            app.active_tab = Tab::Config;
+            return;
+        }
+        KeyCode::Char('6') => {
+            app.active_tab = Tab::Analytics;
+            return;
+        }
         _ => {}
     }
 
@@ -119,6 +127,10 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Enter if app.active_tab == Tab::Entities => {
             app.open_detail().await;
+        }
+        KeyCode::Char('h') if app.active_tab == Tab::Agents => {
+            app.agent_show_history = !app.agent_show_history;
+            app.refresh_agents().await;
         }
         _ => {}
     }

@@ -1,4 +1,6 @@
 pub mod agents;
+pub mod analytics;
+pub mod config;
 pub mod detail;
 pub mod entities;
 pub mod filter_bar;
