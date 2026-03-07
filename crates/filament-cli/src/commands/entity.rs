@@ -2,7 +2,7 @@ use std::path::Path;
 
 use clap::Args;
 use filament_core::config::FilamentConfig;
-use filament_core::dto::CreateEntityRequest;
+use filament_core::dto::{ChangesetCommon, CreateEntityRequest, EntityChangeset};
 use filament_core::error::Result;
 use filament_core::models::{EntityType, LessonFields, Priority};
 
@@ -114,21 +114,23 @@ pub async fn add(cli: &Cli, args: &AddArgs) -> Result<()> {
             ))
         })?;
 
-    let req = CreateEntityRequest {
-        name: args.name.clone(),
-        entity_type: args.r#type,
-        summary: Some(args.summary.clone()),
-        key_facts,
-        content_path: args.content.clone(),
-        priority: {
-            let p = args.priority.unwrap_or_else(|| {
-                find_project_root()
-                    .map(|r| FilamentConfig::load(&r).resolve_default_priority())
-                    .unwrap_or(2)
-            });
-            Some(Priority::new(p)?)
-        },
+    let priority = {
+        let p = args.priority.unwrap_or_else(|| {
+            find_project_root()
+                .map(|r| FilamentConfig::load(&r).resolve_default_priority())
+                .unwrap_or(2)
+        });
+        Some(Priority::new(p)?)
     };
+
+    let req = CreateEntityRequest::from_parts(
+        args.r#type,
+        args.name.clone(),
+        Some(args.summary.clone()),
+        priority,
+        key_facts,
+        args.content.clone(),
+    )?;
 
     let (id, slug) = conn.create_entity(req).await?;
 
@@ -167,15 +169,18 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
     let id = entity.id().clone();
     let expected_version = args.version.unwrap_or_else(|| entity.common().version);
 
-    let changeset = filament_core::dto::EntityChangeset {
-        name: None,
-        summary: args.summary.clone(),
-        status: args.status,
-        priority: None,
-        key_facts: None,
-        content_path: None,
-        expected_version,
-    };
+    let changeset = EntityChangeset::for_type(
+        entity.entity_type(),
+        ChangesetCommon {
+            name: None,
+            summary: args.summary.clone(),
+            status: args.status,
+            priority: None,
+            key_facts: None,
+            expected_version,
+        },
+        None,
+    );
 
     match conn.update_entity(id.as_str(), &changeset).await {
         Ok(updated) => {
@@ -361,15 +366,18 @@ pub async fn resolve(cli: &Cli, args: &ResolveArgs) -> Result<()> {
         return Ok(());
     }
 
-    let changeset = filament_core::dto::EntityChangeset {
-        name: None,
-        summary: args.summary.clone(),
-        status: args.status,
-        priority: None,
-        key_facts: None,
-        content_path: None,
-        expected_version: c.version,
-    };
+    let changeset = EntityChangeset::for_type(
+        entity.entity_type(),
+        ChangesetCommon {
+            name: None,
+            summary: args.summary.clone(),
+            status: args.status,
+            priority: None,
+            key_facts: None,
+            expected_version: c.version,
+        },
+        None,
+    );
 
     let updated = conn.update_entity(c.id.as_str(), &changeset).await?;
     let uc = updated.common();

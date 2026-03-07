@@ -183,6 +183,7 @@ async fn tool_inspect_entity() {
                 "name": "inspect-me",
                 "entity_type": "doc",
                 "summary": "A doc to inspect",
+                "content_path": "docs/inspect.md",
             }),
         ))
         .await

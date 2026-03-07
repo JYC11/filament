@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::FilamentError;
 use crate::models::{
-    AgentStatus, Entity, EntityId, EntityStatus, EntityType, Event, Message, MessageId,
-    MessageType, NonEmptyString, Priority, Relation, Weight,
+    AgentStatus, Entity, EntityId, EntityStatus, EntityType, Event, LessonFields, Message,
+    MessageId, MessageType, NonEmptyString, Priority, Relation, Weight,
 };
 
 // ---------------------------------------------------------------------------
@@ -106,42 +106,120 @@ pub struct SearchResult {
 // Entity changeset (optimistic conflict resolution)
 // ---------------------------------------------------------------------------
 
-/// Captures which fields are being changed in an entity update.
+/// Shared changeset fields for all entity types.
 ///
 /// `None` means "don't change this field"; `Some(v)` means "set to v".
 /// `expected_version` is always required — callers must read the entity first.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EntityChangeset {
+pub struct ChangesetCommon {
     pub name: Option<NonEmptyString>,
     pub summary: Option<String>,
     pub status: Option<EntityStatus>,
     pub priority: Option<Priority>,
     pub key_facts: Option<String>,
-    pub content_path: Option<String>,
     pub expected_version: i64,
 }
 
+/// Changeset for entity types where `content_path` can be set or cleared
+/// (Task, Module, Service, Agent, Lesson).
+///
+/// - `None` → don't touch
+/// - `Some(None)` → clear to NULL
+/// - `Some(Some(v))` → set to v
+#[derive(Debug, Clone)]
+pub struct ContentClearableChangeset {
+    pub common: ChangesetCommon,
+    pub content_path: Option<Option<String>>,
+}
+
+/// Changeset for entity types where `content_path` can be changed but never cleared
+/// (Doc, Plan — content is always required).
+///
+/// - `None` → don't touch
+/// - `Some(v)` → change to v
+#[derive(Debug, Clone)]
+pub struct ContentRequiredChangeset {
+    pub common: ChangesetCommon,
+    pub content_path: Option<String>,
+}
+
+/// Typed entity changeset — enforces `content_path` policy per entity type.
+#[derive(Debug, Clone)]
+pub enum EntityChangeset {
+    Task(ContentClearableChangeset),
+    Module(ContentClearableChangeset),
+    Service(ContentClearableChangeset),
+    Agent(ContentClearableChangeset),
+    Plan(ContentRequiredChangeset),
+    Doc(ContentRequiredChangeset),
+    Lesson(ContentClearableChangeset),
+}
+
 impl EntityChangeset {
+    /// Access the common changeset fields.
+    #[must_use]
+    pub const fn common(&self) -> &ChangesetCommon {
+        match self {
+            Self::Task(v)
+            | Self::Module(v)
+            | Self::Service(v)
+            | Self::Agent(v)
+            | Self::Lesson(v) => &v.common,
+            Self::Plan(v) | Self::Doc(v) => &v.common,
+        }
+    }
+
+    /// Returns the resolved `content_path` for SQL:
+    /// - `None` → keep existing value
+    /// - `Some(None)` → clear to NULL
+    /// - `Some(Some(v))` → set to v
+    #[must_use]
+    pub fn content_path_for_sql(&self) -> Option<Option<&str>> {
+        match self {
+            Self::Task(v)
+            | Self::Module(v)
+            | Self::Service(v)
+            | Self::Agent(v)
+            | Self::Lesson(v) => v.content_path.as_ref().map(|opt| opt.as_deref()),
+            Self::Plan(v) | Self::Doc(v) => v.content_path.as_deref().map(Some),
+        }
+    }
+
+    /// Returns the entity type implied by the variant.
+    #[must_use]
+    pub const fn entity_type(&self) -> EntityType {
+        match self {
+            Self::Task(_) => EntityType::Task,
+            Self::Module(_) => EntityType::Module,
+            Self::Service(_) => EntityType::Service,
+            Self::Agent(_) => EntityType::Agent,
+            Self::Plan(_) => EntityType::Plan,
+            Self::Doc(_) => EntityType::Doc,
+            Self::Lesson(_) => EntityType::Lesson,
+        }
+    }
+
     /// Returns the names of fields that have values set (i.e., are being changed).
     #[must_use]
     pub fn changed_field_names(&self) -> Vec<&str> {
+        let common = self.common();
         let mut fields = Vec::new();
-        if self.name.is_some() {
+        if common.name.is_some() {
             fields.push("name");
         }
-        if self.summary.is_some() {
+        if common.summary.is_some() {
             fields.push("summary");
         }
-        if self.status.is_some() {
+        if common.status.is_some() {
             fields.push("status");
         }
-        if self.priority.is_some() {
+        if common.priority.is_some() {
             fields.push("priority");
         }
-        if self.key_facts.is_some() {
+        if common.key_facts.is_some() {
             fields.push("key_facts");
         }
-        if self.content_path.is_some() {
+        if self.content_path_for_sql().is_some() {
             fields.push("content_path");
         }
         fields
@@ -149,29 +227,238 @@ impl EntityChangeset {
 
     /// Returns true if no fields are being changed.
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.name.is_none()
-            && self.summary.is_none()
-            && self.status.is_none()
-            && self.priority.is_none()
-            && self.key_facts.is_none()
-            && self.content_path.is_none()
+    pub fn is_empty(&self) -> bool {
+        let common = self.common();
+        common.name.is_none()
+            && common.summary.is_none()
+            && common.status.is_none()
+            && common.priority.is_none()
+            && common.key_facts.is_none()
+            && self.content_path_for_sql().is_none()
+    }
+
+    /// Construct the right changeset variant from flat parts, based on entity type.
+    ///
+    /// `content_path` of `None` means "don't change"; `Some(v)` means "set to v".
+    /// Use variant constructors directly for clearing `content_path` on clearable types.
+    pub fn for_type(
+        entity_type: EntityType,
+        common: ChangesetCommon,
+        content_path: Option<String>,
+    ) -> Self {
+        match entity_type {
+            EntityType::Plan => Self::Plan(ContentRequiredChangeset {
+                common,
+                content_path,
+            }),
+            EntityType::Doc => Self::Doc(ContentRequiredChangeset {
+                common,
+                content_path,
+            }),
+            EntityType::Task => Self::Task(ContentClearableChangeset {
+                common,
+                content_path: content_path.map(Some),
+            }),
+            EntityType::Module => Self::Module(ContentClearableChangeset {
+                common,
+                content_path: content_path.map(Some),
+            }),
+            EntityType::Service => Self::Service(ContentClearableChangeset {
+                common,
+                content_path: content_path.map(Some),
+            }),
+            EntityType::Agent => Self::Agent(ContentClearableChangeset {
+                common,
+                content_path: content_path.map(Some),
+            }),
+            EntityType::Lesson => Self::Lesson(ContentClearableChangeset {
+                common,
+                content_path: content_path.map(Some),
+            }),
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Validated DTOs (boundary validation via TryFrom)
+// Entity creation (typed per entity type)
 // ---------------------------------------------------------------------------
 
+/// Shared fields for all entity creation requests.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateEntityRequest {
+pub struct CreateCommon {
     pub name: String,
-    pub entity_type: EntityType,
     pub summary: Option<String>,
-    pub key_facts: Option<serde_json::Value>,
-    pub content_path: Option<String>,
     pub priority: Option<Priority>,
+    pub key_facts: Option<serde_json::Value>,
 }
+
+impl CreateCommon {
+    /// Convenience constructor with just a name (other fields default to None).
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            summary: None,
+            priority: None,
+            key_facts: None,
+        }
+    }
+}
+
+/// Creation data for entity types where `content_path` is optional
+/// (Task, Module, Service, Agent, Lesson).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateContentOptional {
+    #[serde(flatten)]
+    pub common: CreateCommon,
+    pub content_path: Option<String>,
+}
+
+/// Creation data for entity types where `content_path` is required (Doc, Plan).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateContentRequired {
+    #[serde(flatten)]
+    pub common: CreateCommon,
+    pub content_path: String,
+}
+
+/// Typed entity creation request — enforces per-type field requirements at compile time.
+///
+/// Content policy:
+/// - Task, Module, Service, Agent, Lesson: optional `content_path`
+/// - Doc, Plan: required `content_path`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "entity_type", rename_all = "snake_case")]
+pub enum CreateEntityRequest {
+    Task(CreateContentOptional),
+    Module(CreateContentOptional),
+    Service(CreateContentOptional),
+    Agent(CreateContentOptional),
+    Plan(CreateContentRequired),
+    Doc(CreateContentRequired),
+    Lesson(CreateContentOptional),
+}
+
+impl CreateEntityRequest {
+    /// Access the common fields shared by all creation requests.
+    #[must_use]
+    pub const fn common(&self) -> &CreateCommon {
+        match self {
+            Self::Task(v)
+            | Self::Module(v)
+            | Self::Service(v)
+            | Self::Agent(v)
+            | Self::Lesson(v) => &v.common,
+            Self::Plan(v) | Self::Doc(v) => &v.common,
+        }
+    }
+
+    /// Consume and return the common fields.
+    #[must_use]
+    pub fn into_common(self) -> CreateCommon {
+        match self {
+            Self::Task(v)
+            | Self::Module(v)
+            | Self::Service(v)
+            | Self::Agent(v)
+            | Self::Lesson(v) => v.common,
+            Self::Plan(v) | Self::Doc(v) => v.common,
+        }
+    }
+
+    /// Returns the entity type implied by the variant.
+    #[must_use]
+    pub const fn entity_type(&self) -> EntityType {
+        match self {
+            Self::Task(_) => EntityType::Task,
+            Self::Module(_) => EntityType::Module,
+            Self::Service(_) => EntityType::Service,
+            Self::Agent(_) => EntityType::Agent,
+            Self::Plan(_) => EntityType::Plan,
+            Self::Doc(_) => EntityType::Doc,
+            Self::Lesson(_) => EntityType::Lesson,
+        }
+    }
+
+    /// Returns the `content_path` if one is set.
+    #[must_use]
+    pub fn content_path(&self) -> Option<&str> {
+        match self {
+            Self::Task(v)
+            | Self::Module(v)
+            | Self::Service(v)
+            | Self::Agent(v)
+            | Self::Lesson(v) => v.content_path.as_deref(),
+            Self::Plan(v) | Self::Doc(v) => Some(&v.content_path),
+        }
+    }
+
+    /// Construct the right creation variant from flat parts, based on entity type.
+    ///
+    /// Returns an error if Doc/Plan is missing `content_path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FilamentError::Validation` if a Doc or Plan is created without a `content_path`.
+    pub fn from_parts(
+        entity_type: EntityType,
+        name: String,
+        summary: Option<String>,
+        priority: Option<Priority>,
+        key_facts: Option<serde_json::Value>,
+        content_path: Option<String>,
+    ) -> std::result::Result<Self, FilamentError> {
+        let common = CreateCommon {
+            name,
+            summary,
+            priority,
+            key_facts,
+        };
+        match entity_type {
+            EntityType::Task => Ok(Self::Task(CreateContentOptional {
+                common,
+                content_path,
+            })),
+            EntityType::Module => Ok(Self::Module(CreateContentOptional {
+                common,
+                content_path,
+            })),
+            EntityType::Service => Ok(Self::Service(CreateContentOptional {
+                common,
+                content_path,
+            })),
+            EntityType::Agent => Ok(Self::Agent(CreateContentOptional {
+                common,
+                content_path,
+            })),
+            EntityType::Plan => {
+                let path = content_path.ok_or_else(|| {
+                    FilamentError::Validation("plan requires --content path".into())
+                })?;
+                Ok(Self::Plan(CreateContentRequired {
+                    common,
+                    content_path: path,
+                }))
+            }
+            EntityType::Doc => {
+                let path = content_path.ok_or_else(|| {
+                    FilamentError::Validation("doc requires --content path".into())
+                })?;
+                Ok(Self::Doc(CreateContentRequired {
+                    common,
+                    content_path: path,
+                }))
+            }
+            EntityType::Lesson => Ok(Self::Lesson(CreateContentOptional {
+                common,
+                content_path,
+            })),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Validated creation DTO (boundary validation via TryFrom)
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct ValidCreateEntityRequest {
@@ -187,16 +474,29 @@ impl TryFrom<CreateEntityRequest> for ValidCreateEntityRequest {
     type Error = FilamentError;
 
     fn try_from(req: CreateEntityRequest) -> std::result::Result<Self, Self::Error> {
-        let name = NonEmptyString::new(&req.name)
+        let entity_type = req.entity_type();
+        let content_path = req.content_path().map(String::from);
+        let common = req.into_common();
+
+        let name = NonEmptyString::new(&common.name)
             .map_err(|_| FilamentError::Validation("name cannot be empty".to_string()))?;
+
+        let key_facts = common.key_facts.unwrap_or_else(|| serde_json::json!({}));
+
+        // Lesson requires structured key_facts (problem, solution, learned).
+        if entity_type == EntityType::Lesson && LessonFields::from_key_facts(&key_facts).is_none() {
+            return Err(FilamentError::Validation(
+                "lesson requires problem, solution, and learned fields in key_facts".to_string(),
+            ));
+        }
 
         Ok(Self {
             name,
-            entity_type: req.entity_type,
-            summary: req.summary.unwrap_or_default(),
-            key_facts: req.key_facts.unwrap_or_else(|| serde_json::json!({})),
-            content_path: req.content_path,
-            priority: req.priority.unwrap_or(Priority::DEFAULT),
+            entity_type,
+            summary: common.summary.unwrap_or_default(),
+            key_facts,
+            content_path,
+            priority: common.priority.unwrap_or(Priority::DEFAULT),
         })
     }
 }

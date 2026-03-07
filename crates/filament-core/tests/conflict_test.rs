@@ -2,9 +2,9 @@ mod common;
 
 use common::{sample_entity_req, test_db};
 use filament_core::diff::{fields_in_diff, DiffBuilder};
-use filament_core::dto::EntityChangeset;
+use filament_core::dto::{ChangesetCommon, EntityChangeset};
 use filament_core::error::FilamentError;
-use filament_core::models::EntityStatus;
+use filament_core::models::{EntityStatus, EntityType};
 use filament_core::store::*;
 
 // ---------------------------------------------------------------------------
@@ -35,11 +35,15 @@ async fn update_bumps_version_from_0_to_1() {
     let entity = get_entity(store.pool(), &id).await.unwrap();
     assert_eq!(entity.common().version, 0);
 
-    let changeset = EntityChangeset {
-        summary: Some("updated summary".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let changeset = task_changeset(
+        None,
+        Some("updated summary".to_string()),
+        None,
+        None,
+        None,
+        None,
+        0,
+    );
 
     let updated = store
         .with_transaction(|conn| {
@@ -60,11 +64,7 @@ async fn update_with_matching_version_succeeds() {
     let id = create_test_entity(&store).await;
 
     // First update: 0 → 1
-    let cs1 = EntityChangeset {
-        summary: Some("v1".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs1 = task_changeset(None, Some("v1".to_string()), None, None, None, None, 0);
     let e1 = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -76,11 +76,7 @@ async fn update_with_matching_version_succeeds() {
     assert_eq!(e1.common().version, 1);
 
     // Second update: 1 → 2
-    let cs2 = EntityChangeset {
-        summary: Some("v2".to_string()),
-        expected_version: 1,
-        ..default_changeset()
-    };
+    let cs2 = task_changeset(None, Some("v2".to_string()), None, None, None, None, 1);
     let e2 = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -103,11 +99,15 @@ async fn auto_merge_non_overlapping_fields() {
     let id = create_test_entity(&store).await;
 
     // Agent A updates summary (version 0 → 1)
-    let cs_a = EntityChangeset {
-        summary: Some("agent-a summary".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_a = task_changeset(
+        None,
+        Some("agent-a summary".to_string()),
+        None,
+        None,
+        None,
+        None,
+        0,
+    );
     store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -118,11 +118,15 @@ async fn auto_merge_non_overlapping_fields() {
         .unwrap();
 
     // Agent B updates status, but still expects version 0 (stale read)
-    let cs_b = EntityChangeset {
-        status: Some(EntityStatus::InProgress),
-        expected_version: 0, // stale!
-        ..default_changeset()
-    };
+    let cs_b = task_changeset(
+        None,
+        None,
+        Some(EntityStatus::InProgress),
+        None,
+        None,
+        None,
+        0,
+    );
     let result = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -148,11 +152,15 @@ async fn conflict_on_overlapping_fields() {
     let id = create_test_entity(&store).await;
 
     // Agent A updates summary (version 0 → 1)
-    let cs_a = EntityChangeset {
-        summary: Some("agent-a summary".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_a = task_changeset(
+        None,
+        Some("agent-a summary".to_string()),
+        None,
+        None,
+        None,
+        None,
+        0,
+    );
     store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -163,11 +171,15 @@ async fn conflict_on_overlapping_fields() {
         .unwrap();
 
     // Agent B also updates summary, expecting version 0 (stale)
-    let cs_b = EntityChangeset {
-        summary: Some("agent-b summary".to_string()),
-        expected_version: 0, // stale!
-        ..default_changeset()
-    };
+    let cs_b = task_changeset(
+        None,
+        Some("agent-b summary".to_string()),
+        None,
+        None,
+        None,
+        None,
+        0,
+    );
     let result = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -199,12 +211,15 @@ async fn conflict_includes_all_overlapping_fields() {
     let id = create_test_entity(&store).await;
 
     // Agent A updates summary AND status (version 0 → 1)
-    let cs_a = EntityChangeset {
-        summary: Some("a-summary".to_string()),
-        status: Some(EntityStatus::InProgress),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_a = task_changeset(
+        None,
+        Some("a-summary".to_string()),
+        Some(EntityStatus::InProgress),
+        None,
+        None,
+        None,
+        0,
+    );
     store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -215,12 +230,15 @@ async fn conflict_includes_all_overlapping_fields() {
         .unwrap();
 
     // Agent B also updates both fields with stale version
-    let cs_b = EntityChangeset {
-        summary: Some("b-summary".to_string()),
-        status: Some(EntityStatus::Closed),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_b = task_changeset(
+        None,
+        Some("b-summary".to_string()),
+        Some(EntityStatus::Closed),
+        None,
+        None,
+        None,
+        0,
+    );
     let result = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -291,12 +309,15 @@ async fn update_entity_records_diff_in_event() {
     let store = test_db().await;
     let id = create_test_entity(&store).await;
 
-    let cs = EntityChangeset {
-        summary: Some("new summary".to_string()),
-        status: Some(EntityStatus::InProgress),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs = task_changeset(
+        None,
+        Some("new summary".to_string()),
+        Some(EntityStatus::InProgress),
+        None,
+        None,
+        None,
+        0,
+    );
     store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -391,21 +412,33 @@ async fn auto_merge_across_multiple_version_gaps() {
 
     // Three sequential updates: summary v0→1, status v1→2, priority v2→3
     for (i, cs) in [
-        EntityChangeset {
-            summary: Some(format!("summary-v{}", 1)),
-            expected_version: 0,
-            ..default_changeset()
-        },
-        EntityChangeset {
-            status: Some(EntityStatus::InProgress),
-            expected_version: 1,
-            ..default_changeset()
-        },
-        EntityChangeset {
-            priority: Some(filament_core::models::Priority::new(0).unwrap()),
-            expected_version: 2,
-            ..default_changeset()
-        },
+        task_changeset(
+            None,
+            Some(format!("summary-v{}", 1)),
+            None,
+            None,
+            None,
+            None,
+            0,
+        ),
+        task_changeset(
+            None,
+            None,
+            Some(EntityStatus::InProgress),
+            None,
+            None,
+            None,
+            1,
+        ),
+        task_changeset(
+            None,
+            None,
+            None,
+            Some(filament_core::models::Priority::new(0).unwrap()),
+            None,
+            None,
+            2,
+        ),
     ]
     .into_iter()
     .enumerate()
@@ -423,11 +456,15 @@ async fn auto_merge_across_multiple_version_gaps() {
     }
 
     // Now a stale agent at version 0 updates content_path (never touched)
-    let stale_cs = EntityChangeset {
-        content_path: Some("docs/readme.md".to_string()),
-        expected_version: 0, // 3 versions behind!
-        ..default_changeset()
-    };
+    let stale_cs = task_changeset(
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some("docs/readme.md".to_string()),
+        0,
+    );
     let result = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -459,11 +496,15 @@ async fn two_agents_race_same_field_second_conflicts() {
 
     // Both agents read version 0
     // Agent A wins the race
-    let cs_a = EntityChangeset {
-        status: Some(EntityStatus::InProgress),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_a = task_changeset(
+        None,
+        None,
+        Some(EntityStatus::InProgress),
+        None,
+        None,
+        None,
+        0,
+    );
     store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -474,11 +515,7 @@ async fn two_agents_race_same_field_second_conflicts() {
         .unwrap();
 
     // Agent B loses — same field, same stale version
-    let cs_b = EntityChangeset {
-        status: Some(EntityStatus::Closed),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_b = task_changeset(None, None, Some(EntityStatus::Closed), None, None, None, 0);
     let result = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -513,11 +550,7 @@ async fn retry_after_conflict_with_fresh_version_succeeds() {
     let id = create_test_entity(&store).await;
 
     // Agent A updates summary
-    let cs_a = EntityChangeset {
-        summary: Some("from-a".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_a = task_changeset(None, Some("from-a".to_string()), None, None, None, None, 0);
     store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -528,11 +561,7 @@ async fn retry_after_conflict_with_fresh_version_succeeds() {
         .unwrap();
 
     // Agent B tries with stale version — conflict
-    let cs_b_stale = EntityChangeset {
-        summary: Some("from-b".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_b_stale = task_changeset(None, Some("from-b".to_string()), None, None, None, None, 0);
     let result = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -546,11 +575,7 @@ async fn retry_after_conflict_with_fresh_version_succeeds() {
     let entity = get_entity(store.pool(), &id).await.unwrap();
     assert_eq!(entity.common().version, 1);
 
-    let cs_b_fresh = EntityChangeset {
-        summary: Some("from-b".to_string()),
-        expected_version: 1, // fresh
-        ..default_changeset()
-    };
+    let cs_b_fresh = task_changeset(None, Some("from-b".to_string()), None, None, None, None, 1);
     let updated = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -574,11 +599,7 @@ async fn update_with_matching_version_bumps_version() {
     let id = create_test_entity(&store).await;
 
     // Update at version 0 → should succeed and become version 1
-    let cs = EntityChangeset {
-        summary: Some("updated".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs = task_changeset(None, Some("updated".to_string()), None, None, None, None, 0);
     let updated = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -592,11 +613,15 @@ async fn update_with_matching_version_bumps_version() {
     assert_eq!(updated.common().summary, "updated");
 
     // Second update must use version 1
-    let cs2 = EntityChangeset {
-        summary: Some("updated-again".to_string()),
-        expected_version: 1,
-        ..default_changeset()
-    };
+    let cs2 = task_changeset(
+        None,
+        Some("updated-again".to_string()),
+        None,
+        None,
+        None,
+        None,
+        1,
+    );
     let updated2 = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -619,12 +644,15 @@ async fn partial_overlap_still_conflicts() {
     let id = create_test_entity(&store).await;
 
     // Agent A updates summary + status
-    let cs_a = EntityChangeset {
-        summary: Some("a-summary".to_string()),
-        status: Some(EntityStatus::InProgress),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_a = task_changeset(
+        None,
+        Some("a-summary".to_string()),
+        Some(EntityStatus::InProgress),
+        None,
+        None,
+        None,
+        0,
+    );
     store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -635,12 +663,15 @@ async fn partial_overlap_still_conflicts() {
         .unwrap();
 
     // Agent B updates summary (overlaps) + content_path (doesn't overlap)
-    let cs_b = EntityChangeset {
-        summary: Some("b-summary".to_string()),
-        content_path: Some("new/path.md".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs_b = task_changeset(
+        None,
+        Some("b-summary".to_string()),
+        None,
+        None,
+        None,
+        Some("new/path.md".to_string()),
+        0,
+    );
     let result = store
         .with_transaction(|conn| {
             let id = id.clone();
@@ -668,11 +699,7 @@ async fn partial_overlap_still_conflicts() {
 async fn update_nonexistent_entity_returns_not_found() {
     let store = test_db().await;
 
-    let cs = EntityChangeset {
-        summary: Some("x".to_string()),
-        expected_version: 0,
-        ..default_changeset()
-    };
+    let cs = task_changeset(None, Some("x".to_string()), None, None, None, None, 0);
     let result = store
         .with_transaction(|conn| {
             let cs = cs.clone();
@@ -688,13 +715,26 @@ async fn update_nonexistent_entity_returns_not_found() {
 // ---------------------------------------------------------------------------
 
 fn default_changeset() -> EntityChangeset {
-    EntityChangeset {
-        name: None,
-        summary: None,
-        status: None,
-        priority: None,
-        key_facts: None,
-        content_path: None,
-        expected_version: 0,
-    }
+    task_changeset(None, None, None, None, None, None, 0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn task_changeset(
+    name: Option<filament_core::models::NonEmptyString>,
+    summary: Option<String>,
+    status: Option<EntityStatus>,
+    priority: Option<filament_core::models::Priority>,
+    key_facts: Option<String>,
+    content_path: Option<String>,
+    expected_version: i64,
+) -> EntityChangeset {
+    let common = ChangesetCommon {
+        name,
+        summary,
+        status,
+        priority,
+        key_facts,
+        expected_version,
+    };
+    EntityChangeset::for_type(EntityType::Task, common, content_path)
 }

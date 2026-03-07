@@ -38,6 +38,7 @@ Full ADRs with rationale: `.plan/adr/` (001–022). Key choices:
 - **Entity ADT** — tagged enum replaces flat struct, compile-time type safety (ADR-020)
 - **Lesson knowledge capture** — structured problem/solution/pattern/learned fields (ADR-021)
 - **Optimistic conflict resolution** — version checks, auto-merge non-overlapping, field-level resolve (ADR-022)
+- **Typed entity DTOs** — CreateEntityRequest/EntityChangeset as ADTs enforce content_path policy per type (ADR-023)
 
 ## Stack
 
@@ -175,7 +176,7 @@ Key architectural features:
 - **Socket notifications**: pub/sub via `fl watch` for real-time entity change events
 - **Graph analytics**: `PageRank` + degree centrality via `fl pagerank`/`fl degree`
 - **Pre-commit hooks**: `fl hook install` for reservation conflict checks
-- **Seed command**: `fl seed` parses CLAUDE.md sections into Doc entities
+- **Seed command**: `fl seed --file PATH` / `--files LIST` creates Doc entities from files
 - **Audit trail**: `fl audit` snapshots knowledge graph to a git branch
 - **Agent timeout**: `agent_timeout_secs` (default 1h) kills long-running agents via SIGTERM→SIGKILL
 - **Dead agent reconciliation**: daemon periodically checks PIDs, cleans up crashed agent runs

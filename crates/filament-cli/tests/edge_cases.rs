@@ -157,7 +157,7 @@ fn entity_add_with_special_chars() {
     let dir = init_project();
 
     filament(&dir)
-        .args(["add", "Entity with 'quotes'", "--type", "doc"])
+        .args(["add", "Entity with 'quotes'", "--type", "task"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Created entity:"));

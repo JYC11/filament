@@ -73,14 +73,17 @@ async fn entity_view_empty() {
 async fn entity_view_with_data() {
     let mut conn = test_conn().await;
 
-    conn.create_entity(CreateEntityRequest {
-        name: "Build widget".to_string(),
-        entity_type: EntityType::Task,
-        summary: Some("Build the widget".to_string()),
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    })
+    conn.create_entity(
+        CreateEntityRequest::from_parts(
+            EntityType::Task,
+            "Build widget".to_string(),
+            Some("Build the widget".to_string()),
+            None,
+            None,
+            None,
+        )
+        .unwrap(),
+    )
     .await
     .unwrap();
 
@@ -294,25 +297,31 @@ fn filter_state_priority_toggle() {
 async fn entity_view_multi_type_columns() {
     let mut conn = test_conn().await;
 
-    conn.create_entity(CreateEntityRequest {
-        name: "My Task".to_string(),
-        entity_type: EntityType::Task,
-        summary: Some("A task".to_string()),
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    })
+    conn.create_entity(
+        CreateEntityRequest::from_parts(
+            EntityType::Task,
+            "My Task".to_string(),
+            Some("A task".to_string()),
+            None,
+            None,
+            None,
+        )
+        .unwrap(),
+    )
     .await
     .unwrap();
 
-    conn.create_entity(CreateEntityRequest {
-        name: "My Module".to_string(),
-        entity_type: EntityType::Module,
-        summary: Some("A module".to_string()),
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    })
+    conn.create_entity(
+        CreateEntityRequest::from_parts(
+            EntityType::Module,
+            "My Module".to_string(),
+            Some("A module".to_string()),
+            None,
+            None,
+            None,
+        )
+        .unwrap(),
+    )
     .await
     .unwrap();
 
@@ -351,14 +360,17 @@ async fn paging_basics() {
 
     // Create 3 tasks, set page_size to 2 so we get 2 pages
     for i in 1..=3 {
-        conn.create_entity(CreateEntityRequest {
-            name: format!("Task {i}"),
-            entity_type: EntityType::Task,
-            summary: Some(format!("task {i}")),
-            key_facts: None,
-            content_path: None,
-            priority: None,
-        })
+        conn.create_entity(
+            CreateEntityRequest::from_parts(
+                EntityType::Task,
+                format!("Task {i}"),
+                Some(format!("task {i}")),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        )
         .await
         .unwrap();
     }
@@ -388,14 +400,17 @@ async fn paging_basics() {
 async fn paging_reset_on_filter_change() {
     let mut conn = test_conn().await;
     for i in 1..=3 {
-        conn.create_entity(CreateEntityRequest {
-            name: format!("Task {i}"),
-            entity_type: EntityType::Task,
-            summary: Some(format!("task {i}")),
-            key_facts: None,
-            content_path: None,
-            priority: None,
-        })
+        conn.create_entity(
+            CreateEntityRequest::from_parts(
+                EntityType::Task,
+                format!("Task {i}"),
+                Some(format!("task {i}")),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        )
         .await
         .unwrap();
     }
@@ -414,14 +429,17 @@ async fn paging_reset_on_filter_change() {
 #[tokio::test]
 async fn paging_no_indicator_single_page() {
     let mut conn = test_conn().await;
-    conn.create_entity(CreateEntityRequest {
-        name: "Only task".to_string(),
-        entity_type: EntityType::Task,
-        summary: Some("one task".to_string()),
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    })
+    conn.create_entity(
+        CreateEntityRequest::from_parts(
+            EntityType::Task,
+            "Only task".to_string(),
+            Some("one task".to_string()),
+            None,
+            None,
+            None,
+        )
+        .unwrap(),
+    )
     .await
     .unwrap();
 
@@ -448,14 +466,17 @@ async fn paging_no_indicator_single_page() {
 async fn page_indicator_in_title() {
     let mut conn = test_conn().await;
     for i in 1..=3 {
-        conn.create_entity(CreateEntityRequest {
-            name: format!("Task {i}"),
-            entity_type: EntityType::Task,
-            summary: Some(format!("task {i}")),
-            key_facts: None,
-            content_path: None,
-            priority: None,
-        })
+        conn.create_entity(
+            CreateEntityRequest::from_parts(
+                EntityType::Task,
+                format!("Task {i}"),
+                Some(format!("task {i}")),
+                None,
+                None,
+                None,
+            )
+            .unwrap(),
+        )
         .await
         .unwrap();
     }
@@ -484,14 +505,17 @@ async fn page_indicator_in_title() {
 #[tokio::test]
 async fn detail_pane_opens_and_closes() {
     let mut conn = test_conn().await;
-    conn.create_entity(CreateEntityRequest {
-        name: "My Task".to_string(),
-        entity_type: EntityType::Task,
-        summary: Some("A detailed task".to_string()),
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    })
+    conn.create_entity(
+        CreateEntityRequest::from_parts(
+            EntityType::Task,
+            "My Task".to_string(),
+            Some("A detailed task".to_string()),
+            None,
+            None,
+            None,
+        )
+        .unwrap(),
+    )
     .await
     .unwrap();
 
@@ -531,14 +555,17 @@ async fn detail_pane_opens_and_closes() {
 #[tokio::test]
 async fn detail_scroll() {
     let mut conn = test_conn().await;
-    conn.create_entity(CreateEntityRequest {
-        name: "Scrollable".to_string(),
-        entity_type: EntityType::Task,
-        summary: Some("test".to_string()),
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    })
+    conn.create_entity(
+        CreateEntityRequest::from_parts(
+            EntityType::Task,
+            "Scrollable".to_string(),
+            Some("test".to_string()),
+            None,
+            None,
+            None,
+        )
+        .unwrap(),
+    )
     .await
     .unwrap();
 

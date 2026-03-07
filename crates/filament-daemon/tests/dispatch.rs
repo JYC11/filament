@@ -435,14 +435,17 @@ async fn reconcile_dead_agent_process() {
     let task_id = {
         use filament_core::dto::{CreateEntityRequest, ValidCreateEntityRequest};
         let store_tmp = filament_core::store::FilamentStore::new(pool.clone());
-        let req = ValidCreateEntityRequest::try_from(CreateEntityRequest {
-            name: "reconcile-test-task".to_string(),
-            entity_type: filament_core::models::EntityType::Task,
-            summary: Some("test task for reconciliation".to_string()),
-            key_facts: None,
-            content_path: None,
-            priority: None,
-        })
+        let req = ValidCreateEntityRequest::try_from(
+            CreateEntityRequest::from_parts(
+                filament_core::models::EntityType::Task,
+                "reconcile-test-task".to_string(),
+                Some("test task for reconciliation".to_string()),
+                None,
+                None,
+                None,
+            )
+            .expect("create request"),
+        )
         .expect("valid request");
         let (id, _slug) = store_tmp
             .with_transaction(|conn| {

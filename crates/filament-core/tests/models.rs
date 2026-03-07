@@ -314,14 +314,15 @@ fn agent_result_deserialize() {
 
 #[test]
 fn create_entity_valid() {
-    let req = CreateEntityRequest {
-        name: "My Task".to_string(),
-        entity_type: EntityType::Task,
-        summary: None,
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    };
+    let req = CreateEntityRequest::from_parts(
+        EntityType::Task,
+        "My Task".to_string(),
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
     let valid = ValidCreateEntityRequest::try_from(req).unwrap();
     assert_eq!(valid.name, "My Task");
     assert_eq!(valid.entity_type, EntityType::Task);
@@ -330,14 +331,9 @@ fn create_entity_valid() {
 
 #[test]
 fn create_entity_empty_name_rejected() {
-    let req = CreateEntityRequest {
-        name: "  ".to_string(),
-        entity_type: EntityType::Task,
-        summary: None,
-        key_facts: None,
-        content_path: None,
-        priority: None,
-    };
+    let req =
+        CreateEntityRequest::from_parts(EntityType::Task, "  ".to_string(), None, None, None, None)
+            .unwrap();
     let err = ValidCreateEntityRequest::try_from(req).unwrap_err();
     assert!(matches!(err, FilamentError::Validation(_)));
 }
@@ -873,45 +869,45 @@ fn lesson_fields_from_entity_non_lesson() {
 
 #[test]
 fn entity_changeset_is_empty_all_none() {
-    let cs = EntityChangeset {
+    let common = ChangesetCommon {
         name: None,
         summary: None,
         status: None,
         priority: None,
         key_facts: None,
-        content_path: None,
         expected_version: 0,
     };
+    let cs = EntityChangeset::for_type(EntityType::Task, common, None);
     assert!(cs.is_empty());
     assert!(cs.changed_field_names().is_empty());
 }
 
 #[test]
 fn entity_changeset_not_empty_with_summary() {
-    let cs = EntityChangeset {
+    let common = ChangesetCommon {
         name: None,
         summary: Some("updated".to_string()),
         status: None,
         priority: None,
         key_facts: None,
-        content_path: None,
         expected_version: 1,
     };
+    let cs = EntityChangeset::for_type(EntityType::Task, common, None);
     assert!(!cs.is_empty());
     assert_eq!(cs.changed_field_names(), vec!["summary"]);
 }
 
 #[test]
 fn entity_changeset_multiple_fields() {
-    let cs = EntityChangeset {
+    let common = ChangesetCommon {
         name: Some(NonEmptyString::new("new name").unwrap()),
         summary: None,
         status: Some(EntityStatus::Closed),
         priority: Some(Priority::new(0).unwrap()),
         key_facts: None,
-        content_path: None,
         expected_version: 2,
     };
+    let cs = EntityChangeset::for_type(EntityType::Task, common, None);
     let fields = cs.changed_field_names();
     assert!(fields.contains(&"name"));
     assert!(fields.contains(&"status"));
@@ -963,14 +959,15 @@ fn send_message_defaults_to_text_type() {
 
 #[test]
 fn create_entity_with_facts_and_content() {
-    let req = CreateEntityRequest {
-        name: "Doc Entity".to_string(),
-        entity_type: EntityType::Doc,
-        summary: Some("A doc".to_string()),
-        key_facts: Some(serde_json::json!({"key": "val"})),
-        content_path: Some("/path/to/file.md".to_string()),
-        priority: Some(Priority::new(1).unwrap()),
-    };
+    let req = CreateEntityRequest::from_parts(
+        EntityType::Doc,
+        "Doc Entity".to_string(),
+        Some("A doc".to_string()),
+        Some(Priority::new(1).unwrap()),
+        Some(serde_json::json!({"key": "val"})),
+        Some("/path/to/file.md".to_string()),
+    )
+    .unwrap();
     let valid = ValidCreateEntityRequest::try_from(req).unwrap();
     assert_eq!(valid.name, "Doc Entity");
     assert_eq!(valid.priority.value(), 1);

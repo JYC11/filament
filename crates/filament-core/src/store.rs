@@ -449,11 +449,12 @@ pub async fn update_entity(
     let current_version = row.version;
 
     // Version check + merge
-    if changeset.expected_version != current_version {
+    let common = changeset.common();
+    if common.expected_version != current_version {
         try_auto_merge(
             conn,
             id,
-            changeset.expected_version,
+            common.expected_version,
             current_version,
             changeset,
         )
@@ -463,16 +464,16 @@ pub async fn update_entity(
     // Apply changes via dynamic SQL
     let now = Utc::now();
     let new_version = current_version + 1;
-    let new_name = changeset.name.as_ref().unwrap_or(&row.name);
-    let new_summary = changeset.summary.as_deref().unwrap_or(&row.summary);
-    let new_status = changeset.status.as_ref().unwrap_or(&row.status);
-    let new_priority = changeset.priority.unwrap_or(row.priority);
+    let new_name = common.name.as_ref().unwrap_or(&row.name);
+    let new_summary = common.summary.as_deref().unwrap_or(&row.summary);
+    let new_status = common.status.as_ref().unwrap_or(&row.status);
+    let new_priority = common.priority.unwrap_or(row.priority);
     let old_key_facts_str = serde_json::to_string(&row.key_facts).unwrap_or_default();
-    let new_key_facts = changeset.key_facts.as_deref().unwrap_or(&old_key_facts_str);
-    let new_content_path = changeset
-        .content_path
-        .as_deref()
-        .or(row.content_path.as_deref());
+    let new_key_facts = common.key_facts.as_deref().unwrap_or(&old_key_facts_str);
+    let new_content_path = match changeset.content_path_for_sql() {
+        None => row.content_path.as_deref(),
+        Some(opt) => opt,
+    };
 
     let result = sqlx::query(
         "UPDATE entities SET name = ?, summary = ?, status = ?, priority = ?, \
@@ -597,46 +598,47 @@ async fn build_conflict_list(
         .fetch_one(&mut *conn)
         .await?;
 
+    let common = changeset.common();
     let mut conflicts = Vec::new();
-    if let Some(ref yours) = changeset.name {
+    if let Some(ref yours) = common.name {
         conflicts.push(FieldConflict {
             field: "name".to_string(),
             your_value: yours.to_string(),
             their_value: row.name.to_string(),
         });
     }
-    if let Some(ref yours) = changeset.summary {
+    if let Some(ref yours) = common.summary {
         conflicts.push(FieldConflict {
             field: "summary".to_string(),
             your_value: yours.clone(),
             their_value: row.summary.clone(),
         });
     }
-    if let Some(ref yours) = changeset.status {
+    if let Some(ref yours) = common.status {
         conflicts.push(FieldConflict {
             field: "status".to_string(),
             your_value: yours.to_string(),
             their_value: row.status.to_string(),
         });
     }
-    if let Some(yours) = changeset.priority {
+    if let Some(yours) = common.priority {
         conflicts.push(FieldConflict {
             field: "priority".to_string(),
             your_value: yours.to_string(),
             their_value: row.priority.to_string(),
         });
     }
-    if let Some(ref yours) = changeset.key_facts {
+    if let Some(ref yours) = common.key_facts {
         conflicts.push(FieldConflict {
             field: "key_facts".to_string(),
             your_value: yours.clone(),
             their_value: serde_json::to_string(&row.key_facts).unwrap_or_default(),
         });
     }
-    if let Some(ref yours) = changeset.content_path {
+    if let Some(yours) = changeset.content_path_for_sql() {
         conflicts.push(FieldConflict {
             field: "content_path".to_string(),
-            your_value: yours.clone(),
+            your_value: yours.unwrap_or("").to_string(),
             their_value: row.content_path.unwrap_or_default(),
         });
     }

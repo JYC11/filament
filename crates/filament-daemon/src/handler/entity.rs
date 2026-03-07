@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use filament_core::dto::{CreateEntityRequest, EntityChangeset, ValidCreateEntityRequest};
+use filament_core::dto::{
+    ChangesetCommon, CreateEntityRequest, EntityChangeset, ValidCreateEntityRequest,
+};
 use filament_core::error::Result;
-use filament_core::models::{EntityStatus, EntityType};
+use filament_core::models::{EntityStatus, EntityType, NonEmptyString, Priority};
 use filament_core::protocol::Notification;
 use filament_core::store;
 use serde::Deserialize;
@@ -71,11 +73,25 @@ pub async fn update(
     state: &Arc<SharedState>,
 ) -> Result<serde_json::Value> {
     let p: UpdateEntityParam = parse_params(params)?;
+
+    // Fetch entity to determine its type for the typed changeset
+    let existing = store::get_entity(state.store.pool(), &p.id).await?;
+    let common = ChangesetCommon {
+        name: p.changeset.name,
+        summary: p.changeset.summary,
+        status: p.changeset.status,
+        priority: p.changeset.priority,
+        key_facts: p.changeset.key_facts,
+        expected_version: p.changeset.expected_version,
+    };
+    let changeset =
+        EntityChangeset::for_type(existing.entity_type(), common, p.changeset.content_path);
+
     let entity = state
         .store
         .with_transaction(|conn| {
             let id = p.id.clone();
-            let changeset = p.changeset.clone();
+            let changeset = changeset.clone();
             Box::pin(async move { store::update_entity(conn, &id, &changeset).await })
         })
         .await?;
@@ -224,7 +240,18 @@ struct BatchGetParam {
 #[derive(Deserialize)]
 struct UpdateEntityParam {
     id: String,
-    changeset: EntityChangeset,
+    changeset: RawChangeset,
+}
+
+#[derive(Deserialize)]
+struct RawChangeset {
+    name: Option<NonEmptyString>,
+    summary: Option<String>,
+    status: Option<EntityStatus>,
+    priority: Option<Priority>,
+    key_facts: Option<String>,
+    content_path: Option<String>,
+    expected_version: i64,
 }
 
 #[derive(Deserialize)]

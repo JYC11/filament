@@ -11,7 +11,7 @@
 |----------|-------|-------|
 | Critical | 0     | —     |
 | Major    | 5     | 5/5 FIXED |
-| Minor    | 18    | 9/18 FIXED |
+| Minor    | 17    | 13/17 FIXED |
 | Nit      | 10    | 4/10 FIXED |
 
 ---
@@ -50,7 +50,7 @@
 
 ## Minor Findings
 
-### FIXED (9/18)
+### FIXED (13/17)
 
 | ID | Issue | Fix |
 |----|-------|-----|
@@ -60,21 +60,21 @@
 | m6 | `DaemonClient::list_all_agent_runs` silently swallows errors | Changed to `Self::parse_result(result)` |
 | m8 | `EntityChangeset` doc comment stale | Fixed doc comment |
 | m9 | Version-conflict double-printing in entity update | Exit directly after printing conflict |
+| m10 | Pagerank JSON output order | Already fixed (Vec preserves insertion order) |
+| m12 | `--claude-md` flag is effectively a no-op | Fixed — renamed to `--no-claude-md` |
 | m11 | Config template says priority `1-5` but range is `0-4` | Fixed range string |
 | m14 | Reservations leaked on `NeedsInput` status | Always release when subprocess exits |
 | m15 | MCP `message_send` blocks "user" recipient | Added "user" special-case |
+| m16 | `finish_run_failed` uses 3 separate transactions | Fixed — combined into single atomic transaction |
 | m18 | Priority filter bar missing key labels | Added key labels and "0:Clear" |
 
-### DEFERRED (9/18)
+### DEFERRED (4/17)
 
 | ID | Issue | Why deferred |
 |----|-------|-------------|
 | m2 | `content_path` cannot be cleared once set | Needs `Option<Option<String>>` pattern through full stack — design decision |
 | m4 | Import does N individual INSERTs | Performance optimization, not correctness bug |
 | m7 | `__all__` sentinel for list-all-agent-runs | API smell but functional, needs protocol redesign |
-| m10 | Pagerank JSON output order | Already fixed (Vec preserves insertion order) |
-| m12 | `--claude-md` flag is effectively a no-op | Fixed — renamed to `--no-claude-md` |
-| m16 | `finish_run_failed` uses 3 separate transactions | Fixed — combined into single atomic transaction |
 | m17 | N+1 queries in TUI `refresh_analytics` | Performance optimization, not correctness bug |
 
 **Note**: m10, m12, m16 were actually fixed but listed as deferred in the earlier version. Updated.

@@ -1,22 +1,19 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Args;
-use filament_core::dto::CreateEntityRequest;
+use filament_core::dto::{CreateCommon, CreateContentRequired, CreateEntityRequest};
 use filament_core::error::{FilamentError, Result};
 use filament_core::models::EntityType;
 
-use super::helpers::{connect, find_project_root, output_json};
+use super::helpers::{connect, output_json};
 use crate::Cli;
 
 #[derive(Args, Debug)]
 pub struct SeedArgs {
-    /// Skip CLAUDE.md parsing (only use --file/--files).
-    #[arg(long)]
-    no_claude_md: bool,
-    /// Path to a specific markdown file to ingest (parses ## sections as Doc entities).
+    /// Path to a specific file to ingest as a Doc entity with `content_path`.
     #[arg(long)]
     file: Option<PathBuf>,
-    /// Path to a text file listing markdown file paths to ingest (one path per line).
+    /// Path to a text file listing file paths to ingest (one path per line).
     #[arg(long)]
     files: Option<PathBuf>,
     /// Dry run: show what would be created without creating anything.
@@ -26,17 +23,12 @@ pub struct SeedArgs {
 
 struct SeedItem {
     name: String,
-    entity_type: EntityType,
     summary: String,
-    source: String,
+    content_path: String,
 }
 
 pub async fn seed(cli: &Cli, args: &SeedArgs) -> Result<()> {
-    let root = find_project_root()?;
-    let mut items: Vec<SeedItem> = Vec::new();
-
-    // Collect files to parse
-    let mut files_to_parse: Vec<PathBuf> = Vec::new();
+    let mut file_paths: Vec<PathBuf> = Vec::new();
 
     if let Some(ref csv_path) = args.files {
         let csv_content = std::fs::read_to_string(csv_path)
@@ -51,7 +43,7 @@ pub async fn seed(cli: &Cli, args: &SeedArgs) -> Result<()> {
                 eprintln!("warning: skipping non-existent file: {trimmed}");
                 continue;
             }
-            files_to_parse.push(path);
+            file_paths.push(path);
         }
     }
 
@@ -62,20 +54,29 @@ pub async fn seed(cli: &Cli, args: &SeedArgs) -> Result<()> {
                 file_path.display()
             )));
         }
-        files_to_parse.push(file_path.clone());
+        file_paths.push(file_path.clone());
     }
 
-    // Parse explicit files
-    for path in &files_to_parse {
-        items.extend(parse_markdown_file(path));
-    }
-
-    // Parse project CLAUDE.md unless --no-claude-md is set or explicit files were provided
-    if !args.no_claude_md && files_to_parse.is_empty() {
-        items.extend(parse_markdown_file_with_source(
-            &root.join("CLAUDE.md"),
-            "CLAUDE.md",
+    if file_paths.is_empty() {
+        return Err(FilamentError::Validation(
+            "specify --file or --files to seed Doc entities".into(),
         ));
+    }
+
+    let mut items: Vec<SeedItem> = Vec::new();
+    for path in &file_paths {
+        let filename = path.file_name().map_or_else(
+            || path.to_string_lossy().to_string(),
+            |n| n.to_string_lossy().to_string(),
+        );
+        let content_path = path.to_string_lossy().to_string();
+        let summary = std::fs::read_to_string(path)
+            .map_or_else(|_| String::new(), |content| extract_summary(&content));
+        items.push(SeedItem {
+            name: filename,
+            summary,
+            content_path,
+        });
     }
 
     if items.is_empty() {
@@ -100,9 +101,9 @@ fn print_dry_run(cli: &Cli, items: &[SeedItem]) {
             .map(|item| {
                 serde_json::json!({
                     "name": item.name,
-                    "type": item.entity_type.as_str(),
+                    "type": "doc",
                     "summary": item.summary,
-                    "source": item.source,
+                    "content_path": item.content_path,
                 })
             })
             .collect();
@@ -111,11 +112,10 @@ fn print_dry_run(cli: &Cli, items: &[SeedItem]) {
         println!("Dry run — would create {} entities:", items.len());
         for item in items {
             println!(
-                "  [{}] {}: {} (from {})",
-                item.entity_type.as_str(),
+                "  [doc] {}: {} ({})",
                 item.name,
                 truncate(&item.summary, 60),
-                item.source,
+                item.content_path,
             );
         }
     }
@@ -136,14 +136,15 @@ async fn create_seed_entities(cli: &Cli, items: &[SeedItem]) -> Result<()> {
             continue;
         }
 
-        conn.create_entity(CreateEntityRequest {
-            name: item.name.clone(),
-            entity_type: item.entity_type,
-            summary: Some(item.summary.clone()),
-            key_facts: None,
-            content_path: None,
-            priority: None,
-        })
+        conn.create_entity(CreateEntityRequest::Doc(CreateContentRequired {
+            common: CreateCommon {
+                name: item.name.clone(),
+                summary: Some(item.summary.clone()),
+                priority: None,
+                key_facts: None,
+            },
+            content_path: item.content_path.clone(),
+        }))
         .await?;
         created += 1;
     }
@@ -157,61 +158,6 @@ async fn create_seed_entities(cli: &Cli, items: &[SeedItem]) -> Result<()> {
         println!("Seeded {created} entities ({skipped} skipped as duplicates).");
     }
     Ok(())
-}
-
-fn parse_markdown_file(path: &Path) -> Vec<SeedItem> {
-    let source = path.file_name().map_or_else(
-        || path.to_string_lossy().to_string(),
-        |n| n.to_string_lossy().to_string(),
-    );
-    parse_markdown_file_with_source(path, &source)
-}
-
-fn parse_markdown_file_with_source(path: &Path, source: &str) -> Vec<SeedItem> {
-    let Ok(content) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
-
-    let mut items = Vec::new();
-    let mut current_heading: Option<String> = None;
-    let mut current_body = String::new();
-
-    for line in content.lines() {
-        if let Some(heading) = line.strip_prefix("## ") {
-            // Flush previous section
-            if let Some(name) = current_heading.take() {
-                let summary = extract_summary(&current_body);
-                if !summary.is_empty() {
-                    items.push(SeedItem {
-                        name,
-                        entity_type: EntityType::Doc,
-                        summary,
-                        source: source.to_string(),
-                    });
-                }
-            }
-            current_heading = Some(heading.trim().to_string());
-            current_body.clear();
-        } else if current_heading.is_some() {
-            current_body.push_str(line);
-            current_body.push('\n');
-        }
-    }
-
-    // Flush last section
-    if let Some(name) = current_heading.take() {
-        let summary = extract_summary(&current_body);
-        if !summary.is_empty() {
-            items.push(SeedItem {
-                name,
-                entity_type: EntityType::Doc,
-                summary,
-                source: source.to_string(),
-            });
-        }
-    }
-
-    items
 }
 
 fn extract_summary(body: &str) -> String {
@@ -354,100 +300,56 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // parse_markdown_file_with_source (via temp files)
+    // seed_item construction from files
     // -----------------------------------------------------------------------
 
-    fn write_temp_md(content: &str) -> tempfile::NamedTempFile {
-        let mut f = tempfile::NamedTempFile::new().unwrap();
+    fn write_temp_file(name: &str, content: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join(name);
+        let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(content.as_bytes()).unwrap();
         f.flush().unwrap();
-        f
+        (dir, path)
     }
 
     #[test]
-    fn parse_basic_headings() {
-        let f = write_temp_md("## First\nContent one\n## Second\nContent two\n");
-        let items = parse_markdown_file_with_source(f.path(), "test.md");
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[0].name, "First");
-        assert_eq!(items[0].summary, "Content one");
-        assert_eq!(items[0].source, "test.md");
-        assert_eq!(items[1].name, "Second");
-        assert_eq!(items[1].summary, "Content two");
+    fn seed_item_name_is_filename() {
+        let (_dir, path) = write_temp_file("CLAUDE.md", "# Heading\nSome content");
+        let filename = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap();
+        assert_eq!(filename, "CLAUDE.md");
     }
 
     #[test]
-    fn parse_no_headings_returns_empty() {
-        let f = write_temp_md("Just some text without any headings.\nMore text.");
-        let items = parse_markdown_file_with_source(f.path(), "test.md");
-        assert!(items.is_empty());
+    fn seed_item_summary_from_file_content() {
+        let (_dir, path) = write_temp_file("notes.md", "First meaningful line\nSecond line");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let summary = extract_summary(&content);
+        assert_eq!(summary, "First meaningful line");
     }
 
     #[test]
-    fn parse_heading_with_empty_body_skipped() {
-        let f = write_temp_md("## Empty\n\n## HasContent\nSome text");
-        let items = parse_markdown_file_with_source(f.path(), "test.md");
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].name, "HasContent");
+    fn seed_item_content_path_is_file_path() {
+        let (_dir, path) = write_temp_file("test.md", "content");
+        let content_path = path.to_string_lossy().to_string();
+        assert!(content_path.ends_with("test.md"));
     }
 
     #[test]
-    fn parse_h1_and_h3_ignored() {
-        let f = write_temp_md("# H1\nBody\n### H3\nMore\n## H2\nActual");
-        let items = parse_markdown_file_with_source(f.path(), "test.md");
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].name, "H2");
+    fn seed_item_summary_skips_headings_in_file() {
+        let (_dir, path) = write_temp_file("doc.md", "# Title\n## Section\nActual content");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let summary = extract_summary(&content);
+        assert_eq!(summary, "Actual content");
     }
 
     #[test]
-    fn parse_heading_whitespace_trimmed() {
-        let f = write_temp_md("##   Spaced Heading  \nBody text");
-        let items = parse_markdown_file_with_source(f.path(), "test.md");
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].name, "Spaced Heading");
-    }
-
-    #[test]
-    fn parse_nonexistent_file_returns_empty() {
-        let items = parse_markdown_file_with_source(Path::new("/nonexistent/file.md"), "ghost.md");
-        assert!(items.is_empty());
-    }
-
-    #[test]
-    fn parse_markdown_file_uses_filename_as_source() {
-        let f = write_temp_md("## Section\nBody");
-        let items = parse_markdown_file(f.path());
-        assert_eq!(items.len(), 1);
-        // Source should be the filename, not the full path
-        let filename = f.path().file_name().unwrap().to_string_lossy().to_string();
-        assert_eq!(items[0].source, filename);
-    }
-
-    #[test]
-    fn parse_body_with_only_code_fence_skipped() {
-        let f = write_temp_md("## Code Only\n```\nlet x = 1;\n```\n");
-        let items = parse_markdown_file_with_source(f.path(), "test.md");
-        // The body's first non-skipped line is "let x = 1;" (inside the fence is not skipped by extract_summary rules)
-        // Actually: extract_summary skips ``` lines but "let x = 1;" passes through
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].summary, "let x = 1;");
-    }
-
-    #[test]
-    fn parse_multiple_sections_last_flushed() {
-        let f = write_temp_md("## A\nContent A\n## B\nContent B\n## C\nContent C");
-        let items = parse_markdown_file_with_source(f.path(), "test.md");
-        assert_eq!(items.len(), 3);
-        assert_eq!(items[2].name, "C");
-        assert_eq!(items[2].summary, "Content C");
-    }
-
-    #[test]
-    fn all_items_are_doc_type() {
-        let f = write_temp_md("## One\nBody\n## Two\nBody");
-        let items = parse_markdown_file_with_source(f.path(), "test.md");
-        for item in &items {
-            assert_eq!(item.entity_type, EntityType::Doc);
-        }
+    fn seed_item_empty_file_gives_empty_summary() {
+        let (_dir, path) = write_temp_file("empty.md", "");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let summary = extract_summary(&content);
+        assert_eq!(summary, "");
     }
 }

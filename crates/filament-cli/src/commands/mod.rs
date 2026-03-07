@@ -99,7 +99,7 @@ pub enum Commands {
     /// Start the MCP stdio server (for AI agent integration).
     Mcp,
 
-    /// Seed the knowledge graph from existing project files (CLAUDE.md).
+    /// Seed the knowledge graph with Doc entities from files (each file becomes a Doc with `content_path`).
     Seed(seed::SeedArgs),
     /// Snapshot the knowledge graph to a git audit branch.
     Audit(audit::AuditArgs),

@@ -241,14 +241,15 @@ impl FilamentMcp {
     async fn add(&self, Parameters(p): Parameters<AddParams>) -> Result<String, String> {
         self.check_allowed("fl_add")?;
         let mut conn = self.conn.lock().await;
-        let req = CreateEntityRequest {
-            name: p.name,
-            entity_type: p.entity_type,
-            summary: Some(p.summary),
-            key_facts: p.key_facts,
-            content_path: p.content_path,
-            priority: p.priority,
-        };
+        let req = CreateEntityRequest::from_parts(
+            p.entity_type,
+            p.name.clone(),
+            Some(p.summary.clone()),
+            p.priority,
+            p.key_facts.clone(),
+            p.content_path,
+        )
+        .map_err(|e| map_err(&e))?;
         let (id, slug) = conn.create_entity(req).await.map_err(|e| map_err(&e))?;
         Ok(format!("Created: {slug} ({id})"))
     }

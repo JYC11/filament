@@ -149,15 +149,24 @@ impl DaemonClient {
         Self::parse_result(result)
     }
 
+    /// # Panics
+    ///
+    /// Panics if `ChangesetCommon` serialization fails (should be infallible).
     pub async fn update_entity(
         &mut self,
         id: &str,
         changeset: &crate::dto::EntityChangeset,
     ) -> Result<Entity> {
+        let mut cs = serde_json::to_value(changeset.common()).expect("infallible");
+        if let Some(cp) = changeset.content_path_for_sql() {
+            cs["content_path"] = cp.map_or(serde_json::Value::Null, |v| {
+                serde_json::Value::String(v.to_string())
+            });
+        }
         let result = self
             .call(
                 Method::UpdateEntity,
-                serde_json::json!({ "id": id, "changeset": changeset }),
+                serde_json::json!({ "id": id, "changeset": cs }),
             )
             .await?;
         let entity: Entity = serde_json::from_value(result).map_err(|e| {

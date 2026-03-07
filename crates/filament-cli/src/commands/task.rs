@@ -1,8 +1,10 @@
 use clap::{Args, Subcommand};
 use filament_core::config::FilamentConfig;
-use filament_core::dto::{CreateEntityRequest, CreateRelationRequest};
+use filament_core::dto::{
+    CreateCommon, CreateContentOptional, CreateEntityRequest, CreateRelationRequest,
+};
 use filament_core::error::Result;
-use filament_core::models::{EntityType, Priority, RelationType};
+use filament_core::models::{Priority, RelationType};
 
 use super::helpers::{
     connect, find_project_root, output_json, print_entity_list, print_relations,
@@ -113,21 +115,22 @@ struct TaskBlockerDepthArgs {
 async fn add(cli: &Cli, args: &TaskAddArgs) -> Result<()> {
     let mut conn = connect().await?;
 
-    let req = CreateEntityRequest {
-        name: args.title.clone(),
-        entity_type: EntityType::Task,
-        summary: Some(args.summary.clone()),
-        key_facts: None,
-        content_path: None,
-        priority: {
-            let p = args.priority.unwrap_or_else(|| {
-                find_project_root()
-                    .map(|r| FilamentConfig::load(&r).resolve_default_priority())
-                    .unwrap_or(2)
-            });
-            Some(Priority::new(p)?)
+    let req = CreateEntityRequest::Task(CreateContentOptional {
+        common: CreateCommon {
+            name: args.title.clone(),
+            summary: Some(args.summary.clone()),
+            priority: {
+                let p = args.priority.unwrap_or_else(|| {
+                    find_project_root()
+                        .map(|r| FilamentConfig::load(&r).resolve_default_priority())
+                        .unwrap_or(2)
+                });
+                Some(Priority::new(p)?)
+            },
+            key_facts: None,
         },
-    };
+        content_path: None,
+    });
 
     // Resolve relation targets before creating the entity
     let blocks_id = if let Some(blocks_slug) = &args.blocks {

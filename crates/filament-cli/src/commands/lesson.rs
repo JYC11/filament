@@ -1,8 +1,8 @@
 use clap::{Args, Subcommand};
 use filament_core::config::FilamentConfig;
-use filament_core::dto::CreateEntityRequest;
+use filament_core::dto::{CreateCommon, CreateContentOptional, CreateEntityRequest};
 use filament_core::error::Result;
-use filament_core::models::{EntityType, LessonFields, Priority};
+use filament_core::models::{LessonFields, Priority};
 
 use super::helpers::{connect, find_project_root, output_json, print_entity_list};
 use crate::Cli;
@@ -89,21 +89,22 @@ async fn add(cli: &Cli, args: &LessonAddArgs) -> Result<()> {
         learned: args.learned.clone(),
     };
 
-    let req = CreateEntityRequest {
-        name: args.title.clone(),
-        entity_type: EntityType::Lesson,
-        summary: Some(args.learned.clone()),
-        key_facts: Some(fields.to_key_facts()),
-        content_path: None,
-        priority: {
-            let p = args.priority.unwrap_or_else(|| {
-                find_project_root()
-                    .map(|r| FilamentConfig::load(&r).resolve_default_priority())
-                    .unwrap_or(2)
-            });
-            Some(Priority::new(p)?)
+    let req = CreateEntityRequest::Lesson(CreateContentOptional {
+        common: CreateCommon {
+            name: args.title.clone(),
+            summary: Some(args.learned.clone()),
+            priority: {
+                let p = args.priority.unwrap_or_else(|| {
+                    find_project_root()
+                        .map(|r| FilamentConfig::load(&r).resolve_default_priority())
+                        .unwrap_or(2)
+                });
+                Some(Priority::new(p)?)
+            },
+            key_facts: Some(fields.to_key_facts()),
         },
-    };
+        content_path: None,
+    });
 
     let (id, slug) = conn.create_entity(req).await?;
 
