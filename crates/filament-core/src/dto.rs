@@ -106,6 +106,28 @@ pub struct SearchResult {
 // Entity changeset (optimistic conflict resolution)
 // ---------------------------------------------------------------------------
 
+/// Three-state field update for nullable/clearable values.
+///
+/// Replaces `Option<Option<T>>` with self-documenting variants.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Clearable<T> {
+    /// Don't change the existing value.
+    #[default]
+    Keep,
+    /// Clear to NULL.
+    Clear,
+    /// Set to a new value.
+    Set(T),
+}
+
+impl<T> Clearable<T> {
+    /// Returns `true` if a change is being made (Clear or Set).
+    #[must_use]
+    pub const fn is_change(&self) -> bool {
+        !matches!(self, Self::Keep)
+    }
+}
+
 /// Shared changeset fields for all entity types.
 ///
 /// `None` means "don't change this field"; `Some(v)` means "set to v".
@@ -122,14 +144,10 @@ pub struct ChangesetCommon {
 
 /// Changeset for entity types where `content_path` can be set or cleared
 /// (Task, Module, Service, Agent, Lesson).
-///
-/// - `None` → don't touch
-/// - `Some(None)` → clear to NULL
-/// - `Some(Some(v))` → set to v
 #[derive(Debug, Clone)]
 pub struct ContentClearableChangeset {
     pub common: ChangesetCommon,
-    pub content_path: Option<Option<String>>,
+    pub content_path: Clearable<String>,
 }
 
 /// Changeset for entity types where `content_path` can be changed but never cleared
@@ -169,19 +187,23 @@ impl EntityChangeset {
         }
     }
 
-    /// Returns the resolved `content_path` for SQL:
-    /// - `None` → keep existing value
-    /// - `Some(None)` → clear to NULL
-    /// - `Some(Some(v))` → set to v
+    /// Returns the resolved `content_path` update.
     #[must_use]
-    pub fn content_path_for_sql(&self) -> Option<Option<&str>> {
+    pub fn content_path_update(&self) -> Clearable<&str> {
         match self {
             Self::Task(v)
             | Self::Module(v)
             | Self::Service(v)
             | Self::Agent(v)
-            | Self::Lesson(v) => v.content_path.as_ref().map(|opt| opt.as_deref()),
-            Self::Plan(v) | Self::Doc(v) => v.content_path.as_deref().map(Some),
+            | Self::Lesson(v) => match &v.content_path {
+                Clearable::Keep => Clearable::Keep,
+                Clearable::Clear => Clearable::Clear,
+                Clearable::Set(v) => Clearable::Set(v.as_str()),
+            },
+            Self::Plan(v) | Self::Doc(v) => v
+                .content_path
+                .as_deref()
+                .map_or(Clearable::Keep, Clearable::Set),
         }
     }
 
@@ -219,7 +241,7 @@ impl EntityChangeset {
         if common.key_facts.is_some() {
             fields.push("key_facts");
         }
-        if self.content_path_for_sql().is_some() {
+        if self.content_path_update().is_change() {
             fields.push("content_path");
         }
         fields
@@ -234,7 +256,7 @@ impl EntityChangeset {
             && common.status.is_none()
             && common.priority.is_none()
             && common.key_facts.is_none()
-            && self.content_path_for_sql().is_none()
+            && !self.content_path_update().is_change()
     }
 
     /// Construct the right changeset variant from flat parts, based on entity type.
@@ -257,23 +279,23 @@ impl EntityChangeset {
             }),
             EntityType::Task => Self::Task(ContentClearableChangeset {
                 common,
-                content_path: content_path.map(Some),
+                content_path: content_path.map_or(Clearable::Keep, Clearable::Set),
             }),
             EntityType::Module => Self::Module(ContentClearableChangeset {
                 common,
-                content_path: content_path.map(Some),
+                content_path: content_path.map_or(Clearable::Keep, Clearable::Set),
             }),
             EntityType::Service => Self::Service(ContentClearableChangeset {
                 common,
-                content_path: content_path.map(Some),
+                content_path: content_path.map_or(Clearable::Keep, Clearable::Set),
             }),
             EntityType::Agent => Self::Agent(ContentClearableChangeset {
                 common,
-                content_path: content_path.map(Some),
+                content_path: content_path.map_or(Clearable::Keep, Clearable::Set),
             }),
             EntityType::Lesson => Self::Lesson(ContentClearableChangeset {
                 common,
-                content_path: content_path.map(Some),
+                content_path: content_path.map_or(Clearable::Keep, Clearable::Set),
             }),
         }
     }

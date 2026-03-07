@@ -38,7 +38,7 @@ enum CreateEntityRequest {
 
 ```
 enum EntityChangeset {
-    Task(ContentClearableChangeset),   // content_path: Option<Option<String>>
+    Task(ContentClearableChangeset),   // content_path: Clearable<String>
     Module(ContentClearableChangeset),
     Service(ContentClearableChangeset),
     Agent(ContentClearableChangeset),
@@ -48,7 +48,7 @@ enum EntityChangeset {
 }
 ```
 
-`ContentClearableChangeset` uses `Option<Option<String>>`: None = keep, Some(None) = clear, Some(Some(v)) = set.
+`ContentClearableChangeset` uses `Clearable<String>` — a three-state enum: `Keep` (don't touch), `Clear` (set to NULL), `Set(v)` (set to value). This replaces the unreadable `Option<Option<String>>` pattern.
 `ContentRequiredChangeset` uses `Option<String>`: None = keep, Some(v) = change (clearing is unrepresentable).
 
 `for_type()` factory constructs the right variant from entity type + common fields + optional content_path.

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::diff::fields_in_diff;
 use crate::dto::{
-    EntityChangeset, Escalation, EscalationKind, ExportData, ImportResult,
+    Clearable, EntityChangeset, Escalation, EscalationKind, ExportData, ImportResult,
     ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
 };
 use crate::error::{FieldConflict, FilamentError, Result};
@@ -470,9 +470,10 @@ pub async fn update_entity(
     let new_priority = common.priority.unwrap_or(row.priority);
     let old_key_facts_str = serde_json::to_string(&row.key_facts).unwrap_or_default();
     let new_key_facts = common.key_facts.as_deref().unwrap_or(&old_key_facts_str);
-    let new_content_path = match changeset.content_path_for_sql() {
-        None => row.content_path.as_deref(),
-        Some(opt) => opt,
+    let new_content_path = match changeset.content_path_update() {
+        Clearable::Keep => row.content_path.as_deref(),
+        Clearable::Clear => None,
+        Clearable::Set(v) => Some(v),
     };
 
     let result = sqlx::query(
@@ -635,12 +636,22 @@ async fn build_conflict_list(
             their_value: serde_json::to_string(&row.key_facts).unwrap_or_default(),
         });
     }
-    if let Some(yours) = changeset.content_path_for_sql() {
-        conflicts.push(FieldConflict {
-            field: "content_path".to_string(),
-            your_value: yours.unwrap_or("").to_string(),
-            their_value: row.content_path.unwrap_or_default(),
-        });
+    match changeset.content_path_update() {
+        Clearable::Keep => {}
+        Clearable::Clear => {
+            conflicts.push(FieldConflict {
+                field: "content_path".to_string(),
+                your_value: String::new(),
+                their_value: row.content_path.unwrap_or_default(),
+            });
+        }
+        Clearable::Set(v) => {
+            conflicts.push(FieldConflict {
+                field: "content_path".to_string(),
+                your_value: v.to_string(),
+                their_value: row.content_path.unwrap_or_default(),
+            });
+        }
     }
     Ok(conflicts)
 }

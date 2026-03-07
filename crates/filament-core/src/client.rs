@@ -158,10 +158,14 @@ impl DaemonClient {
         changeset: &crate::dto::EntityChangeset,
     ) -> Result<Entity> {
         let mut cs = serde_json::to_value(changeset.common()).expect("infallible");
-        if let Some(cp) = changeset.content_path_for_sql() {
-            cs["content_path"] = cp.map_or(serde_json::Value::Null, |v| {
-                serde_json::Value::String(v.to_string())
-            });
+        match changeset.content_path_update() {
+            crate::dto::Clearable::Keep => {}
+            crate::dto::Clearable::Clear => {
+                cs["content_path"] = serde_json::Value::Null;
+            }
+            crate::dto::Clearable::Set(v) => {
+                cs["content_path"] = serde_json::Value::String(v.to_string());
+            }
         }
         let result = self
             .call(
