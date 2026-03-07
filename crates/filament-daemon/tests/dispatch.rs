@@ -119,17 +119,18 @@ async fn start_test_daemon_with_timeout(
             .expect("daemon serve");
     });
 
-    // Wait for socket
-    for _ in 0..50 {
+    // Wait for daemon to accept connections (not just socket file to exist)
+    let mut client = None;
+    for _ in 0..100 {
         if socket_path.exists() {
-            break;
+            if let Ok(c) = DaemonClient::connect(&socket_path).await {
+                client = Some(c);
+                break;
+            }
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-
-    let client = DaemonClient::connect(&socket_path)
-        .await
-        .expect("connect to daemon");
+    let client = client.expect("connect to daemon");
 
     (client, cancel, tmp)
 }
