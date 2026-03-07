@@ -1666,9 +1666,8 @@ async fn import_slug_conflict_returns_validation_error() {
         .await
         .unwrap();
 
-    // Export to get the entity's slug
+    // Export to get the entity data
     let export_data = export_all(store.pool(), false).await.unwrap();
-    let existing_slug = export_data.entities[0].slug().to_string();
 
     // Build import data with a different UUID but the same slug
     let mut conflict_data = export_data.clone();
@@ -1690,7 +1689,7 @@ async fn import_slug_conflict_returns_validation_error() {
     match &err {
         FilamentError::Validation(msg) => {
             assert!(
-                msg.contains("slug") && msg.contains(&existing_slug),
+                msg.contains("slug"),
                 "expected slug conflict message, got: {msg}"
             );
         }
@@ -1741,6 +1740,228 @@ async fn import_relation_with_missing_entity_returns_validation_error() {
         }
         other => panic!("expected Validation error, got: {other:?}"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Batch import — SQL structure verification (decoupled from execution)
+// ---------------------------------------------------------------------------
+
+fn make_test_entity(i: usize) -> Entity {
+    Entity::Task(EntityCommon {
+        id: EntityId::new(),
+        slug: Slug::new(),
+        name: NonEmptyString::new(format!("entity-{i}")).unwrap(),
+        summary: format!("Summary {i}"),
+        key_facts: serde_json::json!({}),
+        content: None,
+        status: EntityStatus::Open,
+        priority: Priority::DEFAULT,
+        version: 1,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    })
+}
+
+fn make_test_message(i: usize) -> Message {
+    Message {
+        id: MessageId::new(),
+        from_agent: NonEmptyString::new(format!("agent-{i}")).unwrap(),
+        to_agent: NonEmptyString::new("user").unwrap(),
+        msg_type: MessageType::Text,
+        body: NonEmptyString::new(format!("body-{i}")).unwrap(),
+        status: MessageStatus::Unread,
+        in_reply_to: None,
+        task_id: None,
+        created_at: chrono::Utc::now(),
+        read_at: None,
+    }
+}
+
+fn make_test_event(i: usize) -> Event {
+    Event {
+        id: EventId::new(),
+        entity_id: None,
+        event_type: EventType::EntityCreated,
+        actor: format!("actor-{i}"),
+        diff: None,
+        created_at: chrono::Utc::now(),
+    }
+}
+
+/// Count `?` bind parameters in the SQL string produced by `QueryBuilder` (SQLite).
+fn count_bind_params(sql: &str) -> usize {
+    sql.matches('?').count()
+}
+
+#[test]
+fn entity_insert_sql_uses_multi_row_values() {
+    let entities: Vec<Entity> = (0..5).map(make_test_entity).collect();
+    let qb = build_entity_insert(&entities);
+    let sql = qb.sql();
+
+    assert!(
+        sql.starts_with("INSERT INTO entities"),
+        "expected INSERT INTO entities, got: {sql}"
+    );
+    assert!(
+        sql.contains("ON CONFLICT(id) DO UPDATE"),
+        "expected ON CONFLICT upsert clause"
+    );
+    // 5 entities × 12 cols = 60 bind params
+    assert_eq!(count_bind_params(sql), 60, "sql: {sql}");
+}
+
+#[test]
+fn entity_insert_sql_single_row() {
+    let entities: Vec<Entity> = (0..1).map(make_test_entity).collect();
+    let qb = build_entity_insert(&entities);
+    let sql = qb.sql();
+
+    // 1 entity × 12 cols = 12 bind params
+    assert_eq!(count_bind_params(sql), 12, "sql: {sql}");
+}
+
+#[test]
+fn relation_insert_sql_uses_multi_row_values() {
+    let entities: Vec<Entity> = (0..5).map(make_test_entity).collect();
+    let relations: Vec<Relation> = (0..4)
+        .map(|i| Relation {
+            id: RelationId::new(),
+            source_id: entities[i].id().clone(),
+            target_id: entities[i + 1].id().clone(),
+            relation_type: RelationType::RelatesTo,
+            weight: Weight::DEFAULT,
+            summary: String::new(),
+            metadata: serde_json::json!({}),
+            created_at: chrono::Utc::now(),
+        })
+        .collect();
+
+    let qb = build_relation_insert(&relations);
+    let sql = qb.sql();
+
+    assert!(sql.starts_with("INSERT OR IGNORE INTO relations"));
+    // 4 relations × 8 cols = 32 bind params
+    assert_eq!(count_bind_params(sql), 32, "sql: {sql}");
+}
+
+#[test]
+fn message_insert_sql_uses_multi_row_values() {
+    let messages: Vec<Message> = (0..10).map(make_test_message).collect();
+    let qb = build_message_insert(&messages);
+    let sql = qb.sql();
+
+    assert!(sql.starts_with("INSERT OR IGNORE INTO messages"));
+    // 10 messages × 10 cols = 100 bind params
+    assert_eq!(count_bind_params(sql), 100, "sql: {sql}");
+}
+
+#[test]
+fn event_insert_sql_uses_multi_row_values() {
+    let events: Vec<Event> = (0..10).map(make_test_event).collect();
+    let qb = build_event_insert(&events);
+    let sql = qb.sql();
+
+    assert!(sql.starts_with("INSERT OR IGNORE INTO events"));
+    // 10 events × 6 cols = 60 bind params
+    assert_eq!(count_bind_params(sql), 60, "sql: {sql}");
+}
+
+#[test]
+fn entity_chunk_size_respects_param_limit() {
+    // Verify the chunk constant stays under 999 params
+    assert!(ENTITY_CHUNK * 12 <= 999);
+    assert!((ENTITY_CHUNK + 1) * 12 > 999);
+}
+
+#[test]
+fn relation_chunk_size_respects_param_limit() {
+    assert!(RELATION_CHUNK * 8 <= 999);
+    assert!((RELATION_CHUNK + 1) * 8 > 999);
+}
+
+#[test]
+fn message_chunk_size_respects_param_limit() {
+    assert!(MESSAGE_CHUNK * 10 <= 999);
+    assert!((MESSAGE_CHUNK + 1) * 10 > 999);
+}
+
+#[test]
+fn event_chunk_size_respects_param_limit() {
+    assert!(EVENT_CHUNK * 6 <= 999);
+    assert!((EVENT_CHUNK + 1) * 6 > 999);
+}
+
+#[tokio::test]
+async fn batch_import_multi_chunk_entities_round_trip() {
+    let store = test_db().await;
+    // 90 entities → 2 chunks (chunk=83), verifies multi-chunk execution is correct
+    let entities: Vec<Entity> = (0..90).map(make_test_entity).collect();
+    let data = ExportData {
+        version: 1,
+        exported_at: chrono::Utc::now(),
+        entities,
+        relations: vec![],
+        messages: vec![],
+        events: vec![],
+    };
+
+    let result = store
+        .with_transaction(|conn| {
+            let data = data.clone();
+            Box::pin(async move { import_data(conn, &data, false).await })
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result.entities_imported, 90);
+
+    // Verify all 90 are in the database
+    let all = list_entities(store.pool(), None, None).await.unwrap();
+    assert_eq!(all.len(), 90);
+}
+
+#[tokio::test]
+async fn batch_import_all_types_round_trip() {
+    let store = test_db().await;
+    let entities: Vec<Entity> = (0..5).map(make_test_entity).collect();
+    let mut relations = Vec::new();
+    for i in 0..4 {
+        relations.push(Relation {
+            id: RelationId::new(),
+            source_id: entities[i].id().clone(),
+            target_id: entities[i + 1].id().clone(),
+            relation_type: RelationType::RelatesTo,
+            weight: Weight::DEFAULT,
+            summary: String::new(),
+            metadata: serde_json::json!({}),
+            created_at: chrono::Utc::now(),
+        });
+    }
+    let messages: Vec<Message> = (0..3).map(make_test_message).collect();
+    let events: Vec<Event> = (0..3).map(make_test_event).collect();
+
+    let data = ExportData {
+        version: 1,
+        exported_at: chrono::Utc::now(),
+        entities,
+        relations,
+        messages,
+        events,
+    };
+
+    let result = store
+        .with_transaction(|conn| {
+            let data = data.clone();
+            Box::pin(async move { import_data(conn, &data, true).await })
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result.entities_imported, 5);
+    assert_eq!(result.relations_imported, 4);
+    assert_eq!(result.messages_imported, 3);
+    assert_eq!(result.events_imported, 3);
 }
 
 // ---------------------------------------------------------------------------

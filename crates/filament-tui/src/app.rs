@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
@@ -543,14 +543,23 @@ impl App {
     }
 
     pub async fn refresh_analytics(&mut self) {
+        // Single batch query for name lookup instead of N individual get_entity calls
+        let name_map: HashMap<String, String> = self
+            .conn
+            .list_entities(None, None)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| (e.common().id.to_string(), e.name().to_string()))
+            .collect();
+
         let mut pagerank_data = Vec::new();
         if let Ok(scores) = self.conn.pagerank(None, None).await {
             for (id, score) in &scores {
-                let name = self
-                    .conn
-                    .get_entity(id.as_str())
-                    .await
-                    .map_or_else(|_| id.to_string(), |e| e.name().to_string());
+                let name = name_map
+                    .get(id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| id.to_string());
                 pagerank_data.push((id.clone(), name, *score));
             }
             pagerank_data
@@ -561,11 +570,10 @@ impl App {
         let mut degree_data = Vec::new();
         if let Ok(degrees) = self.conn.degree_centrality().await {
             for (id, (in_deg, out_deg, total)) in &degrees {
-                let name = self
-                    .conn
-                    .get_entity(id.as_str())
-                    .await
-                    .map_or_else(|_| id.to_string(), |e| e.name().to_string());
+                let name = name_map
+                    .get(id.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| id.to_string());
                 degree_data.push((id.clone(), name, *in_deg, *out_deg, *total));
             }
             degree_data.sort_by(|a, b| b.4.cmp(&a.4));
