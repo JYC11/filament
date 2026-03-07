@@ -144,7 +144,8 @@ pub async fn remove(cli: &Cli, args: &RemoveArgs) -> Result<()> {
     let mut conn = connect().await?;
     let entity = conn.resolve_entity(&args.slug).await?;
 
-    conn.delete_entity(entity.id().as_str()).await?;
+    conn.delete_entity(entity.id().as_str(), Some(entity.common().version))
+        .await?;
 
     if cli.json {
         output_json(&serde_json::json!({"deleted": entity.id().as_str()}));
@@ -191,7 +192,8 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
             ref entity_id,
             current_version,
             ref conflicts,
-        }) => {
+        }) if !conflicts.is_empty() => {
+            // Print detailed conflict info (suppresses the generic error in main.rs)
             if cli.json {
                 output_json(&serde_json::json!({
                     "error": "VERSION_CONFLICT",
@@ -217,11 +219,8 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
                     entity.slug()
                 );
             }
-            Err(filament_core::error::FilamentError::VersionConflict {
-                entity_id: entity_id.clone(),
-                current_version,
-                conflicts: conflicts.clone(),
-            })
+            // Return a non-zero exit code without re-printing the error
+            std::process::exit(6);
         }
         Err(e) => Err(e),
     }

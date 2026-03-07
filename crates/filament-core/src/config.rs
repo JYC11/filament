@@ -104,10 +104,10 @@ impl FilamentConfig {
             .unwrap_or(60)
     }
 
-    /// Resolve default priority: config > 2.
+    /// Resolve default priority: config > 2. Clamps to valid range 0-4.
     #[must_use]
     pub fn resolve_default_priority(&self) -> u8 {
-        self.default_priority.unwrap_or(2)
+        self.default_priority.unwrap_or(2).min(4)
     }
 
     /// Resolve idle timeout: env var > config > 1800 (30 min). 0 means never.
@@ -207,6 +207,13 @@ default_priority = 4
     fn load_missing_file_returns_default() {
         let cfg = FilamentConfig::load(std::path::Path::new("/nonexistent/path"));
         assert_eq!(cfg.resolve_default_priority(), 2);
+    }
+
+    #[test]
+    fn out_of_range_priority_clamped_to_max() {
+        let toml_str = "default_priority = 255\n";
+        let cfg: FilamentConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(cfg.resolve_default_priority(), 4);
     }
 
     #[test]

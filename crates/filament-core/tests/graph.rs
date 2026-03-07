@@ -184,16 +184,18 @@ async fn blocker_depth_does_not_follow_outgoing_blocks() {
 async fn impact_score_counts_transitive_dependents() {
     let store = test_db().await;
 
-    let a_id = store
+    // A blocks B, A blocks C → A has 2 downstream dependents (B and C)
+    // B has 0 downstream dependents
+    let (a_id, b_id) = store
         .with_transaction(|conn| {
             Box::pin(async move {
                 let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
                 let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
                 let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
-                // B blocks A, C blocks A (so A has 2 incoming blockers)
-                create_relation(conn, &blocks_req(b.as_str(), a.as_str())).await?;
-                create_relation(conn, &blocks_req(c.as_str(), a.as_str())).await?;
-                Ok(a)
+                // A blocks B, A blocks C (so A has 2 downstream dependents)
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                create_relation(conn, &blocks_req(a.as_str(), c.as_str())).await?;
+                Ok((a, b))
             })
         })
         .await
@@ -203,6 +205,7 @@ async fn impact_score_counts_transitive_dependents() {
     graph.hydrate(store.pool()).await.unwrap();
 
     assert_eq!(graph.impact_score(a_id.as_str()), 2);
+    assert_eq!(graph.impact_score(b_id.as_str()), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -407,8 +410,8 @@ async fn remove_node_updates_counts() {
 async fn batch_impact_scores_returns_all_requested() {
     let store = test_db().await;
 
-    // A blocks B, B blocks C → impact follows incoming edges:
-    // impact(C)=2 (A→B→C transitively), impact(B)=1 (A→B), impact(A)=0
+    // A blocks B, B blocks C → impact counts downstream dependents:
+    // impact(A)=2 (B and C downstream), impact(B)=1 (C downstream), impact(C)=0
     let (a_id, b_id, c_id) = store
         .with_transaction(|conn| {
             Box::pin(async move {
@@ -434,9 +437,9 @@ async fn batch_impact_scores_returns_all_requested() {
     let scores = graph.batch_impact_scores(&ids);
 
     assert_eq!(scores.len(), 3);
-    assert_eq!(scores[a_id.as_str()], 0);
+    assert_eq!(scores[a_id.as_str()], 2);
     assert_eq!(scores[b_id.as_str()], 1);
-    assert_eq!(scores[c_id.as_str()], 2);
+    assert_eq!(scores[c_id.as_str()], 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -868,6 +871,57 @@ async fn blocker_depth_nonexistent_entity() {
     graph.hydrate(store.pool()).await.unwrap();
 
     assert_eq!(graph.blocker_depth("nonexistent-id"), 0);
+}
+
+#[tokio::test]
+async fn impact_score_with_depends_on_edges() {
+    let store = test_db().await;
+
+    // B depends_on A, C depends_on B → A has 2 downstream (B, C), B has 1 (C), C has 0
+    let (a_id, b_id, c_id) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                let (c, _) = create_entity(conn, &task_req("C", 1)).await?;
+                create_relation(conn, &depends_on_req(b.as_str(), a.as_str())).await?;
+                create_relation(conn, &depends_on_req(c.as_str(), b.as_str())).await?;
+                Ok((a, b, c))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    assert_eq!(graph.impact_score(a_id.as_str()), 2);
+    assert_eq!(graph.impact_score(b_id.as_str()), 1);
+    assert_eq!(graph.impact_score(c_id.as_str()), 0);
+}
+
+#[tokio::test]
+async fn impact_score_leaf_node_has_zero_impact() {
+    let store = test_db().await;
+
+    // A blocks B → leaf B has 0 impact
+    let (a_id, b_id) = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                Ok((a, b))
+            })
+        })
+        .await
+        .unwrap();
+
+    let mut graph = KnowledgeGraph::new();
+    graph.hydrate(store.pool()).await.unwrap();
+
+    assert_eq!(graph.impact_score(a_id.as_str()), 1);
+    assert_eq!(graph.impact_score(b_id.as_str()), 0);
 }
 
 #[tokio::test]

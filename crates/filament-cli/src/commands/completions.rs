@@ -3,7 +3,7 @@ use clap_complete::{generate, Shell};
 
 use crate::Cli;
 
-/// Generate shell completions for filament.
+/// Generate shell completions for fl.
 #[derive(Args, Debug)]
 pub struct CompletionsArgs {
     /// Target shell.
@@ -12,5 +12,5 @@ pub struct CompletionsArgs {
 
 pub fn run(args: &CompletionsArgs) {
     let mut cmd = <Cli as clap::CommandFactory>::command();
-    generate(args.shell, &mut cmd, "filament", &mut std::io::stdout());
+    generate(args.shell, &mut cmd, "fl", &mut std::io::stdout());
 }

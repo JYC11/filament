@@ -1,4 +1,4 @@
-use filament_core::error::{FilamentError, Result};
+use filament_core::error::Result;
 
 use super::helpers::connect;
 use crate::Cli;
@@ -8,9 +8,7 @@ pub async fn escalations(cli: &Cli) -> Result<()> {
     let items = conn.list_pending_escalations().await?;
 
     if cli.json {
-        let json = serde_json::to_string_pretty(&items)
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
-        println!("{json}");
+        super::helpers::output_json(&items);
         return Ok(());
     }
 

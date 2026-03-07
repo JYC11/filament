@@ -135,7 +135,8 @@ async fn delete(cli: &Cli, args: &LessonDeleteArgs) -> Result<()> {
     let mut conn = connect().await?;
     let entity = conn.resolve_lesson(&args.slug).await?;
 
-    conn.delete_entity(entity.id.as_str()).await?;
+    conn.delete_entity(entity.id.as_str(), Some(entity.version))
+        .await?;
 
     if cli.json {
         output_json(&serde_json::json!({"deleted": entity.id.as_str()}));
@@ -147,9 +148,15 @@ async fn delete(cli: &Cli, args: &LessonDeleteArgs) -> Result<()> {
 
 async fn show(cli: &Cli, args: &LessonShowArgs) -> Result<()> {
     let mut conn = connect().await?;
-    // Use resolve_lesson for type safety — rejects non-lesson entities
-    let c = conn.resolve_lesson(&args.slug).await?;
     let entity = conn.resolve_entity(&args.slug).await?;
+    if !matches!(entity, filament_core::models::Entity::Lesson(_)) {
+        return Err(filament_core::error::FilamentError::TypeMismatch {
+            expected: filament_core::enums::EntityType::Lesson,
+            actual: entity.entity_type(),
+            slug: entity.common().slug.clone(),
+        });
+    }
+    let c = entity.common();
 
     if cli.json {
         let out = serde_json::json!({

@@ -64,11 +64,11 @@ pub async fn pagerank(cli: &Cli, args: &PageRankArgs) -> Result<()> {
     let limited: Vec<_> = sorted.into_iter().take(args.limit).collect();
 
     if cli.json {
-        let map: std::collections::HashMap<String, f64> = limited
+        let items: Vec<serde_json::Value> = limited
             .iter()
-            .map(|(id, score)| (id.to_string(), *score))
+            .map(|(id, score)| serde_json::json!({"entity_id": id.to_string(), "score": score}))
             .collect();
-        output_json(&map);
+        output_json(&items);
     } else if limited.is_empty() {
         println!("No entities in graph.");
     } else {

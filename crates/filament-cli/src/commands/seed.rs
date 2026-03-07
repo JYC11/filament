@@ -10,9 +10,9 @@ use crate::Cli;
 
 #[derive(Args, Debug)]
 pub struct SeedArgs {
-    /// Seed from CLAUDE.md in the project root (default behavior).
-    #[arg(long, default_value = "true")]
-    claude_md: bool,
+    /// Skip CLAUDE.md parsing (only use --file/--files).
+    #[arg(long)]
+    no_claude_md: bool,
     /// Path to a specific markdown file to ingest (parses ## sections as Doc entities).
     #[arg(long)]
     file: Option<PathBuf>,
@@ -40,7 +40,7 @@ pub async fn seed(cli: &Cli, args: &SeedArgs) -> Result<()> {
 
     if let Some(ref csv_path) = args.files {
         let csv_content = std::fs::read_to_string(csv_path)
-            .map_err(|e| FilamentError::Validation(format!("cannot read CSV file: {e}")))?;
+            .map_err(|e| FilamentError::Validation(format!("cannot read file list: {e}")))?;
         for line in csv_content.lines() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -70,8 +70,8 @@ pub async fn seed(cli: &Cli, args: &SeedArgs) -> Result<()> {
         items.extend(parse_markdown_file(path));
     }
 
-    // Parse project CLAUDE.md if no explicit files provided, or if --claude-md is set
-    if files_to_parse.is_empty() && args.claude_md {
+    // Parse project CLAUDE.md unless --no-claude-md is set or explicit files were provided
+    if !args.no_claude_md && files_to_parse.is_empty() {
         items.extend(parse_markdown_file_with_source(
             &root.join("CLAUDE.md"),
             "CLAUDE.md",

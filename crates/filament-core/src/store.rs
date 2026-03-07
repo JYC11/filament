@@ -419,8 +419,7 @@ pub async fn update_entity_status(
 
 /// Unified entity update with optimistic conflict resolution.
 ///
-/// If `changeset.expected_version` is `None`, applies all changes unconditionally (LWW).
-/// If it matches the current version, applies changes and bumps the version.
+/// If `changeset.expected_version` matches the current version, applies changes and bumps the version.
 /// If there is a version mismatch, attempts auto-merge on non-overlapping fields.
 /// If overlapping fields conflict, returns `VersionConflict`.
 ///
@@ -475,10 +474,10 @@ pub async fn update_entity(
         .as_deref()
         .or(row.content_path.as_deref());
 
-    sqlx::query(
+    let result = sqlx::query(
         "UPDATE entities SET name = ?, summary = ?, status = ?, priority = ?, \
          key_facts = ?, content_path = ?, version = ?, updated_at = ? \
-         WHERE id = ?",
+         WHERE id = ? AND version = ?",
     )
     .bind(new_name.as_str())
     .bind(new_summary)
@@ -489,8 +488,17 @@ pub async fn update_entity(
     .bind(new_version)
     .bind(now)
     .bind(id)
+    .bind(current_version)
     .execute(&mut *conn)
     .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(FilamentError::VersionConflict {
+            entity_id: id.to_string(),
+            current_version: current_version + 1,
+            conflicts: vec![],
+        });
+    }
 
     // Re-fetch and return updated entity
     let updated = sqlx::query_as::<_, EntityRow>("SELECT * FROM entities WHERE id = ?")
@@ -513,21 +521,21 @@ async fn try_auto_merge(
     current_version: i64,
     changeset: &EntityChangeset,
 ) -> Result<()> {
-    // Get events since the expected version.
-    // We use the entity's events with diffs to determine which fields changed.
+    // Get recent events since the expected version.
+    // We only need the last N events where N = current_version - expected_version.
+    let version_diff = current_version.saturating_sub(expected_version);
+    let events_since = usize::try_from(version_diff).unwrap_or(usize::MAX);
+    let limit = i64::try_from(events_since).unwrap_or(i64::MAX);
     let events: Vec<Event> = sqlx::query_as::<_, Event>(
-        "SELECT * FROM events WHERE entity_id = ? AND diff IS NOT NULL ORDER BY created_at ASC",
+        "SELECT * FROM events WHERE entity_id = ? AND diff IS NOT NULL \
+         ORDER BY created_at DESC LIMIT ?",
     )
     .bind(entity_id)
+    .bind(limit)
     .fetch_all(&mut *conn)
     .await?;
 
-    // Collect all remotely changed fields from diffs since the expected version.
-    // We take the last N events where N = current_version - expected_version,
-    // since each update bumps the version by 1.
-    let version_diff = current_version.saturating_sub(expected_version);
-    let events_since = usize::try_from(version_diff).unwrap_or(usize::MAX);
-    let recent_events: Vec<&Event> = events.iter().rev().take(events_since).collect();
+    let recent_events: Vec<&Event> = events.iter().collect();
 
     let mut remotely_changed: HashSet<String> = HashSet::new();
 
@@ -637,15 +645,47 @@ async fn build_conflict_list(
 
 /// Delete an entity.
 ///
+/// If `expected_version` is provided, the delete only succeeds if the entity's version matches.
+/// This prevents deleting a stale entity that was concurrently modified.
+///
 /// # Errors
 ///
 /// Returns `FilamentError::EntityNotFound` if the entity doesn't exist.
-pub async fn delete_entity(conn: &mut SqliteConnection, id: &str) -> Result<()> {
-    let rows = sqlx::query("DELETE FROM entities WHERE id = ?")
-        .bind(id)
-        .execute(&mut *conn)
-        .await?
-        .rows_affected();
+/// Returns `FilamentError::VersionConflict` if the version doesn't match.
+pub async fn delete_entity(
+    conn: &mut SqliteConnection,
+    id: &str,
+    expected_version: Option<i64>,
+) -> Result<()> {
+    let rows = if let Some(version) = expected_version {
+        let r = sqlx::query("DELETE FROM entities WHERE id = ? AND version = ?")
+            .bind(id)
+            .bind(version)
+            .execute(&mut *conn)
+            .await?
+            .rows_affected();
+        if r == 0 {
+            // Distinguish "not found" from "version mismatch"
+            let exists = sqlx::query_scalar::<_, i64>("SELECT version FROM entities WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&mut *conn)
+                .await?;
+            if let Some(current) = exists {
+                return Err(FilamentError::VersionConflict {
+                    entity_id: id.to_string(),
+                    current_version: current,
+                    conflicts: vec![],
+                });
+            }
+        }
+        r
+    } else {
+        sqlx::query("DELETE FROM entities WHERE id = ?")
+            .bind(id)
+            .execute(&mut *conn)
+            .await?
+            .rows_affected()
+    };
 
     if rows == 0 {
         return Err(FilamentError::EntityNotFound { id: id.to_string() });
@@ -1251,7 +1291,7 @@ pub async fn reconcile_stale_agent_runs(conn: &mut SqliteConnection) -> Result<u
     for (task_id,) in &stale_task_ids {
         // Only revert if the task is still in_progress (may have been closed by other means)
         sqlx::query(
-            "UPDATE entities SET status = 'open', updated_at = ? \
+            "UPDATE entities SET status = 'open', version = version + 1, updated_at = ? \
              WHERE id = ? AND status = 'in_progress'",
         )
         .bind(now)

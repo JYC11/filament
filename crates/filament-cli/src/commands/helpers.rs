@@ -16,8 +16,7 @@ pub fn find_project_root() -> Result<PathBuf> {
         }
         if !dir.pop() {
             return Err(FilamentError::Validation(
-                "not a filament project (no .fl/ found). Run `fl init` first."
-                    .to_string(),
+                "not a filament project (no .fl/ found). Run `fl init` first.".to_string(),
             ));
         }
     }

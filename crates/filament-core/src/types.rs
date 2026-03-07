@@ -470,7 +470,14 @@ impl Slug {
     pub fn new() -> Self {
         let chars: Vec<u8> = (0..8)
             .map(|_| {
-                let idx = fastrand_u8() % 36;
+                // Rejection sampling to avoid modulo bias (256 % 36 = 4).
+                // Accept values in 0..252 (largest multiple of 36 ≤ 256).
+                let idx = loop {
+                    let r = fastrand_u8();
+                    if r < 252 {
+                        break r % 36;
+                    }
+                };
                 if idx < 10 {
                     b'0' + idx
                 } else {

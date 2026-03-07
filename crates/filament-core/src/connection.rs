@@ -303,13 +303,13 @@ impl FilamentConnection {
         }
     }
 
-    pub async fn delete_entity(&mut self, id: &str) -> Result<()> {
+    pub async fn delete_entity(&mut self, id: &str, expected_version: Option<i64>) -> Result<()> {
         match self {
             Self::Direct(s) => {
                 let id = id.to_string();
                 s.with_transaction(|conn| {
                     let id = id.clone();
-                    Box::pin(async move { store::delete_entity(conn, &id).await })
+                    Box::pin(async move { store::delete_entity(conn, &id, expected_version).await })
                 })
                 .await
             }

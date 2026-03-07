@@ -193,13 +193,81 @@ async fn delete_entity_cascades_relations() {
     store
         .with_transaction(|conn| {
             let id1 = id1.clone();
-            Box::pin(async move { delete_entity(conn, id1.as_str()).await })
+            Box::pin(async move { delete_entity(conn, id1.as_str(), None).await })
         })
         .await
         .unwrap();
 
     let relations = list_relations(store.pool(), id2.as_str()).await.unwrap();
     assert!(relations.is_empty());
+}
+
+#[tokio::test]
+async fn delete_entity_with_version_mismatch_returns_conflict() {
+    let store = test_db().await;
+    let req = sample_entity_req();
+
+    let id = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move {
+                let (id, _) = create_entity(conn, &req).await?;
+                Ok(id)
+            })
+        })
+        .await
+        .unwrap();
+
+    // Try to delete with wrong version
+    let result = store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            Box::pin(async move { delete_entity(conn, id.as_str(), Some(999)).await })
+        })
+        .await;
+
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        FilamentError::VersionConflict { entity_id, .. } => {
+            assert_eq!(entity_id, id.as_str());
+        }
+        other => panic!("expected VersionConflict, got {other:?}"),
+    }
+
+    // Verify entity still exists
+    let entity = get_entity(store.pool(), id.as_str()).await.unwrap();
+    assert_eq!(entity.common().name.as_str(), req.name.as_str());
+}
+
+#[tokio::test]
+async fn delete_entity_with_correct_version_succeeds() {
+    let store = test_db().await;
+    let req = sample_entity_req();
+
+    let id = store
+        .with_transaction(|conn| {
+            let req = req.clone();
+            Box::pin(async move {
+                let (id, _) = create_entity(conn, &req).await?;
+                Ok(id)
+            })
+        })
+        .await
+        .unwrap();
+
+    let entity = get_entity(store.pool(), id.as_str()).await.unwrap();
+    let version = entity.common().version;
+
+    store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            Box::pin(async move { delete_entity(conn, id.as_str(), Some(version)).await })
+        })
+        .await
+        .unwrap();
+
+    let result = get_entity(store.pool(), id.as_str()).await;
+    assert!(result.is_err());
 }
 
 // ---------------------------------------------------------------------------
@@ -575,7 +643,7 @@ async fn trigger_creates_event_on_entity_delete() {
     store
         .with_transaction(|conn| {
             let id = id.clone();
-            Box::pin(async move { delete_entity(conn, id.as_str()).await })
+            Box::pin(async move { delete_entity(conn, id.as_str(), None).await })
         })
         .await
         .unwrap();
@@ -1732,9 +1800,14 @@ async fn reconcile_stale_runs_marks_running_as_failed() {
     assert!(run.finished_at.is_some());
     assert!(run.result_json.unwrap().contains("daemon restarted"));
 
-    // Task should be reverted to open
+    // Task should be reverted to open with bumped version
     let entity = get_entity(store.pool(), task_id.as_str()).await.unwrap();
     assert_eq!(*entity.status(), EntityStatus::Open);
+    // Version should have been bumped by reconciliation (m5 regression test)
+    assert!(
+        entity.common().version >= 2,
+        "reconcile should bump entity version"
+    );
 }
 
 #[tokio::test]
@@ -2187,7 +2260,7 @@ async fn search_reflects_deletes() {
     store
         .with_transaction(|conn| {
             let id = id.to_string();
-            Box::pin(async move { delete_entity(conn, &id).await })
+            Box::pin(async move { delete_entity(conn, &id, None).await })
         })
         .await
         .unwrap();

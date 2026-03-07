@@ -166,7 +166,7 @@ pub async fn delete(
         .store
         .with_transaction(|conn| {
             let id = p.id.clone();
-            Box::pin(async move { store::delete_entity(conn, &id).await })
+            Box::pin(async move { store::delete_entity(conn, &id, None).await })
         })
         .await?;
 

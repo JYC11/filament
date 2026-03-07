@@ -29,7 +29,16 @@ pub async fn serve(cli: &Cli, args: &ServeArgs) -> Result<()> {
 
     // Check for already-running daemon via PID file
     if config.pid_path.exists() {
-        let pid_str = std::fs::read_to_string(&config.pid_path).unwrap_or_default();
+        let pid_str = match std::fs::read_to_string(&config.pid_path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!(
+                    "warning: cannot read PID file {}: {e}",
+                    config.pid_path.display()
+                );
+                String::new()
+            }
+        };
         if let Ok(pid) = pid_str.trim().parse::<u32>() {
             // Probe if the process is still alive
             if is_process_alive(pid) {

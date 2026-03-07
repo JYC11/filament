@@ -41,13 +41,15 @@ pub async fn audit(cli: &Cli, args: &AuditArgs) -> Result<()> {
     }
 
     // Guard: refuse to switch branches if working tree is dirty
-    let dirty_check = std::process::Command::new("git")
-        .args(["diff", "--quiet", "HEAD"])
+    // Use `git status --porcelain` instead of `git diff HEAD` to handle repos with no commits
+    let status_output = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
         .current_dir(&root)
-        .status()
+        .output()
         .map_err(FilamentError::Io)?;
 
-    if !dirty_check.success() {
+    let has_changes = !status_output.stdout.is_empty();
+    if has_changes {
         return Err(FilamentError::Validation(
             "working tree has uncommitted changes — commit or stash before running audit"
                 .to_string(),

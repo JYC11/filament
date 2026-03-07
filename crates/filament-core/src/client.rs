@@ -384,12 +384,13 @@ impl DaemonClient {
     }
 
     pub async fn list_all_agent_runs(&mut self, limit: u32) -> Result<Vec<AgentRun>> {
-        self.call(
-            Method::ListAgentRunsByTask,
-            serde_json::json!({ "task_id": "__all__", "limit": limit }),
-        )
-        .await
-        .map_or_else(|_| Ok(Vec::new()), Self::parse_result)
+        let result = self
+            .call(
+                Method::ListAgentRunsByTask,
+                serde_json::json!({ "task_id": "__all__", "limit": limit }),
+            )
+            .await?;
+        Self::parse_result(result)
     }
 
     // -- Dispatch operations --

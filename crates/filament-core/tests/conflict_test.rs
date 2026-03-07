@@ -565,6 +565,51 @@ async fn retry_after_conflict_with_fresh_version_succeeds() {
 }
 
 // ---------------------------------------------------------------------------
+// Regression: update with matching version uses WHERE version guard
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn update_with_matching_version_bumps_version() {
+    let store = test_db().await;
+    let id = create_test_entity(&store).await;
+
+    // Update at version 0 → should succeed and become version 1
+    let cs = EntityChangeset {
+        summary: Some("updated".to_string()),
+        expected_version: 0,
+        ..default_changeset()
+    };
+    let updated = store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            let cs = cs.clone();
+            Box::pin(async move { update_entity(conn, &id, &cs).await })
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(updated.common().version, 1);
+    assert_eq!(updated.common().summary, "updated");
+
+    // Second update must use version 1
+    let cs2 = EntityChangeset {
+        summary: Some("updated-again".to_string()),
+        expected_version: 1,
+        ..default_changeset()
+    };
+    let updated2 = store
+        .with_transaction(|conn| {
+            let id = id.clone();
+            let cs = cs2.clone();
+            Box::pin(async move { update_entity(conn, &id, &cs).await })
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(updated2.common().version, 2);
+}
+
+// ---------------------------------------------------------------------------
 // Edge case: partial overlap — some fields conflict, some don't
 // ---------------------------------------------------------------------------
 

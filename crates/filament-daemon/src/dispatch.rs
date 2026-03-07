@@ -276,27 +276,8 @@ async fn await_agent_output(
 ) -> std::result::Result<std::process::Output, String> {
     let blocking_wait = tokio::task::spawn_blocking(move || child.wait_with_output());
 
-    if timeout_secs > 0 {
-        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), blocking_wait)
-            .await
-        {
-            Ok(Ok(Ok(output))) => Ok(output),
-            Ok(Ok(Err(e))) => {
-                error!(run_id = %run_id, "failed to wait on agent: {e}");
-                Err(e.to_string())
-            }
-            Ok(Err(e)) => {
-                error!(run_id = %run_id, "monitor task panicked: {e}");
-                Err(e.to_string())
-            }
-            Err(_elapsed) => {
-                warn!(run_id = %run_id, timeout_secs = timeout_secs, "agent timed out, killing");
-                kill_agent_by_run_id(state, run_id).await;
-                Err(format!("agent timed out after {timeout_secs}s"))
-            }
-        }
-    } else {
-        match blocking_wait.await {
+    if timeout_secs == 0 {
+        return match blocking_wait.await {
             Ok(Ok(output)) => Ok(output),
             Ok(Err(e)) => {
                 error!(run_id = %run_id, "failed to wait on agent: {e}");
@@ -306,6 +287,36 @@ async fn await_agent_output(
                 error!(run_id = %run_id, "monitor task panicked: {e}");
                 Err(e.to_string())
             }
+        };
+    }
+
+    tokio::pin!(blocking_wait);
+    let sleep = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs));
+    tokio::pin!(sleep);
+
+    tokio::select! {
+        result = &mut blocking_wait => {
+            match result {
+                Ok(Ok(output)) => Ok(output),
+                Ok(Err(e)) => {
+                    error!(run_id = %run_id, "failed to wait on agent: {e}");
+                    Err(e.to_string())
+                }
+                Err(e) => {
+                    error!(run_id = %run_id, "monitor task panicked: {e}");
+                    Err(e.to_string())
+                }
+            }
+        }
+        () = &mut sleep => {
+            warn!(run_id = %run_id, timeout_secs = timeout_secs, "agent timed out, killing");
+            kill_agent_by_run_id(state, run_id).await;
+            // Reap the child process after kill so the blocking thread is released
+            let reap_timeout = std::time::Duration::from_secs(5);
+            if tokio::time::timeout(reap_timeout, blocking_wait).await.is_err() {
+                warn!(run_id = %run_id, "failed to reap killed agent process within 5s");
+            }
+            Err(format!("agent timed out after {timeout_secs}s"))
         }
     }
 }
@@ -506,21 +517,16 @@ async fn route_result(
         }
     }
 
-    // Release reservations when agent exits (completed, failed, or blocked — subprocess is gone)
-    if matches!(
-        result.status,
-        AgentStatus::Completed | AgentStatus::Failed | AgentStatus::Blocked
-    ) {
-        if let Err(e) = state
-            .store
-            .with_transaction(|conn| {
-                let name = agent_name.to_string();
-                Box::pin(async move { store::release_reservations_by_agent(conn, &name).await })
-            })
-            .await
-        {
-            warn!(run_id = %run_id, "failed to release agent reservations: {e}");
-        }
+    // Release reservations — subprocess has exited regardless of reported status
+    if let Err(e) = state
+        .store
+        .with_transaction(|conn| {
+            let name = agent_name.to_string();
+            Box::pin(async move { store::release_reservations_by_agent(conn, &name).await })
+        })
+        .await
+    {
+        warn!(run_id = %run_id, "failed to release agent reservations: {e}");
     }
 
     // Refresh graph
@@ -652,45 +658,24 @@ async fn finish_run_failed(
     agent_name: &str,
     error_msg: &str,
 ) {
-    // Mark run as failed
+    // Atomically: mark run as failed, revert task to open, release reservations
     if let Err(e) = state
         .store
         .with_transaction(|conn| {
             let id = run_id.to_string();
+            let tid = task_id.to_string();
+            let name = agent_name.to_string();
             let result_json = serde_json::json!({"error": error_msg}).to_string();
             Box::pin(async move {
-                store::finish_agent_run(conn, &id, AgentStatus::Failed, Some(&result_json)).await
+                store::finish_agent_run(conn, &id, AgentStatus::Failed, Some(&result_json)).await?;
+                store::update_entity_status(conn, &tid, EntityStatus::Open).await?;
+                store::release_reservations_by_agent(conn, &name).await?;
+                Ok(())
             })
         })
         .await
     {
-        error!(run_id = %run_id, "failed to mark run as failed: {e}");
-    }
-
-    // Revert task to open
-    if let Err(e) = state
-        .store
-        .with_transaction(|conn| {
-            let tid = task_id.to_string();
-            Box::pin(
-                async move { store::update_entity_status(conn, &tid, EntityStatus::Open).await },
-            )
-        })
-        .await
-    {
-        error!(run_id = %run_id, "failed to revert task status: {e}");
-    }
-
-    // Release reservations
-    if let Err(e) = state
-        .store
-        .with_transaction(|conn| {
-            let name = agent_name.to_string();
-            Box::pin(async move { store::release_reservations_by_agent(conn, &name).await })
-        })
-        .await
-    {
-        warn!(run_id = %run_id, "failed to release agent reservations: {e}");
+        error!(run_id = %run_id, "failed to finish failed run: {e}");
     }
 
     // Refresh graph

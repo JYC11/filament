@@ -105,12 +105,12 @@ fn priority_bar_line(filter: &FilterState) -> Line<'static> {
         let p = Priority::new(i).expect("0-4 is valid");
         let selected = filter.priorities.contains(&p);
         let style = chip_style(selected);
-        spans.push(Span::styled(format!(" P{i} "), style));
+        spans.push(Span::styled(format!(" {}:P{i} ", i + 1), style));
         spans.push(Span::raw(" "));
     }
 
     spans.push(Span::styled(
-        " Esc:Close ",
+        " 0:Clear  Esc:Close ",
         Style::default().fg(Color::DarkGray),
     ));
 

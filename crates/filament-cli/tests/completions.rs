@@ -11,7 +11,7 @@ fn completions_bash_outputs_valid_script() {
         .args(["completions", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("filament"));
+        .stdout(predicate::str::contains("fl"));
 }
 
 #[test]
@@ -21,7 +21,7 @@ fn completions_zsh_outputs_valid_script() {
         .args(["completions", "zsh"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("filament"));
+        .stdout(predicate::str::contains("fl"));
 }
 
 #[test]
@@ -31,5 +31,5 @@ fn completions_fish_outputs_valid_script() {
         .args(["completions", "fish"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("filament"));
+        .stdout(predicate::str::contains("fl"));
 }

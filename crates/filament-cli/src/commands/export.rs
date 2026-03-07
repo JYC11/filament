@@ -62,9 +62,7 @@ pub async fn import(cli: &Cli, args: &ImportArgs) -> Result<()> {
     let result = conn.import_data(&data, !args.no_events).await?;
 
     if cli.json {
-        let json = serde_json::to_string_pretty(&result)
-            .map_err(|e| FilamentError::Protocol(e.to_string()))?;
-        println!("{json}");
+        super::helpers::output_json(&result);
     } else {
         println!("Imported:");
         println!("  entities:  {}", result.entities_imported);

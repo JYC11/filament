@@ -131,10 +131,12 @@ impl FilamentMcp {
     ) -> Result<String, String> {
         self.check_allowed("fl_message_send")?;
         let mut conn = self.conn.lock().await;
-        // Validate recipient exists and is an agent
-        conn.resolve_agent(&p.to_agent)
-            .await
-            .map_err(|e| map_err(&e))?;
+        // Validate recipient — allow "user" for escalations, otherwise must be an agent entity
+        if p.to_agent != "user" {
+            conn.resolve_agent(&p.to_agent)
+                .await
+                .map_err(|e| map_err(&e))?;
+        }
         let req = SendMessageRequest {
             from_agent: p.from_agent,
             to_agent: p.to_agent,
@@ -303,7 +305,7 @@ impl FilamentMcp {
             .resolve_entity(&p.slug)
             .await
             .map_err(|e| map_err(&e))?;
-        conn.delete_entity(entity.id().as_str())
+        conn.delete_entity(entity.id().as_str(), None)
             .await
             .map_err(|e| map_err(&e))?;
         Ok(format!("Deleted: {} ({})", entity.name(), entity.slug()))

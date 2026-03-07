@@ -319,21 +319,30 @@ impl KnowledgeGraph {
         max_depth
     }
 
-    /// Impact score: number of transitive dependents (nodes reachable via incoming edges).
+    /// Impact score: number of transitive dependents (downstream nodes).
+    ///
+    /// For `Blocks`: X blocks Y means Y depends on X, so Y is downstream → follow outgoing.
+    /// For `DependsOn`: Y `depends_on` X means Y is downstream → follow incoming.
     #[must_use]
     pub fn impact_score(&self, entity_id: &str) -> usize {
         let Some(&start) = self.index.get(entity_id) else {
             return 0;
         };
 
-        // Count nodes reachable by following incoming "blocks" edges in reverse
-        // i.e., who depends on this entity transitively
         let mut visited = std::collections::HashSet::new();
         let mut stack = vec![start];
         while let Some(node) = stack.pop() {
+            // Outgoing Blocks edges: X blocks Y → Y is a dependent
+            for edge in self.graph.edges_directed(node, Direction::Outgoing) {
+                if edge.weight().relation_type == RelationType::Blocks
+                    && visited.insert(edge.target())
+                {
+                    stack.push(edge.target());
+                }
+            }
+            // Incoming DependsOn edges: Y depends_on X → Y is a dependent
             for edge in self.graph.edges_directed(node, Direction::Incoming) {
-                if (edge.weight().relation_type == RelationType::Blocks
-                    || edge.weight().relation_type == RelationType::DependsOn)
+                if edge.weight().relation_type == RelationType::DependsOn
                     && visited.insert(edge.source())
                 {
                     stack.push(edge.source());

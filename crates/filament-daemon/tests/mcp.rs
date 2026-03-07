@@ -191,10 +191,7 @@ async fn tool_inspect_entity() {
     let slug = extract_slug(&extract_text(&add_result));
 
     let result = peer
-        .call_tool(call(
-            "fl_inspect",
-            serde_json::json!({ "slug": slug }),
-        ))
+        .call_tool(call("fl_inspect", serde_json::json!({ "slug": slug })))
         .await
         .expect("inspect");
 
@@ -228,10 +225,7 @@ async fn tool_task_close() {
     let slug = extract_slug(&extract_text(&add_result));
 
     let result = peer
-        .call_tool(call(
-            "fl_task_close",
-            serde_json::json!({ "slug": slug }),
-        ))
+        .call_tool(call("fl_task_close", serde_json::json!({ "slug": slug })))
         .await
         .expect("close");
 
@@ -241,10 +235,7 @@ async fn tool_task_close() {
 
     // Verify it's closed via inspect
     let result = peer
-        .call_tool(call(
-            "fl_inspect",
-            serde_json::json!({ "slug": slug }),
-        ))
+        .call_tool(call("fl_inspect", serde_json::json!({ "slug": slug })))
         .await
         .expect("inspect");
 
@@ -427,10 +418,7 @@ async fn tool_task_ready() {
     }
 
     let result = peer
-        .call_tool(call(
-            "fl_task_ready",
-            serde_json::json!({ "limit": 10 }),
-        ))
+        .call_tool(call("fl_task_ready", serde_json::json!({ "limit": 10 })))
         .await
         .expect("ready tasks");
 

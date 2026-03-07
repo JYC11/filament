@@ -76,7 +76,7 @@ fn init_config() {
 # All fields are optional — missing values use defaults.
 # Environment variables (FILAMENT_*) override these values.
 
-# Default priority for new entities (1-5, default 2)
+# Default priority for new entities (0-4, default 2)
 # default_priority = 2
 
 # Default output format: \"text\" or \"json\" (default \"text\")

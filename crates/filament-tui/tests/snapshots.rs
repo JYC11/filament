@@ -690,5 +690,5 @@ fn format_seconds_7322() {
 #[test]
 fn format_seconds_negative() {
     let result = filament_tui::views::format_seconds(-5);
-    assert_eq!(result, "-5s");
+    assert_eq!(result, "0s", "negative input should clamp to 0");
 }
