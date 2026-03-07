@@ -2,6 +2,14 @@
 
 Local-only Rust tool for multi-agent orchestration, knowledge graph, task management, inter-agent communication, CLI + TUI.
 
+## Context Management (MANDATORY)
+
+- **Minimal onboarding.** At session start, read only CLAUDE.md + MEMORY.md + `fl task ready`. Do NOT explore the codebase, read source files, or run extra commands until you have a specific task.
+- **Route through docs first.** Before grepping or reading source, check if the answer is already in CLAUDE.md, MEMORY.md, `fl inspect <slug>`, or `fl lesson list`. These are the index — source code is the last resort.
+- **Filament is the second brain.** `.md` files are the committed summary; filament's knowledge graph holds the full context (entities, relations, lessons, task deps). Use `fl context --around <slug>` for neighborhood context, `fl search <query>` for free-text lookup.
+- **Target <50% context window per task.** If a task will consume more than half the context window (including exploration + implementation + testing), split it into smaller tasks first. Every task should complete with room to spare.
+- **No speculative reads.** Do not read files "just in case". Each tool call should have a clear purpose tied to the current task. Minimize exploration — pattern-match from docs and existing modules.
+
 ## Project Layout
 
 ```
@@ -12,7 +20,7 @@ filament/
 ├── .plan/
 │   ├── filament-v1.md          # master plan v1.1 (all 6 phases complete)
 │   ├── gotchas.md              # pitfalls & solutions (sqlx, thiserror, petgraph, etc.)
-│   └── adr/                    # architecture decision records (001–020)
+│   └── adr/                    # architecture decision records (001–023)
 ├── .qa/                        # QA results + simulation logs
 ├── crates/
 │   ├── filament-core/          # library: graph, storage, models, errors
@@ -24,7 +32,7 @@ filament/
 
 ## Architecture Decisions
 
-Full ADRs with rationale: `.plan/adr/` (001–022). Key choices:
+Full ADRs with rationale: `.plan/adr/` (001–023). Key choices:
 
 - **Hybrid daemon** — direct SQLite single-user, daemon for multi-agent (ADR-001)
 - **Unified graph** — all data as Entity nodes + Relation edges (ADR-003)
@@ -131,29 +139,26 @@ New gotchas and solutions should be recorded as **Lesson entities** (`fl lesson 
 - petgraph 0.7 requires `use petgraph::visit::EdgeRef` for edge methods
 - SQLite cannot ALTER CHECK constraints — must recreate table in migrations
 
-## Dual-Track Project Management
+## Task Tracking
 
-This project uses **both** traditional `.md` files and filament's own knowledge graph. Keep both in sync.
+This project uses **filament itself** for task management, with `.md` files as the committed source of truth.
 
-| Concern | Old way (.md files) | New way (filament CLI) |
-|---------|--------------------|-----------------------|
-| Plans & phases | `.plan/filament-v1.md` | `fl list --type plan` |
-| Tasks & deps | Manual tracking in MEMORY.md | `fl task ready`, `fl task blocker-depth` |
-| Architecture | `.plan/adr/*.md` | `fl list --type doc`, `fl context --around <adr>` |
-| Code structure | This file's Project Layout section | `fl list --type module`, `fl context --around <module>` |
-| What's next | MEMORY.md "Next Steps" | `fl task ready` |
-| Gotchas & lessons | `.plan/gotchas.md` | `fl lesson list`, `fl lesson show <slug>` |
+- **What's next**: `fl task ready`
+- **Start work**: `fl update <slug> --status in_progress`
+- **Finish work**: `fl task close <slug>`
+- **New tasks**: `fl task add <name> --summary "..." --priority N`
+- **Dependencies**: `fl relate <blocker> blocks <blocked>`
+- **Full backlog**: `fl task list`
+- **Lessons/gotchas**: `fl lesson list`, `fl lesson show <slug>`
 
 **Rules:**
 - When creating/closing tasks, do it in filament AND update MEMORY.md
 - When adding ADRs or plans, create both the `.md` file and a filament entity with `--content` pointing to it
-- When finishing a phase, `fl task close <phase-task>` and update Current Status below
 - `.fl/` is gitignored (local per-user DB) — `.md` files remain the committed source of truth
-- Use `fl task ready` to decide what to work on next
 
 ## Current Status
 
-**All 7 phases complete + agent hardening** (2026-03-06). 510 tests, zero clippy warnings.
+**All 7 phases complete + agent hardening** (2026-03-07). 529 tests, zero clippy warnings.
 
 | Phase | What | Key details |
 |-------|------|-------------|
@@ -180,27 +185,3 @@ Key architectural features:
 - **Audit trail**: `fl audit` snapshots knowledge graph to a git branch
 - **Agent timeout**: `agent_timeout_secs` (default 1h) kills long-running agents via SIGTERM→SIGKILL
 - **Dead agent reconciliation**: daemon periodically checks PIDs, cleans up crashed agent runs
-
-## Task Tracking with Filament
-
-This project uses **filament itself** for task tracking. Always use the `/filament` skill for task management.
-
-- **Start of session**: Run `fl task ready` to see what to work on next
-- **Starting work**: `fl update <slug> --status in_progress`
-- **Finishing work**: `fl task close <slug>`
-- **New bugs/features**: `fl task add <name> --summary "..." --priority N`
-- **Dependencies**: `fl relate <blocker> blocks <blocked>`
-- **Full backlog**: `fl task list`
-
-The `.fl/` directory is gitignored (local per-user DB). The task list here is the canonical source for what needs doing.
-
-## References
-
-- beads_rust (task management + error patterns): https://github.com/Dicklesworthstone/beads_rust
-- Flywheel ecosystem (multi-agent orchestration): https://github.com/Dicklesworthstone
-- Claude Code orchestration patterns:
-  - https://github.com/affaan-m/everything-claude-code
-  - https://github.com/VoltAgent/awesome-claude-code-subagents
-  - https://github.com/obra/superpowers
-- Interesting patterns
-  - https://github.com/openai/symphony
