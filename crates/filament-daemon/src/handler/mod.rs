@@ -61,6 +61,7 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::ListRunningAgents => agent_run::list_running(params, state).await,
         Method::GetAgentRun => dispatch::get_run(params, state).await,
         Method::ListAgentRunsByTask => dispatch::list_runs_by_task(params, state).await,
+        Method::ListAllAgentRuns => dispatch::list_all_runs(params, state).await,
         // Dispatch
         Method::DispatchAgent => dispatch::dispatch_agent(params, state).await,
         // Graph

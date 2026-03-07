@@ -45,6 +45,15 @@ pub async fn list_runs_by_task(
     Ok(serde_json::to_value(&runs).expect("infallible"))
 }
 
+pub async fn list_all_runs(
+    params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let p: ListAllRunsParam = parse_params(params)?;
+    let runs = store::list_all_agent_runs(state.store.pool(), p.limit).await?;
+    Ok(serde_json::to_value(&runs).expect("infallible"))
+}
+
 // ---------------------------------------------------------------------------
 // Param structs
 // ---------------------------------------------------------------------------
@@ -63,4 +72,9 @@ struct GetRunParam {
 #[derive(Deserialize)]
 struct ListRunsByTaskParam {
     task_id: String,
+}
+
+#[derive(Deserialize)]
+struct ListAllRunsParam {
+    limit: u32,
 }

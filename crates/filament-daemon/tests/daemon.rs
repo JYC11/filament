@@ -498,6 +498,128 @@ async fn agent_run_operations_via_socket() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn list_all_agent_runs_via_socket() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Create two tasks with agent runs
+    let (task_id_1, _) = client
+        .create_entity(serde_json::json!({
+            "name": "all-runs-task-1",
+            "entity_type": "task",
+            "summary": "First task",
+        }))
+        .await
+        .expect("create task 1");
+
+    let (task_id_2, _) = client
+        .create_entity(serde_json::json!({
+            "name": "all-runs-task-2",
+            "entity_type": "task",
+            "summary": "Second task",
+        }))
+        .await
+        .expect("create task 2");
+
+    let run_id_1 = client
+        .create_agent_run(task_id_1.as_str(), "coder", Some(11111))
+        .await
+        .expect("create run 1");
+
+    let run_id_2 = client
+        .create_agent_run(task_id_2.as_str(), "reviewer", Some(22222))
+        .await
+        .expect("create run 2");
+
+    // list_all_agent_runs should return both runs
+    let all_runs = client
+        .list_all_agent_runs(100)
+        .await
+        .expect("list all agent runs");
+    assert_eq!(all_runs.len(), 2);
+
+    let ids: Vec<_> = all_runs.iter().map(|r| r.id.clone()).collect();
+    assert!(ids.contains(&run_id_1));
+    assert!(ids.contains(&run_id_2));
+
+    // list_agent_runs_by_task should return only the run for that task
+    let task1_runs = client
+        .list_agent_runs_by_task(task_id_1.as_str())
+        .await
+        .expect("list by task 1");
+    assert_eq!(task1_runs.len(), 1);
+    assert_eq!(task1_runs[0].id, run_id_1);
+
+    // Finish both runs
+    client
+        .finish_agent_run(run_id_1.as_str(), "completed", None)
+        .await
+        .expect("finish run 1");
+    client
+        .finish_agent_run(run_id_2.as_str(), "completed", None)
+        .await
+        .expect("finish run 2");
+
+    // list_all_agent_runs still returns finished runs (they're historical)
+    let all_after = client
+        .list_all_agent_runs(100)
+        .await
+        .expect("list all after finish");
+    assert_eq!(all_after.len(), 2);
+
+    // But list_running_agents returns empty
+    let running = client.list_running_agents().await.expect("list running");
+    assert!(running.is_empty());
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn list_all_agent_runs_respects_limit() {
+    let (mut client, cancel, _tmp) = start_test_daemon().await;
+
+    // Create 3 tasks with agent runs
+    let mut run_ids = Vec::new();
+    for i in 0..3 {
+        let (task_id, _) = client
+            .create_entity(serde_json::json!({
+                "name": format!("limit-task-{i}"),
+                "entity_type": "task",
+                "summary": format!("Task {i}"),
+            }))
+            .await
+            .unwrap_or_else(|_| panic!("create task {i}"));
+
+        let run_id = client
+            .create_agent_run(task_id.as_str(), "coder", Some(30000 + i))
+            .await
+            .unwrap_or_else(|_| panic!("create run {i}"));
+
+        client
+            .finish_agent_run(run_id.as_str(), "completed", None)
+            .await
+            .unwrap_or_else(|_| panic!("finish run {i}"));
+
+        run_ids.push(run_id);
+    }
+
+    // Limit = 2 should return only 2
+    let limited = client
+        .list_all_agent_runs(2)
+        .await
+        .expect("list all with limit 2");
+    assert_eq!(limited.len(), 2);
+
+    // Limit = 100 should return all 3
+    let all = client
+        .list_all_agent_runs(100)
+        .await
+        .expect("list all with limit 100");
+    assert_eq!(all.len(), 3);
+
+    cancel.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn entity_events_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 

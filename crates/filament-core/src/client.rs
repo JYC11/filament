@@ -399,8 +399,8 @@ impl DaemonClient {
     pub async fn list_all_agent_runs(&mut self, limit: u32) -> Result<Vec<AgentRun>> {
         let result = self
             .call(
-                Method::ListAgentRunsByTask,
-                serde_json::json!({ "task_id": "__all__", "limit": limit }),
+                Method::ListAllAgentRuns,
+                serde_json::json!({ "limit": limit }),
             )
             .await?;
         Self::parse_result(result)

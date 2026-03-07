@@ -83,6 +83,7 @@ pub enum Method {
     ListRunningAgents,
     GetAgentRun,
     ListAgentRunsByTask,
+    ListAllAgentRuns,
 
     // Dispatch operations
     DispatchAgent,

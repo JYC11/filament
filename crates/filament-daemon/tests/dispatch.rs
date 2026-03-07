@@ -240,6 +240,16 @@ async fn get_agent_run_and_list_by_task() {
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].id, run_id);
 
+    // list_all_agent_runs should also include this run
+    let all_runs = client
+        .list_all_agent_runs(100)
+        .await
+        .expect("list all agent runs");
+    assert!(
+        all_runs.iter().any(|r| r.id == run_id),
+        "list_all_agent_runs should include the dispatched run"
+    );
+
     cancel.cancel();
 }
 

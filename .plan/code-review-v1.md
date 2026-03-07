@@ -74,7 +74,7 @@
 |----|-------|-------------|
 | m2 | `content_path` cannot be cleared once set | Needs `Option<Option<String>>` pattern through full stack — design decision |
 | m4 | Import does N individual INSERTs | Performance optimization, not correctness bug |
-| m7 | `__all__` sentinel for list-all-agent-runs | API smell but functional, needs protocol redesign |
+| m7 | `__all__` sentinel for list-all-agent-runs | ~~FIXED — added `ListAllAgentRuns` protocol method~~ |
 | m17 | N+1 queries in TUI `refresh_analytics` | Performance optimization, not correctness bug |
 
 **Note**: m10, m12, m16 were actually fixed but listed as deferred in the earlier version. Updated.
@@ -132,7 +132,7 @@ These items need planning and discussion before implementation:
 
 ### Needs Design Decision
 - **m2**: `content_path` cannot be cleared once set — needs `Option<Option<String>>` or sentinel pattern through CLI → handler → store stack
-- **m7**: `__all__` sentinel string for listing all agent runs — needs clean protocol method
+- ~~**m7**: `__all__` sentinel string for listing all agent runs — FIXED: added `Method::ListAllAgentRuns` + dedicated handler~~
 
 ### Performance Optimizations (correctness is fine)
 - **m4**: Import does N individual INSERTs instead of batch — could use multi-row INSERT or transaction batching
