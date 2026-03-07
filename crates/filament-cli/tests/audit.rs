@@ -1,6 +1,5 @@
 mod common;
 
-use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
@@ -23,15 +22,10 @@ fn init_git_project() -> TempDir {
         .current_dir(dir.path())
         .output()
         .unwrap();
-    // filament init
-    Command::cargo_bin("filament")
-        .unwrap()
-        .current_dir(dir.path())
-        .arg("init")
-        .assert()
-        .success();
-    // Gitignore .filament/ so DB changes don't dirty the tree
-    std::fs::write(dir.path().join(".gitignore"), ".filament/\n").unwrap();
+    // fl init
+    common::filament(&dir).arg("init").assert().success();
+    // Gitignore .fl/ so DB changes don't dirty the tree
+    std::fs::write(dir.path().join(".gitignore"), ".fl/\n").unwrap();
     // Initial commit so HEAD exists
     std::process::Command::new("git")
         .args(["add", "."])
@@ -46,18 +40,12 @@ fn init_git_project() -> TempDir {
     dir
 }
 
-fn filament(dir: &TempDir) -> Command {
-    let mut cmd = Command::cargo_bin("filament").unwrap();
-    cmd.current_dir(dir.path());
-    cmd
-}
-
 #[test]
 fn audit_creates_snapshot_on_branch() {
     let dir = init_git_project();
 
     // Add an entity so the graph is non-empty
-    filament(&dir)
+    common::filament(&dir)
         .args([
             "add",
             "test-module",
@@ -70,7 +58,7 @@ fn audit_creates_snapshot_on_branch() {
         .success();
 
     // Run audit
-    filament(&dir)
+    common::filament(&dir)
         .arg("audit")
         .assert()
         .success()
@@ -110,7 +98,7 @@ fn audit_json_output() {
     let dir = init_git_project();
 
     // Run audit with --json
-    filament(&dir)
+    common::filament(&dir)
         .args(["--json", "audit"])
         .assert()
         .success()
@@ -132,7 +120,7 @@ fn audit_rejects_dirty_tree() {
         .unwrap();
 
     // Audit should fail because of uncommitted changes
-    filament(&dir)
+    common::filament(&dir)
         .arg("audit")
         .assert()
         .failure()
@@ -144,7 +132,7 @@ fn audit_custom_branch() {
     let dir = init_git_project();
 
     // Run audit with custom branch name
-    filament(&dir)
+    common::filament(&dir)
         .args(["audit", "--branch", "my-audit"])
         .assert()
         .success()
