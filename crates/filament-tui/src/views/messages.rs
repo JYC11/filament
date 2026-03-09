@@ -9,7 +9,13 @@ use filament_core::models::{Message, MessageStatus, MessageType};
 // Message table (list view)
 // ---------------------------------------------------------------------------
 
-pub fn render_message_table(messages: &[Message], filter_label: &str) -> Table<'static> {
+pub fn render_message_table(
+    messages: &[Message],
+    filter_label: &str,
+    sort_label: &str,
+    has_prev: bool,
+    has_next: bool,
+) -> Table<'static> {
     let header = Row::new(vec![
         Cell::from("Type"),
         Cell::from("From"),
@@ -54,22 +60,34 @@ pub fn render_message_table(messages: &[Message], filter_label: &str) -> Table<'
         ],
     )
     .header(header)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" Messages [{filter_label}] ")),
-    )
+    .block(Block::default().borders(Borders::ALL).title(format!(
+        " Messages [{filter_label}] sort:{sort_label}{} ",
+        page_indicator(has_prev, has_next),
+    )))
     .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
 }
 
+pub struct MessageTableParams<'a> {
+    pub messages: &'a [Message],
+    pub filter_label: &'a str,
+    pub sort_label: &'a str,
+    pub has_prev: bool,
+    pub has_next: bool,
+}
+
 pub fn render_message_table_stateful(
-    messages: &[Message],
-    filter_label: &str,
+    params: &MessageTableParams<'_>,
     state: &mut TableState,
     frame: &mut ratatui::Frame,
     area: Rect,
 ) {
-    let table = render_message_table(messages, filter_label);
+    let table = render_message_table(
+        params.messages,
+        params.filter_label,
+        params.sort_label,
+        params.has_prev,
+        params.has_next,
+    );
     frame.render_stateful_widget(table, area, state);
 }
 
@@ -214,6 +232,15 @@ fn msg_type_color(t: &MessageType) -> Style {
 
 fn msg_type_style(t: &MessageType) -> Style {
     msg_type_color(t).add_modifier(Modifier::BOLD)
+}
+
+const fn page_indicator(has_prev: bool, has_next: bool) -> &'static str {
+    match (has_prev, has_next) {
+        (true, true) => " ‹prev next›",
+        (true, false) => " ‹prev",
+        (false, true) => " next›",
+        (false, false) => "",
+    }
 }
 
 fn truncate(s: &str, max: usize) -> String {

@@ -68,6 +68,7 @@ pub enum Method {
 
     // Message operations
     SendMessage,
+    GetMessage,
     GetInbox,
     MarkMessageRead,
     ListMessagesPaged,

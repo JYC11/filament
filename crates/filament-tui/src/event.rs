@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
-use filament_core::dto::EntitySortField;
+use filament_core::dto::{EntitySortField, MessageSortField};
 use filament_core::models::{EntityStatus, EntityType, MessageStatus, MessageType, Priority};
 
 use crate::app::{App, FilterBar, MessageFilterBar, Tab};
@@ -97,52 +97,79 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => app.select_next(),
         KeyCode::Char('k') | KeyCode::Up => app.select_prev(),
-        // Entities tab filter keys
-        KeyCode::Char('t') if app.active_tab == Tab::Entities && !app.filter.ready_only => {
+        _ => match app.active_tab {
+            Tab::Entities => handle_entities_key(app, key).await,
+            Tab::Messages => handle_messages_key(app, key).await,
+            Tab::Agents => {
+                if key.code == KeyCode::Char('h') {
+                    app.agent_show_history = !app.agent_show_history;
+                    app.refresh_agents().await;
+                }
+            }
+            Tab::Analytics => {
+                if key.code == KeyCode::Enter {
+                    app.refresh_analytics().await;
+                }
+            }
+            _ => {}
+        },
+    }
+}
+
+async fn handle_entities_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('t') if !app.filter.ready_only => {
             app.filter.active_bar = Some(FilterBar::Type);
         }
-        KeyCode::Char('f') if app.active_tab == Tab::Entities && !app.filter.ready_only => {
+        KeyCode::Char('f') if !app.filter.ready_only => {
             app.filter.active_bar = Some(FilterBar::Status);
         }
-        KeyCode::Char('P') if app.active_tab == Tab::Entities => {
+        KeyCode::Char('P') => {
             app.filter.active_bar = Some(FilterBar::Priority);
         }
-        KeyCode::Char('s') if app.active_tab == Tab::Entities => {
+        KeyCode::Char('s') => {
             app.filter.active_bar = Some(FilterBar::Sort);
         }
-        KeyCode::Char('F') if app.active_tab == Tab::Entities => {
+        KeyCode::Char('F') => {
             app.filter.toggle_ready_only();
             app.reset_page();
             app.refresh_entities().await;
         }
-        KeyCode::Char('n') if app.active_tab == Tab::Entities => {
+        KeyCode::Char('n') => {
             app.next_page().await;
         }
-        KeyCode::Char('p') if app.active_tab == Tab::Entities => {
+        KeyCode::Char('p') => {
             app.prev_page().await;
         }
-        KeyCode::Enter if app.active_tab == Tab::Entities => {
+        KeyCode::Enter => {
             app.open_detail().await;
         }
-        // Messages tab filter keys
-        KeyCode::Char('t') if app.active_tab == Tab::Messages => {
+        _ => {}
+    }
+}
+
+async fn handle_messages_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('t') => {
             app.msg_filter.active_bar = Some(MessageFilterBar::Type);
         }
-        KeyCode::Char('f') if app.active_tab == Tab::Messages => {
+        KeyCode::Char('f') => {
             app.msg_filter.active_bar = Some(MessageFilterBar::Status);
         }
-        KeyCode::Char('a') if app.active_tab == Tab::Messages => {
+        KeyCode::Char('s') => {
+            app.msg_filter.active_bar = Some(MessageFilterBar::Sort);
+        }
+        KeyCode::Char('a') => {
             app.cycle_msg_participant().await;
         }
-        KeyCode::Enter if app.active_tab == Tab::Messages => {
+        KeyCode::Char('n') => {
+            app.msg_next_page().await;
+        }
+        KeyCode::Char('p') => {
+            app.msg_prev_page().await;
+        }
+        KeyCode::Enter => {
             app.open_message_detail().await;
-        }
-        KeyCode::Char('h') if app.active_tab == Tab::Agents => {
-            app.agent_show_history = !app.agent_show_history;
-            app.refresh_agents().await;
-        }
-        KeyCode::Enter if app.active_tab == Tab::Analytics => {
-            app.refresh_analytics().await;
         }
         _ => {}
     }
@@ -278,6 +305,7 @@ async fn handle_msg_filter_bar_key(app: &mut App, key: KeyEvent) {
     match bar {
         MessageFilterBar::Type => handle_msg_type_bar(app, key).await,
         MessageFilterBar::Status => handle_msg_status_bar(app, key).await,
+        MessageFilterBar::Sort => handle_msg_sort_bar_key(app, key).await,
     }
 }
 
@@ -288,7 +316,7 @@ async fn handle_msg_type_bar(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('0') => {
             app.msg_filter.clear_types();
-            app.message_table_state.select(None);
+            app.msg_reset_page();
             app.refresh_messages().await;
         }
         KeyCode::Char(c @ '1'..='4') => {
@@ -301,7 +329,7 @@ async fn handle_msg_type_bar(app: &mut App, key: KeyEvent) {
             let idx = (c as u8 - b'1') as usize;
             if let Some(t) = types.get(idx) {
                 app.msg_filter.toggle_type(t.clone());
-                app.message_table_state.select(None);
+                app.msg_reset_page();
                 app.refresh_messages().await;
             }
         }
@@ -316,18 +344,42 @@ async fn handle_msg_status_bar(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('1') => {
             app.msg_filter.read_status = None; // All
-            app.message_table_state.select(None);
+            app.msg_reset_page();
             app.refresh_messages().await;
         }
         KeyCode::Char('2') => {
             app.msg_filter.read_status = Some(MessageStatus::Unread);
-            app.message_table_state.select(None);
+            app.msg_reset_page();
             app.refresh_messages().await;
         }
         KeyCode::Char('3') => {
             app.msg_filter.read_status = Some(MessageStatus::Read);
-            app.message_table_state.select(None);
+            app.msg_reset_page();
             app.refresh_messages().await;
+        }
+        _ => {}
+    }
+}
+
+async fn handle_msg_sort_bar_key(app: &mut App, key: KeyEvent) {
+    const SORT_FIELDS: [MessageSortField; 4] = [
+        MessageSortField::Time,
+        MessageSortField::Type,
+        MessageSortField::From,
+        MessageSortField::Status,
+    ];
+
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('s') => {
+            app.msg_filter.active_bar = None;
+        }
+        KeyCode::Char(c @ '1'..='4') => {
+            let idx = (c as u8 - b'1') as usize;
+            if let Some(&field) = SORT_FIELDS.get(idx) {
+                app.msg_sort.set_field(field);
+                app.msg_reset_page();
+                app.refresh_messages().await;
+            }
         }
         _ => {}
     }

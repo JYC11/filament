@@ -417,13 +417,7 @@ impl FilamentConnection {
     pub async fn get_message(&mut self, id: &str) -> Result<Message> {
         match self {
             Self::Direct(s) => store::get_message(s.pool(), id).await,
-            Self::Socket(_c) => {
-                // No dedicated daemon RPC for single message fetch yet.
-                // This path is only used by TUI detail pane for reply-chain lookup.
-                Err(FilamentError::Protocol(
-                    "get_message not available in daemon mode".to_string(),
-                ))
-            }
+            Self::Socket(c) => c.get_message(id).await,
         }
     }
 

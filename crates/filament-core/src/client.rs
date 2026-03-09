@@ -605,6 +605,13 @@ impl DaemonClient {
         Self::parse_result(result)
     }
 
+    pub async fn get_message(&mut self, id: &str) -> Result<Message> {
+        let result = self
+            .call(Method::GetMessage, serde_json::json!({ "id": id }))
+            .await?;
+        Self::parse_result(result)
+    }
+
     // -- Subscription operations --
 
     /// Subscribe to change notifications. Sends the subscribe request and

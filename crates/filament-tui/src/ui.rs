@@ -37,7 +37,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         if app.active_tab == Tab::Entities {
             filter_bar::render_filter_bar(&app.filter, &app.sort, frame, chunks[1]);
         } else {
-            filter_bar::render_msg_filter_bar(&app.msg_filter, frame, chunks[1]);
+            filter_bar::render_msg_filter_bar(&app.msg_filter, &app.msg_sort, frame, chunks[1]);
         }
         draw_content(frame, app, chunks[2]);
         draw_status_bar(frame, app, chunks[3]);
@@ -117,14 +117,16 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
         }
         Tab::Messages => {
             let filter_label = app.msg_filter.label();
+            let sort_label = app.msg_sort.label();
+            let params = messages::MessageTableParams {
+                messages: &app.messages,
+                filter_label: &filter_label,
+                sort_label: &sort_label,
+                has_prev: app.has_msg_prev_page(),
+                has_next: app.has_msg_next_page(),
+            };
             let mut state = app.message_table_state.clone();
-            messages::render_message_table_stateful(
-                &app.messages,
-                &filter_label,
-                &mut state,
-                frame,
-                table_area,
-            );
+            messages::render_message_table_stateful(&params, &mut state, frame, table_area);
             app.message_table_state = state;
 
             if let (Some(detail_data), Some(d_area)) = (&app.message_detail, detail_area) {
@@ -185,7 +187,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             " | q:quit Esc:close j/k:scroll"
         }
         Tab::Messages => {
-            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status a:participant Enter:detail"
+            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status s:sort a:participant n/p:page Enter:detail"
         }
         Tab::Analytics => " | q:quit Tab:switch r:refresh Enter:calculate",
         _ => " | q:quit Tab:switch r:refresh j/k:nav",

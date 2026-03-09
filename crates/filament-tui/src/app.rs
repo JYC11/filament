@@ -264,6 +264,7 @@ impl FilterState {
 pub enum MessageFilterBar {
     Type,
     Status,
+    Sort,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,6 +330,40 @@ impl MessageFilterState {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Message sort state
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+pub struct MessageSortState {
+    pub field: MessageSortField,
+    pub direction: SortDirection,
+}
+
+impl Default for MessageSortState {
+    fn default() -> Self {
+        Self {
+            field: MessageSortField::Time,
+            direction: SortDirection::Desc,
+        }
+    }
+}
+
+impl MessageSortState {
+    pub fn set_field(&mut self, field: MessageSortField) {
+        if self.field == field {
+            self.direction = self.direction.flip();
+        } else {
+            self.field = field;
+            self.direction = SortDirection::Desc;
+        }
+    }
+
+    pub fn label(&self) -> String {
+        format!("{}{}", self.field.label(), self.direction.arrow())
+    }
+}
+
 pub struct App {
     pub conn: FilamentConnection,
     pub active_tab: Tab,
@@ -346,6 +381,8 @@ pub struct App {
     pub sort: SortState,
     pub entity_pagination: PaginationState,
     pub msg_filter: MessageFilterState,
+    pub msg_sort: MessageSortState,
+    pub msg_pagination: PaginationState,
     pub detail: Option<DetailData>,
     pub detail_scroll: u16,
     pub message_detail: Option<MessageDetailData>,
@@ -381,6 +418,8 @@ impl App {
             sort: SortState::default(),
             entity_pagination: PaginationState::new(DEFAULT_PAGE_SIZE),
             msg_filter: MessageFilterState::default(),
+            msg_sort: MessageSortState::default(),
+            msg_pagination: PaginationState::new(DEFAULT_PAGE_SIZE),
             detail: None,
             detail_scroll: 0,
             message_detail: None,
@@ -629,6 +668,8 @@ impl App {
         let req = self.build_message_request();
         match self.conn.list_messages_paged(&req).await {
             Ok(result) => {
+                self.msg_pagination
+                    .update_cursors(result.next_cursor, result.prev_cursor);
                 self.messages = result.items;
                 self.clamp_message_selection();
             }
@@ -873,13 +914,9 @@ impl App {
             msg_types: self.msg_filter.msg_types.iter().cloned().collect(),
             read_status: self.msg_filter.read_status.clone(),
             participant,
-            sort_field: MessageSortField::Time,
-            sort_direction: SortDirection::Desc,
-            pagination: filament_core::pagination::PaginationParams {
-                cursor: None,
-                limit: DEFAULT_PAGE_SIZE,
-                direction: filament_core::pagination::PaginationDirection::Forward,
-            },
+            sort_field: self.msg_sort.field,
+            sort_direction: self.msg_sort.direction,
+            pagination: self.msg_pagination.to_params(),
         }
     }
 
@@ -904,7 +941,7 @@ impl App {
                     }
                 }),
         };
-        self.message_table_state.select(None);
+        self.msg_reset_page();
         self.refresh_messages().await;
     }
 
@@ -980,6 +1017,39 @@ impl App {
 
     pub const fn scroll_message_detail_up(&mut self) {
         self.message_detail_scroll = self.message_detail_scroll.saturating_sub(1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Message paging
+    // -----------------------------------------------------------------------
+
+    pub const fn has_msg_next_page(&self) -> bool {
+        self.msg_pagination.has_next()
+    }
+
+    pub const fn has_msg_prev_page(&self) -> bool {
+        self.msg_pagination.has_previous()
+    }
+
+    pub async fn msg_next_page(&mut self) {
+        if self.msg_pagination.has_next() {
+            self.msg_pagination.go_forwards();
+            self.message_table_state.select(Some(0));
+            self.refresh_messages().await;
+        }
+    }
+
+    pub async fn msg_prev_page(&mut self) {
+        if self.msg_pagination.has_previous() {
+            self.msg_pagination.go_backwards();
+            self.message_table_state.select(Some(0));
+            self.refresh_messages().await;
+        }
+    }
+
+    pub fn msg_reset_page(&mut self) {
+        self.msg_pagination.reset();
+        self.message_table_state.select(None);
     }
 
     async fn resolve_participant_name(&mut self, slug_or_user: &str) -> String {

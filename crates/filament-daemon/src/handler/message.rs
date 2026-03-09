@@ -35,6 +35,12 @@ pub async fn send(
     Ok(serde_json::json!({ "id": msg_id }))
 }
 
+pub async fn get(params: serde_json::Value, state: &Arc<SharedState>) -> Result<serde_json::Value> {
+    let p: IdParam = parse_params(params)?;
+    let msg = store::get_message(state.store.pool(), &p.id).await?;
+    Ok(serde_json::to_value(&msg).expect("infallible"))
+}
+
 pub async fn inbox(
     params: serde_json::Value,
     state: &Arc<SharedState>,

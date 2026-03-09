@@ -3,10 +3,12 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use filament_core::dto::EntitySortField;
+use filament_core::dto::{EntitySortField, MessageSortField};
 use filament_core::models::{EntityStatus, EntityType, MessageStatus, MessageType, Priority};
 
-use crate::app::{FilterBar, FilterState, MessageFilterBar, MessageFilterState, SortState};
+use crate::app::{
+    FilterBar, FilterState, MessageFilterBar, MessageFilterState, MessageSortState, SortState,
+};
 
 pub fn render_filter_bar(
     filter: &FilterState,
@@ -152,7 +154,12 @@ fn sort_bar_line(sort: SortState) -> Line<'static> {
 // Message filter bars
 // ---------------------------------------------------------------------------
 
-pub fn render_msg_filter_bar(filter: &MessageFilterState, frame: &mut ratatui::Frame, area: Rect) {
+pub fn render_msg_filter_bar(
+    filter: &MessageFilterState,
+    msg_sort: &MessageSortState,
+    frame: &mut ratatui::Frame,
+    area: Rect,
+) {
     let Some(bar) = &filter.active_bar else {
         return;
     };
@@ -160,6 +167,7 @@ pub fn render_msg_filter_bar(filter: &MessageFilterState, frame: &mut ratatui::F
     let line = match bar {
         MessageFilterBar::Type => msg_type_bar_line(filter),
         MessageFilterBar::Status => msg_status_bar_line(filter),
+        MessageFilterBar::Sort => msg_sort_bar_line(*msg_sort),
     };
 
     let paragraph = Paragraph::new(line);
@@ -210,6 +218,35 @@ fn msg_status_bar_line(filter: &MessageFilterState) -> Line<'static> {
         let selected = filter.read_status == *status;
         let style = chip_style(selected);
         spans.push(Span::styled(format!(" {label} "), style));
+        spans.push(Span::raw(" "));
+    }
+
+    spans.push(Span::styled(
+        " Esc:Close ",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    Line::from(spans)
+}
+
+fn msg_sort_bar_line(sort: MessageSortState) -> Line<'static> {
+    let fields = [
+        (MessageSortField::Time, "1:Time"),
+        (MessageSortField::Type, "2:Type"),
+        (MessageSortField::From, "3:From"),
+        (MessageSortField::Status, "4:Status"),
+    ];
+
+    let mut spans = vec![Span::styled(
+        " Sort: ",
+        Style::default().add_modifier(Modifier::BOLD),
+    )];
+
+    for (f, label) in &fields {
+        let selected = sort.field == *f;
+        let style = chip_style(selected);
+        let arrow = if selected { sort.direction.arrow() } else { "" };
+        spans.push(Span::styled(format!(" {label}{arrow} "), style));
         spans.push(Span::raw(" "));
     }
 

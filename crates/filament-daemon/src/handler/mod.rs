@@ -48,6 +48,7 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::DeleteRelation => relation::delete(params, state).await,
         // Message
         Method::SendMessage => message::send(params, state).await,
+        Method::GetMessage => message::get(params, state).await,
         Method::GetInbox => message::inbox(params, state).await,
         Method::MarkMessageRead => message::mark_read(params, state).await,
         Method::ListMessagesPaged => message::list_paged(params, state).await,
