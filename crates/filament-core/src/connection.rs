@@ -5,7 +5,7 @@ use tokio::net::UnixStream;
 use crate::client::DaemonClient;
 use crate::dto::{
     CreateEntityRequest, CreateRelationRequest, Escalation, ExportData, ImportResult,
-    SendMessageRequest, ValidCreateEntityRequest, ValidCreateRelationRequest,
+    MessageParticipant, SendMessageRequest, ValidCreateEntityRequest, ValidCreateRelationRequest,
     ValidSendMessageRequest,
 };
 use crate::error::{FilamentError, Result};
@@ -387,6 +387,8 @@ impl FilamentConnection {
         match self {
             Self::Direct(s) => {
                 let valid = ValidSendMessageRequest::try_from(req)?;
+                validate_participant(s.pool(), &valid.from_agent, "from_agent").await?;
+                validate_participant(s.pool(), &valid.to_agent, "to_agent").await?;
                 s.with_transaction(|conn| {
                     let valid = valid.clone();
                     Box::pin(async move { store::send_message(conn, &valid).await })
@@ -725,4 +727,24 @@ impl FilamentConnection {
             Self::Socket(c) => c.list_pending_escalations().await,
         }
     }
+}
+
+/// Validate that a [`MessageParticipant::Entity`] refers to an existing entity.
+/// [`MessageParticipant::User`] is always valid.
+async fn validate_participant(
+    pool: &sqlx::Pool<sqlx::Sqlite>,
+    participant: &MessageParticipant,
+    field_name: &str,
+) -> Result<()> {
+    if let MessageParticipant::Entity(ref slug_or_id) = participant {
+        store::resolve_entity(pool, slug_or_id.as_str())
+            .await
+            .map_err(|e| match e {
+                FilamentError::EntityNotFound { .. } => FilamentError::Validation(format!(
+                    "{field_name} entity not found: {slug_or_id}"
+                )),
+                other => other,
+            })?;
+    }
+    Ok(())
 }

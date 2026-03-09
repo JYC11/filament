@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use filament_core::dto::{SendMessageRequest, ValidSendMessageRequest};
-use filament_core::error::Result;
+use filament_core::dto::{MessageParticipant, SendMessageRequest, ValidSendMessageRequest};
+use filament_core::error::{FilamentError, Result};
 use filament_core::protocol::Notification;
 use filament_core::store;
 use serde::Deserialize;
@@ -15,6 +15,8 @@ pub async fn send(
 ) -> Result<serde_json::Value> {
     let req: SendMessageRequest = parse_params(params)?;
     let valid = ValidSendMessageRequest::try_from(req)?;
+    validate_participant(state, &valid.from_agent, "from_agent").await?;
+    validate_participant(state, &valid.to_agent, "to_agent").await?;
     let msg_id = state
         .store
         .with_transaction(|conn| {
@@ -62,4 +64,22 @@ pub async fn mark_read(
 #[derive(Deserialize)]
 struct AgentParam {
     agent: String,
+}
+
+async fn validate_participant(
+    state: &SharedState,
+    participant: &MessageParticipant,
+    field_name: &str,
+) -> Result<()> {
+    if let MessageParticipant::Entity(ref slug_or_id) = participant {
+        store::resolve_entity(state.store.pool(), slug_or_id.as_str())
+            .await
+            .map_err(|e| match e {
+                FilamentError::EntityNotFound { .. } => FilamentError::Validation(format!(
+                    "{field_name} entity not found: {slug_or_id}"
+                )),
+                other => other,
+            })?;
+    }
+    Ok(())
 }

@@ -71,10 +71,10 @@ Pitfalls discovered during implementation. Check here before debugging mysteriou
 ## CLI
 
 - **CLI avoids sqlx dep** — uses `FilamentStore` directly, not `Pool<Sqlite>`.
-- **`filament relate` arg order** — `<SOURCE> <RELATION_TYPE> <TARGET>`.
-- **`filament update` requires at least one flag** — `--summary` or `--status`.
+- **`fl relate` arg order** — `<SOURCE> <RELATION_TYPE> <TARGET>`.
+- **`fl update` requires at least one flag** — `--summary`, `--status`, `--priority`, `--facts`, or `--content`.
 - **`message inbox` takes positional arg** — not `--agent` flag.
-- **`filament serve --foreground`** runs inline; bare `filament serve` re-execs detached.
+- **`fl serve --foreground`** runs inline; bare `fl serve` re-execs detached.
 - **Exclusive reservation semantics** — exclusive conflicts with ALL other-agent reservations; non-exclusive only conflicts with exclusive.
 
 ## SQLite migrations

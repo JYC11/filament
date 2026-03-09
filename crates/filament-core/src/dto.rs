@@ -589,10 +589,53 @@ pub struct SendMessageRequest {
     pub task_id: Option<String>,
 }
 
+/// A message participant: either an entity (resolved by slug/ID) or the
+/// special "user" recipient used for escalations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageParticipant {
+    /// The human operator — used for escalations (`--to user`).
+    User,
+    /// An entity slug or ID that must exist in the database.
+    Entity(NonEmptyString),
+}
+
+impl MessageParticipant {
+    /// Parse a raw string into a `MessageParticipant`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FilamentError::Validation` if the string is empty or whitespace-only.
+    pub fn parse(s: &str) -> Result<Self, FilamentError> {
+        let trimmed = s.trim();
+        if trimmed.eq_ignore_ascii_case("user") {
+            Ok(Self::User)
+        } else {
+            let nes = NonEmptyString::new(trimmed).map_err(|_| {
+                FilamentError::Validation("participant cannot be empty".to_string())
+            })?;
+            Ok(Self::Entity(nes))
+        }
+    }
+
+    /// String representation for DB storage.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::User => "user",
+            Self::Entity(s) => s.as_str(),
+        }
+    }
+}
+
+impl std::fmt::Display for MessageParticipant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ValidSendMessageRequest {
-    pub from_agent: NonEmptyString,
-    pub to_agent: NonEmptyString,
+    pub from_agent: MessageParticipant,
+    pub to_agent: MessageParticipant,
     pub body: NonEmptyString,
     pub msg_type: MessageType,
     pub in_reply_to: Option<MessageId>,
@@ -603,9 +646,9 @@ impl TryFrom<SendMessageRequest> for ValidSendMessageRequest {
     type Error = FilamentError;
 
     fn try_from(req: SendMessageRequest) -> std::result::Result<Self, Self::Error> {
-        let from_agent = NonEmptyString::new(&req.from_agent)
+        let from_agent = MessageParticipant::parse(&req.from_agent)
             .map_err(|_| FilamentError::Validation("from_agent cannot be empty".to_string()))?;
-        let to_agent = NonEmptyString::new(&req.to_agent)
+        let to_agent = MessageParticipant::parse(&req.to_agent)
             .map_err(|_| FilamentError::Validation("to_agent cannot be empty".to_string()))?;
         let body = NonEmptyString::new(&req.body)
             .map_err(|_| FilamentError::Validation("message body cannot be empty".to_string()))?;

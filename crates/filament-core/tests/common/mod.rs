@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
 use filament_core::dto::{
-    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
+    MessageParticipant, ValidCreateEntityRequest, ValidCreateRelationRequest,
+    ValidSendMessageRequest,
 };
 use filament_core::models::{
     EntityId, EntityType, MessageType, NonEmptyString, Priority, RelationType, Weight,
@@ -84,8 +85,8 @@ pub fn lesson_req(
 
 pub fn sample_message_req() -> ValidSendMessageRequest {
     ValidSendMessageRequest {
-        from_agent: NonEmptyString::new("agent-a").unwrap(),
-        to_agent: NonEmptyString::new("agent-b").unwrap(),
+        from_agent: MessageParticipant::Entity(NonEmptyString::new("agent-a").unwrap()),
+        to_agent: MessageParticipant::Entity(NonEmptyString::new("agent-b").unwrap()),
         body: NonEmptyString::new("hello").unwrap(),
         msg_type: MessageType::Text,
         in_reply_to: None,

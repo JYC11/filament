@@ -234,11 +234,29 @@ async fn relation_crud_via_socket() {
 async fn message_operations_via_socket() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
+    // Create agent entities so participant validation passes
+    let (agent_a, _) = client
+        .create_entity(serde_json::json!({
+            "name": "agent-a",
+            "entity_type": "agent",
+            "summary": "Agent A",
+        }))
+        .await
+        .expect("create agent-a");
+    let (agent_b, _) = client
+        .create_entity(serde_json::json!({
+            "name": "agent-b",
+            "entity_type": "agent",
+            "summary": "Agent B",
+        }))
+        .await
+        .expect("create agent-b");
+
     // Send a message
     let msg_id = client
         .send_message(serde_json::json!({
-            "from_agent": "agent-a",
-            "to_agent": "agent-b",
+            "from_agent": agent_a.as_str(),
+            "to_agent": agent_b.as_str(),
             "body": "Hello from the test",
             "msg_type": "text",
         }))
@@ -246,7 +264,7 @@ async fn message_operations_via_socket() {
         .expect("send message");
 
     // Check inbox
-    let inbox = client.get_inbox("agent-b").await.expect("get inbox");
+    let inbox = client.get_inbox(agent_b.as_str()).await.expect("get inbox");
     assert_eq!(inbox.len(), 1);
     assert_eq!(inbox[0].body, "Hello from the test");
 
@@ -257,7 +275,10 @@ async fn message_operations_via_socket() {
         .expect("mark read");
 
     // Inbox should be empty now
-    let inbox = client.get_inbox("agent-b").await.expect("inbox after read");
+    let inbox = client
+        .get_inbox(agent_b.as_str())
+        .await
+        .expect("inbox after read");
     assert!(inbox.is_empty());
 
     cancel.cancel();
@@ -1086,10 +1107,26 @@ async fn multi_agent_messaging_workflow() {
 
     let socket_path: PathBuf = tmp.path().join(".fl/fl.sock");
 
-    // Create a task to link messages to
+    // Create agents and a task to link messages to
     let mut setup = DaemonClient::connect(&socket_path)
         .await
         .expect("setup connect");
+    let (writer_slug, _) = setup
+        .create_entity(serde_json::json!({
+            "name": "code-writer",
+            "entity_type": "agent",
+            "summary": "Code writer agent",
+        }))
+        .await
+        .expect("create code-writer");
+    let (reviewer_slug, _) = setup
+        .create_entity(serde_json::json!({
+            "name": "code-reviewer",
+            "entity_type": "agent",
+            "summary": "Code reviewer agent",
+        }))
+        .await
+        .expect("create code-reviewer");
     let (task_id, _) = setup
         .create_entity(serde_json::json!({
             "name": "review-task",
@@ -1102,12 +1139,14 @@ async fn multi_agent_messaging_workflow() {
     // Agent A ("code-writer"): sends a question to "code-reviewer"
     let sp_a = socket_path.clone();
     let tid = task_id.clone();
+    let ws = writer_slug.clone();
+    let rs = reviewer_slug.clone();
     let agent_a_send = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp_a).await.expect("agent-a connect");
         let msg_id = c
             .send_message(serde_json::json!({
-                "from_agent": "code-writer",
-                "to_agent": "code-reviewer",
+                "from_agent": ws.as_str(),
+                "to_agent": rs.as_str(),
                 "body": "Is the error handling correct in module X?",
                 "msg_type": "question",
                 "task_id": tid.as_str(),
@@ -1121,11 +1160,13 @@ async fn multi_agent_messaging_workflow() {
     // Agent B ("code-reviewer"): checks inbox, finds the question, marks read, sends reply
     let sp_b = socket_path.clone();
     let tid2 = task_id.clone();
+    let ws2 = writer_slug.clone();
+    let rs2 = reviewer_slug.clone();
     let agent_b_reply = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp_b).await.expect("agent-b connect");
 
         // Check inbox
-        let inbox = c.get_inbox("code-reviewer").await.expect("agent-b inbox");
+        let inbox = c.get_inbox(rs2.as_str()).await.expect("agent-b inbox");
         assert_eq!(inbox.len(), 1, "code-reviewer should have 1 message");
         assert_eq!(inbox[0].body, "Is the error handling correct in module X?");
         assert_eq!(inbox[0].msg_type.as_str(), "question");
@@ -1137,7 +1178,7 @@ async fn multi_agent_messaging_workflow() {
 
         // Verify inbox is now empty
         let inbox_after = c
-            .get_inbox("code-reviewer")
+            .get_inbox(rs2.as_str())
             .await
             .expect("agent-b inbox after read");
         assert!(
@@ -1148,8 +1189,8 @@ async fn multi_agent_messaging_workflow() {
         // Send reply
         let reply_id = c
             .send_message(serde_json::json!({
-                "from_agent": "code-reviewer",
-                "to_agent": "code-writer",
+                "from_agent": rs2.as_str(),
+                "to_agent": ws2.as_str(),
                 "body": "Yes, looks good. Approved.",
                 "msg_type": "text",
                 "task_id": tid2.as_str(),
@@ -1162,14 +1203,16 @@ async fn multi_agent_messaging_workflow() {
 
     // Agent A: checks inbox, finds the reply
     let sp_a2 = socket_path.clone();
+    let rs3 = reviewer_slug.clone();
+    let ws3 = writer_slug.clone();
     let agent_a_read = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp_a2)
             .await
             .expect("agent-a read connect");
-        let inbox = c.get_inbox("code-writer").await.expect("agent-a inbox");
+        let inbox = c.get_inbox(ws3.as_str()).await.expect("agent-a inbox");
         assert_eq!(inbox.len(), 1, "code-writer should have 1 reply");
         assert_eq!(inbox[0].body, "Yes, looks good. Approved.");
-        assert_eq!(inbox[0].from_agent, "code-reviewer");
+        assert_eq!(inbox[0].from_agent, rs3.as_str());
     });
     agent_a_read.await.expect("agent-a read join");
 
@@ -1243,6 +1286,32 @@ async fn multi_agent_full_workflow() {
         .await
         .expect("create review");
 
+    // Create agent entities for messaging validation
+    let (designer_slug, _) = setup
+        .create_entity(serde_json::json!({
+            "name": "designer",
+            "entity_type": "agent",
+            "summary": "Designer agent",
+        }))
+        .await
+        .expect("create designer agent");
+    let (implementer_slug, _) = setup
+        .create_entity(serde_json::json!({
+            "name": "implementer",
+            "entity_type": "agent",
+            "summary": "Implementer agent",
+        }))
+        .await
+        .expect("create implementer agent");
+    let (tester_slug, _) = setup
+        .create_entity(serde_json::json!({
+            "name": "tester",
+            "entity_type": "agent",
+            "summary": "Tester agent",
+        }))
+        .await
+        .expect("create tester agent");
+
     // implement depends_on design
     setup
         .create_relation(serde_json::json!({
@@ -1281,6 +1350,8 @@ async fn multi_agent_full_workflow() {
     let sp = socket_path.clone();
     let design_id = design.clone();
     let implement_id = implement.clone();
+    let ds = designer_slug.clone();
+    let is = implementer_slug.clone();
     let phase1 = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp).await.expect("agent-a connect");
 
@@ -1316,8 +1387,8 @@ async fn multi_agent_full_workflow() {
 
         // Send message to implementer
         c.send_message(serde_json::json!({
-            "from_agent": "designer",
-            "to_agent": "implementer",
+            "from_agent": ds.as_str(),
+            "to_agent": is.as_str(),
             "body": "Design is done, you can start implementing",
             "msg_type": "text",
             "task_id": implement_id.as_str(),
@@ -1331,13 +1402,16 @@ async fn multi_agent_full_workflow() {
     let sp2 = socket_path.clone();
     let impl_id = implement.clone();
     let test_id = test.clone();
+    let ds2 = designer_slug.clone();
+    let is2 = implementer_slug.clone();
+    let ts2 = tester_slug.clone();
     let phase2 = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp2).await.expect("agent-b connect");
 
         // Read inbox
-        let inbox = c.get_inbox("implementer").await.expect("implementer inbox");
+        let inbox = c.get_inbox(is2.as_str()).await.expect("implementer inbox");
         assert_eq!(inbox.len(), 1);
-        assert_eq!(inbox[0].from_agent, "designer");
+        assert_eq!(inbox[0].from_agent, ds2.as_str());
         c.mark_message_read(inbox[0].id.as_str())
             .await
             .expect("mark read");
@@ -1373,8 +1447,8 @@ async fn multi_agent_full_workflow() {
 
         // Send message to tester
         c.send_message(serde_json::json!({
-            "from_agent": "implementer",
-            "to_agent": "tester",
+            "from_agent": is2.as_str(),
+            "to_agent": ts2.as_str(),
             "body": "Implementation done, please test",
             "msg_type": "text",
             "task_id": test_id.as_str(),

@@ -41,7 +41,7 @@ Happy-path CRUD workflow?                     → CLI integration test (covers a
 **Skip:** SQL details (store tests), CLI output format
 
 ### 4. CLI Integration — Command Contract
-**Infra:** Temp directory with `filament init`, run CLI binary via `assert_cmd`
+**Infra:** Temp directory with `fl init`, run CLI binary via `assert_cmd`
 **Test:** happy-path CRUD workflows (entity, task, relation, message, reservation), exit codes (0 success, categorized non-zero), `--json` flag (machine-readable output + `StructuredError`), multi-step flows (create tasks → add deps → list ready → close → verify cascade)
 **Skip:** SQL constraint details (store tests), graph intelligence (graph tests), model validation (model tests)
 

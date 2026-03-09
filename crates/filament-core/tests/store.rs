@@ -1513,8 +1513,8 @@ async fn list_pending_escalations_returns_blocker_messages() {
     store
         .with_transaction(|conn| {
             let req = ValidSendMessageRequest {
-                from_agent: NonEmptyString::new("agent-x").unwrap(),
-                to_agent: NonEmptyString::new("user").unwrap(),
+                from_agent: MessageParticipant::Entity(NonEmptyString::new("agent-x").unwrap()),
+                to_agent: MessageParticipant::User,
                 body: NonEmptyString::new("I'm stuck").unwrap(),
                 msg_type: MessageType::Blocker,
                 in_reply_to: None,
@@ -1556,8 +1556,8 @@ async fn list_pending_escalations_excludes_read_messages() {
     let msg_id = store
         .with_transaction(|conn| {
             let req = ValidSendMessageRequest {
-                from_agent: NonEmptyString::new("agent-x").unwrap(),
-                to_agent: NonEmptyString::new("user").unwrap(),
+                from_agent: MessageParticipant::Entity(NonEmptyString::new("agent-x").unwrap()),
+                to_agent: MessageParticipant::User,
                 body: NonEmptyString::new("blocked").unwrap(),
                 msg_type: MessageType::Blocker,
                 in_reply_to: None,

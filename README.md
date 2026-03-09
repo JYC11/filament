@@ -161,6 +161,9 @@ Shows name, slug, ID, type, status, priority, summary, facts, content path, rela
 fl update a3kf92mx --status in_progress
 fl update a3kf92mx --summary "Updated description"
 fl update a3kf92mx --status closed --summary "Done"
+fl update a3kf92mx --priority 0
+fl update a3kf92mx --facts '{"key": "value"}'
+fl update a3kf92mx --content path/to/file.md
 ```
 
 ### Read Entity Content
@@ -280,21 +283,12 @@ fl task ready --limit 5     # top 5 only
 
 Impact score counts how many downstream tasks are transitively blocked by each task — higher impact tasks should be done first.
 
-### Critical Path
+### Blocker Depth
 
-Show the dependency chain blocking a task:
+Show the longest dependency chain blocking a task:
 
 ```bash
-fl task critical-path abc12345
-```
-
-Output:
-
-```
-Critical path (3 steps):
-  1. Database schema migration
-  2. API endpoint implementation
-  3. Frontend integration
+fl task blocker-depth abc12345
 ```
 
 ### Close a Task
@@ -712,9 +706,9 @@ Resolution order: environment variables (`FILAMENT_*`) > config file > defaults.
 | `context_depth` | `FILAMENT_CONTEXT_DEPTH` | `2` |
 | `max_auto_dispatch` | `FILAMENT_MAX_AUTO_DISPATCH` | `3` |
 | `cleanup_interval_secs` | `FILAMENT_CLEANUP_INTERVAL` | `60` |
-| `idle_timeout_secs` | `FILAMENT_IDLE_TIMEOUT` | `1800` (0 = never) |
-| `reconciliation_interval_secs` | `FILAMENT_RECONCILIATION_INTERVAL` | `30` |
-| `agent_timeout_secs` | `FILAMENT_AGENT_TIMEOUT` | `3600` (0 = no limit) |
+| `idle_timeout_secs` | `FILAMENT_IDLE_TIMEOUT` | `1800` (0 = never, daemon only) |
+| `reconciliation_interval_secs` | `FILAMENT_RECONCILIATION_INTERVAL` | `30` (daemon only) |
+| `agent_timeout_secs` | `FILAMENT_AGENT_TIMEOUT` | `3600` (0 = no limit, daemon only) |
 
 ---
 
@@ -769,10 +763,9 @@ fl hook check --agent coder-1              # exclude own reservations
 Bootstrap the knowledge graph from markdown documentation:
 
 ```bash
-fl seed                                    # parse project CLAUDE.md
-fl seed --file path/to/any/CLAUDE.md       # parse a specific markdown file
+fl seed --file CLAUDE.md                   # parse a specific markdown file
 fl seed --files paths.txt                  # ingest multiple files listed one per line
-fl seed --dry-run                          # preview without creating
+fl seed --file CLAUDE.md --dry-run         # preview without creating
 ```
 
 Parses `## Section` headings as Doc entities with summaries from the first content line. Skips duplicates.
