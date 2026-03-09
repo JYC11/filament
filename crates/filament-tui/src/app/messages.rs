@@ -306,3 +306,336 @@ async fn resolve_participant_name(conn: &mut FilamentConnection, slug_or_user: &
         |e| format!("[{}] {}", e.slug(), e.name()),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use filament_core::dto::{MessageSortField, SortDirection};
+
+    // -----------------------------------------------------------------------
+    // ReplyState
+    // -----------------------------------------------------------------------
+
+    fn reply() -> ReplyState {
+        ReplyState::new("agent-a".to_string(), "msg-1".to_string())
+    }
+
+    #[test]
+    fn reply_new_defaults() {
+        let r = reply();
+        assert_eq!(r.to_agent, "agent-a");
+        assert_eq!(r.in_reply_to, "msg-1");
+        assert_eq!(r.msg_type, MessageType::Text);
+        assert!(r.buffer.is_empty());
+        assert_eq!(r.cursor, 0);
+    }
+
+    #[test]
+    fn reply_insert_char() {
+        let mut r = reply();
+        r.insert_char('h');
+        r.insert_char('i');
+        assert_eq!(r.buffer, "hi");
+        assert_eq!(r.cursor, 2);
+    }
+
+    #[test]
+    fn reply_insert_multibyte() {
+        let mut r = reply();
+        r.insert_char('é');
+        r.insert_char('!');
+        assert_eq!(r.buffer, "é!");
+        assert_eq!(r.cursor, 3); // é is 2 bytes
+    }
+
+    #[test]
+    fn reply_backspace_empty() {
+        let mut r = reply();
+        r.backspace(); // no-op
+        assert!(r.buffer.is_empty());
+        assert_eq!(r.cursor, 0);
+    }
+
+    #[test]
+    fn reply_backspace_removes_last() {
+        let mut r = reply();
+        r.insert_char('a');
+        r.insert_char('b');
+        r.insert_char('c');
+        r.backspace();
+        assert_eq!(r.buffer, "ab");
+        assert_eq!(r.cursor, 2);
+    }
+
+    #[test]
+    fn reply_backspace_mid_cursor() {
+        let mut r = reply();
+        r.insert_char('a');
+        r.insert_char('b');
+        r.insert_char('c');
+        r.move_left(); // cursor at 'c'
+        r.backspace(); // remove 'b'
+        assert_eq!(r.buffer, "ac");
+        assert_eq!(r.cursor, 1);
+    }
+
+    #[test]
+    fn reply_delete_at_cursor() {
+        let mut r = reply();
+        r.insert_char('a');
+        r.insert_char('b');
+        r.insert_char('c');
+        r.home(); // cursor at 0
+        r.delete(); // remove 'a'
+        assert_eq!(r.buffer, "bc");
+        assert_eq!(r.cursor, 0);
+    }
+
+    #[test]
+    fn reply_delete_at_end_is_noop() {
+        let mut r = reply();
+        r.insert_char('a');
+        r.delete();
+        assert_eq!(r.buffer, "a");
+    }
+
+    #[test]
+    fn reply_move_left_right() {
+        let mut r = reply();
+        r.insert_char('a');
+        r.insert_char('b');
+        r.insert_char('c');
+        assert_eq!(r.cursor, 3);
+
+        r.move_left();
+        assert_eq!(r.cursor, 2);
+        r.move_left();
+        assert_eq!(r.cursor, 1);
+        r.move_right();
+        assert_eq!(r.cursor, 2);
+    }
+
+    #[test]
+    fn reply_move_left_at_start_is_noop() {
+        let mut r = reply();
+        r.move_left();
+        assert_eq!(r.cursor, 0);
+    }
+
+    #[test]
+    fn reply_move_right_at_end_is_noop() {
+        let mut r = reply();
+        r.insert_char('a');
+        r.move_right();
+        assert_eq!(r.cursor, 1); // stays at end
+    }
+
+    #[test]
+    fn reply_home_end() {
+        let mut r = reply();
+        r.insert_char('a');
+        r.insert_char('b');
+        r.insert_char('c');
+
+        r.home();
+        assert_eq!(r.cursor, 0);
+
+        r.end();
+        assert_eq!(r.cursor, 3);
+    }
+
+    #[test]
+    fn reply_insert_at_middle() {
+        let mut r = reply();
+        r.insert_char('a');
+        r.insert_char('c');
+        r.move_left(); // cursor at 'c'
+        r.insert_char('b');
+        assert_eq!(r.buffer, "abc");
+        assert_eq!(r.cursor, 2);
+    }
+
+    #[test]
+    fn reply_cycle_type() {
+        let mut r = reply();
+        assert_eq!(r.msg_type, MessageType::Text);
+
+        r.cycle_type();
+        assert_eq!(r.msg_type, MessageType::Question);
+
+        r.cycle_type();
+        assert_eq!(r.msg_type, MessageType::Blocker);
+
+        r.cycle_type();
+        assert_eq!(r.msg_type, MessageType::Text);
+    }
+
+    // -----------------------------------------------------------------------
+    // MessageFilterState
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn msg_filter_defaults() {
+        let f = MessageFilterState::default();
+        assert!(f.msg_types.is_empty());
+        assert!(f.read_status.is_none());
+        assert_eq!(f.participant, MessageParticipantFilter::Mine);
+        assert!(f.active_bar.is_none());
+    }
+
+    #[test]
+    fn msg_filter_toggle_type() {
+        let mut f = MessageFilterState::default();
+        f.toggle_type(MessageType::Text);
+        assert!(f.msg_types.contains(&MessageType::Text));
+
+        f.toggle_type(MessageType::Text);
+        assert!(!f.msg_types.contains(&MessageType::Text));
+    }
+
+    #[test]
+    fn msg_filter_toggle_multiple_types() {
+        let mut f = MessageFilterState::default();
+        f.toggle_type(MessageType::Text);
+        f.toggle_type(MessageType::Blocker);
+        assert_eq!(f.msg_types.len(), 2);
+    }
+
+    #[test]
+    fn msg_filter_clear_types() {
+        let mut f = MessageFilterState::default();
+        f.toggle_type(MessageType::Text);
+        f.toggle_type(MessageType::Blocker);
+        f.clear_types();
+        assert!(f.msg_types.is_empty());
+    }
+
+    #[test]
+    fn msg_filter_label_mine_default() {
+        let f = MessageFilterState::default();
+        assert_eq!(f.label(), "mine");
+    }
+
+    #[test]
+    fn msg_filter_label_all() {
+        let mut f = MessageFilterState::default();
+        f.participant = MessageParticipantFilter::All;
+        assert_eq!(f.label(), "all");
+    }
+
+    #[test]
+    fn msg_filter_label_agent() {
+        let mut f = MessageFilterState::default();
+        f.participant = MessageParticipantFilter::Agent("abc123".to_string());
+        assert_eq!(f.label(), "agent:abc123");
+    }
+
+    #[test]
+    fn msg_filter_label_with_types_and_status() {
+        let mut f = MessageFilterState::default();
+        f.toggle_type(MessageType::Text);
+        f.read_status = Some(MessageStatus::Unread);
+        let label = f.label();
+        assert!(label.contains("mine"));
+        assert!(label.contains("text"));
+        assert!(label.contains("unread"));
+    }
+
+    // -----------------------------------------------------------------------
+    // MessageSortState
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn msg_sort_defaults() {
+        let s = MessageSortState::default();
+        assert_eq!(s.field, MessageSortField::Time);
+        assert!(matches!(s.direction, SortDirection::Desc));
+    }
+
+    #[test]
+    fn msg_sort_set_different_field() {
+        let mut s = MessageSortState::default();
+        s.set_field(MessageSortField::From);
+        assert_eq!(s.field, MessageSortField::From);
+        assert!(matches!(s.direction, SortDirection::Desc));
+    }
+
+    #[test]
+    fn msg_sort_set_same_field_flips_direction() {
+        let mut s = MessageSortState::default();
+        assert!(matches!(s.direction, SortDirection::Desc));
+
+        s.set_field(MessageSortField::Time);
+        assert!(matches!(s.direction, SortDirection::Asc));
+
+        s.set_field(MessageSortField::Time);
+        assert!(matches!(s.direction, SortDirection::Desc));
+    }
+
+    #[test]
+    fn msg_sort_label() {
+        let s = MessageSortState::default();
+        let label = s.label();
+        assert!(!label.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // build_message_request
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_request_defaults() {
+        let filter = MessageFilterState::default();
+        let sort = MessageSortState::default();
+        let pagination = PaginationState::new(20);
+
+        let req = build_message_request(&filter, sort, &pagination);
+        assert_eq!(req.participant, Some("user".to_string())); // Mine -> "user"
+        assert!(req.msg_types.is_empty());
+        assert!(req.read_status.is_none());
+    }
+
+    #[test]
+    fn build_request_all_participant() {
+        let mut filter = MessageFilterState::default();
+        filter.participant = MessageParticipantFilter::All;
+        let sort = MessageSortState::default();
+        let pagination = PaginationState::new(20);
+
+        let req = build_message_request(&filter, sort, &pagination);
+        assert!(req.participant.is_none());
+    }
+
+    #[test]
+    fn build_request_agent_participant() {
+        let mut filter = MessageFilterState::default();
+        filter.participant = MessageParticipantFilter::Agent("xyz".to_string());
+        let sort = MessageSortState::default();
+        let pagination = PaginationState::new(20);
+
+        let req = build_message_request(&filter, sort, &pagination);
+        assert_eq!(req.participant, Some("xyz".to_string()));
+    }
+
+    #[test]
+    fn build_request_with_type_filter() {
+        let mut filter = MessageFilterState::default();
+        filter.toggle_type(MessageType::Blocker);
+        let sort = MessageSortState::default();
+        let pagination = PaginationState::new(20);
+
+        let req = build_message_request(&filter, sort, &pagination);
+        assert_eq!(req.msg_types.len(), 1);
+    }
+
+    #[test]
+    fn build_request_with_read_status() {
+        let mut filter = MessageFilterState::default();
+        filter.read_status = Some(MessageStatus::Read);
+        let sort = MessageSortState::default();
+        let pagination = PaginationState::new(20);
+
+        let req = build_message_request(&filter, sort, &pagination);
+        assert_eq!(req.read_status, Some(MessageStatus::Read));
+    }
+}

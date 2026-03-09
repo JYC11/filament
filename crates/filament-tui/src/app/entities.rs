@@ -336,3 +336,200 @@ pub async fn open_detail(
         name_map,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use filament_core::dto::{EntitySortField, SortDirection};
+
+    // -----------------------------------------------------------------------
+    // FilterState
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn filter_defaults() {
+        let f = FilterState::default();
+        assert!(f.types.contains(&EntityType::Task));
+        assert_eq!(f.types.len(), 1);
+        assert!(f.statuses.contains(&EntityStatus::Open));
+        assert_eq!(f.statuses.len(), 1);
+        assert!(f.priorities.is_empty());
+        assert!(!f.ready_only);
+        assert!(f.active_bar.is_none());
+    }
+
+    #[test]
+    fn filter_toggle_status() {
+        let mut f = FilterState::default();
+        f.toggle_status(EntityStatus::InProgress);
+        assert!(f.statuses.contains(&EntityStatus::InProgress));
+        assert!(f.statuses.contains(&EntityStatus::Open));
+
+        f.toggle_status(EntityStatus::Open);
+        assert!(!f.statuses.contains(&EntityStatus::Open));
+        assert_eq!(f.statuses.len(), 1);
+    }
+
+    #[test]
+    fn filter_clear_priorities() {
+        let mut f = FilterState::default();
+        f.toggle_priority(Priority::new(0).unwrap());
+        f.toggle_priority(Priority::new(1).unwrap());
+        assert_eq!(f.priorities.len(), 2);
+
+        f.clear_priorities();
+        assert!(f.priorities.is_empty());
+    }
+
+    #[test]
+    fn filter_ready_only_clears_bar() {
+        let mut f = FilterState::default();
+        f.active_bar = Some(FilterBar::Type);
+        f.toggle_ready_only();
+        assert!(f.ready_only);
+        assert!(f.active_bar.is_none());
+
+        f.toggle_ready_only();
+        assert!(!f.ready_only);
+    }
+
+    #[test]
+    fn filter_label_all_empty() {
+        let mut f = FilterState::default();
+        f.types.clear();
+        f.statuses.clear();
+        assert_eq!(f.label(), "all");
+    }
+
+    #[test]
+    fn filter_label_with_types_and_statuses() {
+        let f = FilterState::default(); // Task + Open
+        let label = f.label();
+        assert!(label.contains("task"));
+        assert!(label.contains("open"));
+    }
+
+    #[test]
+    fn filter_label_ready_only() {
+        let mut f = FilterState::default();
+        f.toggle_ready_only();
+        assert_eq!(f.label(), "ready");
+    }
+
+    #[test]
+    fn filter_label_ready_with_priority() {
+        let mut f = FilterState::default();
+        f.toggle_ready_only();
+        f.toggle_priority(Priority::new(0).unwrap());
+        let label = f.label();
+        assert!(label.contains("ready"));
+        assert!(label.contains("P0"));
+    }
+
+    #[test]
+    fn filter_is_single_type() {
+        let f = FilterState::default(); // only Task
+        assert!(f.is_single_type(EntityType::Task));
+        assert!(!f.is_single_type(EntityType::Module));
+    }
+
+    // -----------------------------------------------------------------------
+    // SortState
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn sort_defaults() {
+        let s = SortState::default();
+        assert_eq!(s.field, EntitySortField::Priority);
+        assert!(matches!(s.direction, SortDirection::Asc));
+    }
+
+    #[test]
+    fn sort_set_different_field() {
+        let mut s = SortState::default();
+        s.set_field(EntitySortField::Name);
+        assert_eq!(s.field, EntitySortField::Name);
+        assert!(matches!(s.direction, SortDirection::Asc));
+    }
+
+    #[test]
+    fn sort_set_same_field_flips_direction() {
+        let mut s = SortState::default();
+        s.set_field(EntitySortField::Priority);
+        assert!(matches!(s.direction, SortDirection::Desc));
+        s.set_field(EntitySortField::Priority);
+        assert!(matches!(s.direction, SortDirection::Asc));
+    }
+
+    #[test]
+    fn sort_label_not_empty() {
+        let s = SortState::default();
+        assert!(!s.label().is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // clamp_selection
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn clamp_selection_empty_list() {
+        let mut state = TableState::default();
+        state.select(Some(5));
+        clamp_selection(&mut state, 0);
+        assert!(state.selected().is_none());
+    }
+
+    #[test]
+    fn clamp_selection_within_bounds() {
+        let mut state = TableState::default();
+        state.select(Some(2));
+        clamp_selection(&mut state, 5);
+        assert_eq!(state.selected(), Some(2));
+    }
+
+    #[test]
+    fn clamp_selection_out_of_bounds() {
+        let mut state = TableState::default();
+        state.select(Some(10));
+        clamp_selection(&mut state, 3);
+        assert_eq!(state.selected(), Some(2)); // clamped to last
+    }
+
+    #[test]
+    fn clamp_selection_none_stays_none() {
+        let mut state = TableState::default();
+        clamp_selection(&mut state, 5);
+        assert!(state.selected().is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // build_entity_request
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_request_from_defaults() {
+        let filter = FilterState::default();
+        let sort = SortState::default();
+        let pagination = PaginationState::new(20);
+
+        let req = build_entity_request(&filter, sort, &pagination);
+        assert_eq!(req.types.len(), 1);
+        assert_eq!(req.statuses.len(), 1);
+        assert!(req.priorities.is_empty());
+    }
+
+    #[test]
+    fn build_request_with_multiple_filters() {
+        let mut filter = FilterState::default();
+        filter.toggle_type(EntityType::Module);
+        filter.toggle_status(EntityStatus::InProgress);
+        filter.toggle_priority(Priority::new(1).unwrap());
+        let sort = SortState::default();
+        let pagination = PaginationState::new(20);
+
+        let req = build_entity_request(&filter, sort, &pagination);
+        assert_eq!(req.types.len(), 2);
+        assert_eq!(req.statuses.len(), 2);
+        assert_eq!(req.priorities.len(), 1);
+    }
+}

@@ -35,7 +35,18 @@ pub async fn handle_events(app: &mut App) {
 }
 
 async fn handle_key(app: &mut App, key: KeyEvent) {
-    // Global keys (always active)
+    // If reply mode is active, capture keys for text input first —
+    // only Ctrl-C escapes; all other keys go to the reply buffer.
+    if app.has_reply() {
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            app.should_quit = true;
+            return;
+        }
+        handle_reply_key(app, key).await;
+        return;
+    }
+
+    // Global keys (active when not in reply mode)
     match key.code {
         KeyCode::Char('q') => {
             app.should_quit = true;
@@ -50,12 +61,6 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
             return;
         }
         _ => {}
-    }
-
-    // If reply mode is active, capture keys for text input
-    if app.has_reply() {
-        handle_reply_key(app, key).await;
-        return;
     }
 
     // If entity detail pane is open, capture keys for it
@@ -421,5 +426,737 @@ async fn handle_msg_sort_bar_key(app: &mut App, key: KeyEvent) {
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::ReplyState;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use filament_core::connection::FilamentConnection;
+    use filament_core::schema::init_test_pool;
+    use filament_core::store::FilamentStore;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn key_ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    async fn test_app() -> App {
+        let pool = init_test_pool().await.unwrap();
+        let store = FilamentStore::new(pool);
+        let conn = FilamentConnection::Direct(store);
+        App::new(conn)
+    }
+
+    fn enter_reply(app: &mut App) {
+        app.reply = Some(ReplyState::new(
+            "agent-a".to_string(),
+            "msg-123".to_string(),
+        ));
+    }
+
+    fn fake_detail() -> crate::views::detail::DetailData {
+        use filament_core::models::{Entity, EntityCommon, NonEmptyString, Slug};
+        crate::views::detail::DetailData {
+            entity: Entity::Task(EntityCommon {
+                id: "test-id".into(),
+                slug: Slug::new(),
+                name: NonEmptyString::new("Test").unwrap(),
+                summary: String::new(),
+                key_facts: serde_json::json!({}),
+                content: None,
+                status: EntityStatus::Open,
+                priority: Priority::new(2).unwrap(),
+                version: 1,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            }),
+            relations: Vec::new(),
+            events: Vec::new(),
+            blocker_depth: 0,
+            name_map: std::collections::HashMap::new(),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Reply mode: all printable keys go to buffer, not global handlers
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn reply_mode_captures_lowercase_r() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key(KeyCode::Char('r'))).await;
+
+        assert!(!app.should_quit);
+        assert!(app.reply.is_some());
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "r");
+    }
+
+    #[tokio::test]
+    async fn reply_mode_captures_lowercase_q() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key(KeyCode::Char('q'))).await;
+
+        assert!(!app.should_quit, "'q' must not quit while in reply mode");
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "q");
+    }
+
+    #[tokio::test]
+    async fn reply_mode_captures_number_keys() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key(KeyCode::Char('1'))).await;
+        handle_key(&mut app, key(KeyCode::Char('2'))).await;
+
+        assert_eq!(
+            app.active_tab,
+            Tab::Entities,
+            "numbers must not switch tabs"
+        );
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "12");
+    }
+
+    #[tokio::test]
+    async fn reply_mode_captures_tab_key() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+        let initial_tab = app.active_tab;
+
+        handle_key(&mut app, key(KeyCode::Tab)).await;
+
+        assert_eq!(
+            app.active_tab, initial_tab,
+            "Tab must not switch tabs in reply mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn reply_mode_esc_cancels() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key(KeyCode::Esc)).await;
+
+        assert!(app.reply.is_none());
+    }
+
+    #[tokio::test]
+    async fn reply_mode_ctrl_c_quits() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key_ctrl('c')).await;
+
+        assert!(app.should_quit);
+    }
+
+    #[tokio::test]
+    async fn reply_mode_full_sentence() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        for c in "test response".chars() {
+            handle_key(&mut app, key(KeyCode::Char(c))).await;
+        }
+
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "test response");
+    }
+
+    #[tokio::test]
+    async fn reply_mode_backspace_deletes() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key(KeyCode::Char('a'))).await;
+        handle_key(&mut app, key(KeyCode::Char('b'))).await;
+        handle_key(&mut app, key(KeyCode::Backspace)).await;
+
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "a");
+    }
+
+    // -----------------------------------------------------------------------
+    // Normal mode: global keys work as expected
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn normal_mode_q_quits() {
+        let mut app = test_app().await;
+
+        handle_key(&mut app, key(KeyCode::Char('q'))).await;
+
+        assert!(app.should_quit);
+    }
+
+    #[tokio::test]
+    async fn normal_mode_r_does_not_quit() {
+        let mut app = test_app().await;
+
+        handle_key(&mut app, key(KeyCode::Char('r'))).await;
+
+        assert!(!app.should_quit);
+        assert!(app.reply.is_none());
+    }
+
+    #[tokio::test]
+    async fn normal_mode_number_switches_tab() {
+        let mut app = test_app().await;
+
+        handle_key(&mut app, key(KeyCode::Char('4'))).await;
+
+        assert_eq!(app.active_tab, Tab::Messages);
+    }
+
+    #[tokio::test]
+    async fn normal_mode_tab_cycles() {
+        let mut app = test_app().await;
+        assert_eq!(app.active_tab, Tab::Entities);
+
+        handle_key(&mut app, key(KeyCode::Tab)).await;
+
+        assert_eq!(app.active_tab, Tab::Agents);
+    }
+
+    #[tokio::test]
+    async fn normal_mode_backtab_cycles_backward() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Agents;
+
+        handle_key(&mut app, key(KeyCode::BackTab)).await;
+
+        assert_eq!(app.active_tab, Tab::Entities);
+    }
+
+    #[tokio::test]
+    async fn normal_mode_ctrl_c_quits() {
+        let mut app = test_app().await;
+
+        handle_key(&mut app, key_ctrl('c')).await;
+
+        assert!(app.should_quit);
+    }
+
+    #[tokio::test]
+    async fn normal_mode_all_tab_numbers() {
+        for (ch, expected) in [
+            ('1', Tab::Entities),
+            ('2', Tab::Agents),
+            ('3', Tab::Reservations),
+            ('4', Tab::Messages),
+            ('5', Tab::Config),
+            ('6', Tab::Analytics),
+        ] {
+            let mut app = test_app().await;
+            handle_key(&mut app, key(KeyCode::Char(ch))).await;
+            assert_eq!(
+                app.active_tab, expected,
+                "key '{ch}' should switch to {expected:?}"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Entity tab key handlers
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn entities_t_opens_type_filter_bar() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Entities;
+
+        handle_key(&mut app, key(KeyCode::Char('t'))).await;
+
+        assert_eq!(app.filter.active_bar, Some(FilterBar::Type));
+    }
+
+    #[tokio::test]
+    async fn entities_t_blocked_in_ready_mode() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Entities;
+        app.filter.ready_only = true;
+
+        handle_key(&mut app, key(KeyCode::Char('t'))).await;
+
+        assert!(app.filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn entities_f_opens_status_filter_bar() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Entities;
+
+        handle_key(&mut app, key(KeyCode::Char('f'))).await;
+
+        assert_eq!(app.filter.active_bar, Some(FilterBar::Status));
+    }
+
+    #[tokio::test]
+    async fn entities_f_blocked_in_ready_mode() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Entities;
+        app.filter.ready_only = true;
+
+        handle_key(&mut app, key(KeyCode::Char('f'))).await;
+
+        assert!(app.filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn entities_shift_p_opens_priority_bar() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Entities;
+
+        handle_key(&mut app, key(KeyCode::Char('P'))).await;
+
+        assert_eq!(app.filter.active_bar, Some(FilterBar::Priority));
+    }
+
+    #[tokio::test]
+    async fn entities_s_opens_sort_bar() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Entities;
+
+        handle_key(&mut app, key(KeyCode::Char('s'))).await;
+
+        assert_eq!(app.filter.active_bar, Some(FilterBar::Sort));
+    }
+
+    #[tokio::test]
+    async fn entities_shift_f_toggles_ready_mode() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Entities;
+        assert!(!app.filter.ready_only);
+
+        handle_key(&mut app, key(KeyCode::Char('F'))).await;
+
+        assert!(app.filter.ready_only);
+    }
+
+    // -----------------------------------------------------------------------
+    // Message tab key handlers
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn messages_t_opens_type_filter_bar() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Messages;
+
+        handle_key(&mut app, key(KeyCode::Char('t'))).await;
+
+        assert_eq!(app.msg_filter.active_bar, Some(MessageFilterBar::Type));
+    }
+
+    #[tokio::test]
+    async fn messages_f_opens_status_filter_bar() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Messages;
+
+        handle_key(&mut app, key(KeyCode::Char('f'))).await;
+
+        assert_eq!(app.msg_filter.active_bar, Some(MessageFilterBar::Status));
+    }
+
+    #[tokio::test]
+    async fn messages_s_opens_sort_bar() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Messages;
+
+        handle_key(&mut app, key(KeyCode::Char('s'))).await;
+
+        assert_eq!(app.msg_filter.active_bar, Some(MessageFilterBar::Sort));
+    }
+
+    // -----------------------------------------------------------------------
+    // Entity filter bar key handlers
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn type_filter_bar_esc_closes() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Type);
+
+        handle_key(&mut app, key(KeyCode::Esc)).await;
+
+        assert!(app.filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn type_filter_bar_same_key_closes() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Type);
+
+        handle_key(&mut app, key(KeyCode::Char('t'))).await;
+
+        assert!(app.filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn status_filter_bar_same_key_closes() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Status);
+
+        handle_key(&mut app, key(KeyCode::Char('f'))).await;
+
+        assert!(app.filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn priority_filter_bar_same_key_closes() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Priority);
+
+        handle_key(&mut app, key(KeyCode::Char('P'))).await;
+
+        assert!(app.filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn type_filter_bar_0_clears() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Type);
+        app.filter.toggle_type(EntityType::Module);
+
+        handle_key(&mut app, key(KeyCode::Char('0'))).await;
+
+        assert!(app.filter.types.is_empty());
+    }
+
+    #[tokio::test]
+    async fn type_filter_bar_1_toggles_task() {
+        let mut app = test_app().await;
+        app.filter.types.clear();
+        app.filter.active_bar = Some(FilterBar::Type);
+
+        handle_key(&mut app, key(KeyCode::Char('1'))).await;
+
+        assert!(app.filter.types.contains(&EntityType::Task));
+    }
+
+    #[tokio::test]
+    async fn sort_bar_esc_closes() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Sort);
+
+        handle_key(&mut app, key(KeyCode::Esc)).await;
+
+        assert!(app.filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn sort_bar_s_closes() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Sort);
+
+        handle_key(&mut app, key(KeyCode::Char('s'))).await;
+
+        assert!(app.filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn sort_bar_number_sets_field() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Sort);
+
+        handle_key(&mut app, key(KeyCode::Char('1'))).await;
+
+        assert_eq!(app.sort.field, EntitySortField::Name);
+    }
+
+    // -----------------------------------------------------------------------
+    // Message filter bar key handlers
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn msg_type_bar_esc_closes() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Type);
+
+        handle_key(&mut app, key(KeyCode::Esc)).await;
+
+        assert!(app.msg_filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn msg_type_bar_t_closes() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Type);
+
+        handle_key(&mut app, key(KeyCode::Char('t'))).await;
+
+        assert!(app.msg_filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn msg_type_bar_0_clears() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Type);
+        app.msg_filter.toggle_type(MessageType::Text);
+
+        handle_key(&mut app, key(KeyCode::Char('0'))).await;
+
+        assert!(app.msg_filter.msg_types.is_empty());
+    }
+
+    #[tokio::test]
+    async fn msg_type_bar_1_toggles_text() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Type);
+
+        handle_key(&mut app, key(KeyCode::Char('1'))).await;
+
+        assert!(app.msg_filter.msg_types.contains(&MessageType::Text));
+    }
+
+    #[tokio::test]
+    async fn msg_status_bar_esc_closes() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Status);
+
+        handle_key(&mut app, key(KeyCode::Esc)).await;
+
+        assert!(app.msg_filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn msg_status_bar_f_closes() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Status);
+
+        handle_key(&mut app, key(KeyCode::Char('f'))).await;
+
+        assert!(app.msg_filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn msg_status_bar_2_sets_unread() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Status);
+
+        handle_key(&mut app, key(KeyCode::Char('2'))).await;
+
+        assert_eq!(app.msg_filter.read_status, Some(MessageStatus::Unread));
+    }
+
+    #[tokio::test]
+    async fn msg_status_bar_3_sets_read() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Status);
+
+        handle_key(&mut app, key(KeyCode::Char('3'))).await;
+
+        assert_eq!(app.msg_filter.read_status, Some(MessageStatus::Read));
+    }
+
+    #[tokio::test]
+    async fn msg_status_bar_1_clears_to_all() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Status);
+        app.msg_filter.read_status = Some(MessageStatus::Unread);
+
+        handle_key(&mut app, key(KeyCode::Char('1'))).await;
+
+        assert!(app.msg_filter.read_status.is_none());
+    }
+
+    #[tokio::test]
+    async fn msg_sort_bar_esc_closes() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Sort);
+
+        handle_key(&mut app, key(KeyCode::Esc)).await;
+
+        assert!(app.msg_filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn msg_sort_bar_s_closes() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Sort);
+
+        handle_key(&mut app, key(KeyCode::Char('s'))).await;
+
+        assert!(app.msg_filter.active_bar.is_none());
+    }
+
+    #[tokio::test]
+    async fn msg_sort_bar_number_sets_field() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Sort);
+
+        handle_key(&mut app, key(KeyCode::Char('3'))).await;
+
+        assert_eq!(app.msg_sort.field, MessageSortField::From);
+    }
+
+    // -----------------------------------------------------------------------
+    // Detail pane key handlers
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn detail_pane_esc_closes() {
+        let mut app = test_app().await;
+        // Fake open a detail pane
+        app.detail = Some(fake_detail());
+
+        handle_key(&mut app, key(KeyCode::Esc)).await;
+
+        assert!(app.detail.is_none());
+    }
+
+    #[tokio::test]
+    async fn detail_pane_j_scrolls_down() {
+        let mut app = test_app().await;
+        app.detail = Some(fake_detail());
+
+        handle_key(&mut app, key(KeyCode::Char('j'))).await;
+
+        assert_eq!(app.detail_scroll, 1);
+    }
+
+    #[tokio::test]
+    async fn detail_pane_k_scrolls_up() {
+        let mut app = test_app().await;
+        app.detail = Some(fake_detail());
+        app.detail_scroll = 5;
+
+        handle_key(&mut app, key(KeyCode::Char('k'))).await;
+
+        assert_eq!(app.detail_scroll, 4);
+    }
+
+    // -----------------------------------------------------------------------
+    // Detail pane blocks normal navigation
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn detail_pane_blocks_tab_switching() {
+        let mut app = test_app().await;
+        app.detail = Some(fake_detail());
+
+        handle_key(&mut app, key(KeyCode::Char('4'))).await;
+
+        // Should NOT switch tab — detail pane captures keys
+        assert_eq!(app.active_tab, Tab::Entities);
+    }
+
+    // -----------------------------------------------------------------------
+    // Agent tab key handlers
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn agent_h_toggles_history() {
+        let mut app = test_app().await;
+        app.active_tab = Tab::Agents;
+        assert!(!app.agent_show_history);
+
+        handle_key(&mut app, key(KeyCode::Char('h'))).await;
+
+        assert!(app.agent_show_history);
+    }
+
+    // -----------------------------------------------------------------------
+    // Navigation j/k
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn j_k_navigation_does_not_crash_empty() {
+        let mut app = test_app().await;
+        // entities list is empty
+        handle_key(&mut app, key(KeyCode::Char('j'))).await;
+        handle_key(&mut app, key(KeyCode::Char('k'))).await;
+        // no crash = pass
+    }
+
+    // -----------------------------------------------------------------------
+    // Reply mode: Ctrl-T cycles type, Delete/Left/Right/Home/End
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn reply_mode_ctrl_t_cycles_type() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key_ctrl('t')).await;
+
+        assert_eq!(app.reply.as_ref().unwrap().msg_type, MessageType::Question);
+    }
+
+    #[tokio::test]
+    async fn reply_mode_delete_key() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key(KeyCode::Char('a'))).await;
+        handle_key(&mut app, key(KeyCode::Char('b'))).await;
+        handle_key(&mut app, key(KeyCode::Home)).await;
+        handle_key(&mut app, key(KeyCode::Delete)).await;
+
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "b");
+    }
+
+    #[tokio::test]
+    async fn reply_mode_left_right_navigation() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key(KeyCode::Char('a'))).await;
+        handle_key(&mut app, key(KeyCode::Char('b'))).await;
+        handle_key(&mut app, key(KeyCode::Left)).await;
+        handle_key(&mut app, key(KeyCode::Char('X'))).await;
+
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "aXb");
+    }
+
+    #[tokio::test]
+    async fn reply_mode_home_end() {
+        let mut app = test_app().await;
+        enter_reply(&mut app);
+
+        handle_key(&mut app, key(KeyCode::Char('a'))).await;
+        handle_key(&mut app, key(KeyCode::Char('b'))).await;
+        handle_key(&mut app, key(KeyCode::Home)).await;
+        handle_key(&mut app, key(KeyCode::Char('X'))).await;
+
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "Xab");
+
+        handle_key(&mut app, key(KeyCode::End)).await;
+        handle_key(&mut app, key(KeyCode::Char('Z'))).await;
+
+        assert_eq!(app.reply.as_ref().unwrap().buffer, "XabZ");
+    }
+
+    // -----------------------------------------------------------------------
+    // Filter bar blocks global keys
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn filter_bar_blocks_tab_switch() {
+        let mut app = test_app().await;
+        app.filter.active_bar = Some(FilterBar::Type);
+
+        handle_key(&mut app, key(KeyCode::Char('4'))).await;
+
+        // '4' is out of type range (1-7 valid) so it's a no-op,
+        // but it should NOT switch tabs
+        assert_eq!(app.active_tab, Tab::Entities);
+    }
+
+    #[tokio::test]
+    async fn msg_filter_bar_blocks_tab_switch() {
+        let mut app = test_app().await;
+        app.msg_filter.active_bar = Some(MessageFilterBar::Type);
+
+        handle_key(&mut app, key(KeyCode::Tab)).await;
+
+        assert_eq!(app.active_tab, Tab::Entities);
     }
 }
