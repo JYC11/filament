@@ -52,6 +52,12 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
         _ => {}
     }
 
+    // If reply mode is active, capture keys for text input
+    if app.has_reply() {
+        handle_reply_key(app, key).await;
+        return;
+    }
+
     // If entity detail pane is open, capture keys for it
     if app.has_detail() {
         handle_detail_key(app, key);
@@ -168,6 +174,9 @@ async fn handle_messages_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('p') => {
             app.msg_prev_page().await;
         }
+        KeyCode::Char('R') => {
+            app.start_reply();
+        }
         KeyCode::Enter => {
             app.open_message_detail().await;
         }
@@ -189,6 +198,36 @@ fn handle_message_detail_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => app.close_message_detail(),
         KeyCode::Char('j') | KeyCode::Down => app.scroll_message_detail_down(),
         KeyCode::Char('k') | KeyCode::Up => app.scroll_message_detail_up(),
+        KeyCode::Char('R') => {
+            app.close_message_detail();
+            app.start_reply();
+        }
+        _ => {}
+    }
+}
+
+async fn handle_reply_key(app: &mut App, key: KeyEvent) {
+    let Some(ref mut reply) = app.reply else {
+        return;
+    };
+
+    match key.code {
+        KeyCode::Esc => {
+            app.cancel_reply();
+        }
+        KeyCode::Enter => {
+            app.send_reply().await;
+        }
+        KeyCode::Backspace => reply.backspace(),
+        KeyCode::Delete => reply.delete(),
+        KeyCode::Left => reply.move_left(),
+        KeyCode::Right => reply.move_right(),
+        KeyCode::Home => reply.home(),
+        KeyCode::End => reply.end(),
+        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            reply.cycle_type();
+        }
+        KeyCode::Char(c) => reply.insert_char(c),
         _ => {}
     }
 }

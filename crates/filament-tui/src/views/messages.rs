@@ -243,6 +243,4 @@ const fn page_indicator(has_prev: bool, has_next: bool) -> &'static str {
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    filament_core::util::truncate_with_ellipsis(s, max)
-}
+use super::truncate;

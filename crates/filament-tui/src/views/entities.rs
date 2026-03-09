@@ -1,10 +1,11 @@
 use ratatui::layout::Constraint;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 
-use filament_core::models::{EntityStatus, EntityType};
+use filament_core::models::EntityType;
 
+use super::status_color;
 use crate::app::{EntityRow, FilterState, SortState};
 
 pub fn render_entity_table<'a>(
@@ -187,13 +188,4 @@ pub fn render_entity_table_stateful(
     area: ratatui::layout::Rect,
 ) {
     frame.render_stateful_widget(table, area, state);
-}
-
-fn status_color(status: EntityStatus) -> Style {
-    match status {
-        EntityStatus::Open => Style::default().fg(Color::Green),
-        EntityStatus::InProgress => Style::default().fg(Color::Yellow),
-        EntityStatus::Blocked => Style::default().fg(Color::Red),
-        EntityStatus::Closed => Style::default().fg(Color::DarkGray),
-    }
 }

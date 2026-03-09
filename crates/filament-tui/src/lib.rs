@@ -3,7 +3,10 @@ mod event;
 pub mod ui;
 pub mod views;
 
-pub use app::{App, EntityRow, FilterBar, FilterState, MessageSortState, SortState, Tab};
+pub use app::{
+    App, EntityRow, FilterBar, FilterState, MessageFilterBar, MessageFilterState,
+    MessageParticipantFilter, MessageSortState, ReplyState, SortState, Tab,
+};
 
 use std::io;
 

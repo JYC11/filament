@@ -89,6 +89,4 @@ fn agent_status_color(status: &AgentStatus) -> Style {
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    filament_core::util::truncate_with_ellipsis(s, max)
-}
+use super::truncate;

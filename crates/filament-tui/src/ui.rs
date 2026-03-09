@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use crate::app::{App, Tab};
 use crate::views::{
-    agents, analytics, config, detail, entities, filter_bar, messages, reservations,
+    agents, analytics, config, detail, entities, filter_bar, messages, reply, reservations,
 };
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
@@ -65,8 +65,10 @@ fn draw_tab_bar(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
     let has_entity_detail = app.active_tab == Tab::Entities && app.detail.is_some();
     let has_message_detail = app.active_tab == Tab::Messages && app.message_detail.is_some();
+    let has_reply = app.active_tab == Tab::Messages && app.reply.is_some();
+    let has_bottom_pane = has_entity_detail || has_message_detail || has_reply;
 
-    let (table_area, detail_area) = if has_entity_detail || has_message_detail {
+    let (table_area, bottom_area) = if has_bottom_pane {
         let split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
@@ -90,7 +92,7 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
             entities::render_entity_table_stateful(table, &mut state, frame, table_area);
             app.entity_table_state = state;
 
-            if let (Some(detail_data), Some(d_area)) = (&app.detail, detail_area) {
+            if let (Some(detail_data), Some(d_area)) = (&app.detail, bottom_area) {
                 detail::render_detail(detail_data, app.detail_scroll, frame, d_area);
             }
         }
@@ -129,13 +131,17 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
             messages::render_message_table_stateful(&params, &mut state, frame, table_area);
             app.message_table_state = state;
 
-            if let (Some(detail_data), Some(d_area)) = (&app.message_detail, detail_area) {
-                messages::render_message_detail(
-                    detail_data,
-                    app.message_detail_scroll,
-                    frame,
-                    d_area,
-                );
+            if let Some(b_area) = bottom_area {
+                if let Some(ref reply_state) = app.reply {
+                    reply::render_reply(reply_state, frame, b_area);
+                } else if let Some(ref detail_data) = app.message_detail {
+                    messages::render_message_detail(
+                        detail_data,
+                        app.message_detail_scroll,
+                        frame,
+                        b_area,
+                    );
+                }
             }
         }
         Tab::Config => {
@@ -183,11 +189,14 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri s:sort F:ready n/p:page Enter:detail"
         }
         Tab::Agents => " | q:quit Tab:switch r:refresh j/k:nav h:history",
+        Tab::Messages if app.reply.is_some() => {
+            " | q:quit Esc:cancel Ctrl-t:type Enter:send"
+        }
         Tab::Messages if app.message_detail.is_some() => {
-            " | q:quit Esc:close j/k:scroll"
+            " | q:quit Esc:close j/k:scroll R:reply"
         }
         Tab::Messages => {
-            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status s:sort a:participant n/p:page Enter:detail"
+            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status s:sort a:participant n/p:page R:reply Enter:detail"
         }
         Tab::Analytics => " | q:quit Tab:switch r:refresh Enter:calculate",
         _ => " | q:quit Tab:switch r:refresh j/k:nav",

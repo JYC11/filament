@@ -174,12 +174,7 @@ fn section_header(title: &str) -> Line<'static> {
 }
 
 fn status_style(status: filament_core::models::EntityStatus) -> Style {
-    match status {
-        filament_core::models::EntityStatus::Open => Style::default().fg(Color::Green),
-        filament_core::models::EntityStatus::InProgress => Style::default().fg(Color::Yellow),
-        filament_core::models::EntityStatus::Blocked => Style::default().fg(Color::Red),
-        filament_core::models::EntityStatus::Closed => Style::default().fg(Color::DarkGray),
-    }
+    super::status_color(status)
 }
 
 fn resolve_name(name_map: &HashMap<String, String>, id: &str) -> String {
