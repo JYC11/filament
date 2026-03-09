@@ -3,9 +3,9 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 use filament_core::dto::EntitySortField;
-use filament_core::models::{EntityStatus, EntityType, Priority};
+use filament_core::models::{EntityStatus, EntityType, MessageStatus, MessageType, Priority};
 
-use crate::app::{App, FilterBar, Tab};
+use crate::app::{App, FilterBar, MessageFilterBar, Tab};
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -52,15 +52,27 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
         _ => {}
     }
 
-    // If detail pane is open, capture keys for it
+    // If entity detail pane is open, capture keys for it
     if app.has_detail() {
         handle_detail_key(app, key);
         return;
     }
 
-    // If a filter bar is open, capture keys for it
+    // If message detail pane is open, capture keys for it
+    if app.has_message_detail() {
+        handle_message_detail_key(app, key);
+        return;
+    }
+
+    // If an entity filter bar is open, capture keys for it
     if app.filter.active_bar.is_some() {
         handle_filter_bar_key(app, key).await;
+        return;
+    }
+
+    // If a message filter bar is open, capture keys for it
+    if app.msg_filter.active_bar.is_some() {
+        handle_msg_filter_bar_key(app, key).await;
         return;
     }
 
@@ -112,6 +124,19 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Enter if app.active_tab == Tab::Entities => {
             app.open_detail().await;
         }
+        // Messages tab filter keys
+        KeyCode::Char('t') if app.active_tab == Tab::Messages => {
+            app.msg_filter.active_bar = Some(MessageFilterBar::Type);
+        }
+        KeyCode::Char('f') if app.active_tab == Tab::Messages => {
+            app.msg_filter.active_bar = Some(MessageFilterBar::Status);
+        }
+        KeyCode::Char('a') if app.active_tab == Tab::Messages => {
+            app.cycle_msg_participant().await;
+        }
+        KeyCode::Enter if app.active_tab == Tab::Messages => {
+            app.open_message_detail().await;
+        }
         KeyCode::Char('h') if app.active_tab == Tab::Agents => {
             app.agent_show_history = !app.agent_show_history;
             app.refresh_agents().await;
@@ -128,6 +153,15 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => app.close_detail(),
         KeyCode::Char('j') | KeyCode::Down => app.scroll_detail_down(),
         KeyCode::Char('k') | KeyCode::Up => app.scroll_detail_up(),
+        _ => {}
+    }
+}
+
+fn handle_message_detail_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.close_message_detail(),
+        KeyCode::Char('j') | KeyCode::Down => app.scroll_message_detail_down(),
+        KeyCode::Char('k') | KeyCode::Up => app.scroll_message_detail_up(),
         _ => {}
     }
 }
@@ -233,6 +267,67 @@ async fn handle_sort_bar_key(app: &mut App, key: KeyEvent) {
                 app.reset_page();
                 app.refresh_entities().await;
             }
+        }
+        _ => {}
+    }
+}
+
+async fn handle_msg_filter_bar_key(app: &mut App, key: KeyEvent) {
+    let bar = app.msg_filter.active_bar.expect("bar is Some");
+
+    match bar {
+        MessageFilterBar::Type => handle_msg_type_bar(app, key).await,
+        MessageFilterBar::Status => handle_msg_status_bar(app, key).await,
+    }
+}
+
+async fn handle_msg_type_bar(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('t') => {
+            app.msg_filter.active_bar = None;
+        }
+        KeyCode::Char('0') => {
+            app.msg_filter.clear_types();
+            app.message_table_state.select(None);
+            app.refresh_messages().await;
+        }
+        KeyCode::Char(c @ '1'..='4') => {
+            let types = [
+                MessageType::Text,
+                MessageType::Question,
+                MessageType::Blocker,
+                MessageType::Artifact,
+            ];
+            let idx = (c as u8 - b'1') as usize;
+            if let Some(t) = types.get(idx) {
+                app.msg_filter.toggle_type(t.clone());
+                app.message_table_state.select(None);
+                app.refresh_messages().await;
+            }
+        }
+        _ => {}
+    }
+}
+
+async fn handle_msg_status_bar(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('f') => {
+            app.msg_filter.active_bar = None;
+        }
+        KeyCode::Char('1') => {
+            app.msg_filter.read_status = None; // All
+            app.message_table_state.select(None);
+            app.refresh_messages().await;
+        }
+        KeyCode::Char('2') => {
+            app.msg_filter.read_status = Some(MessageStatus::Unread);
+            app.message_table_state.select(None);
+            app.refresh_messages().await;
+        }
+        KeyCode::Char('3') => {
+            app.msg_filter.read_status = Some(MessageStatus::Read);
+            app.message_table_state.select(None);
+            app.refresh_messages().await;
         }
         _ => {}
     }

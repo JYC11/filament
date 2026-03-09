@@ -108,7 +108,7 @@ impl_enum_str!(EntityStatus {
     Blocked => "blocked",
 });
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::Type, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, sqlx::Type, Serialize, Deserialize, JsonSchema)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum MessageType {

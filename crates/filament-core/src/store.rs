@@ -977,6 +977,19 @@ pub async fn send_message(
     Ok(id)
 }
 
+/// Get a single message by ID.
+///
+/// # Errors
+///
+/// Returns `FilamentError::MessageNotFound` if no message with the given ID exists.
+pub async fn get_message(pool: &Pool<Sqlite>, id: &str) -> Result<Message> {
+    sqlx::query_as::<_, Message>("SELECT * FROM messages WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| FilamentError::MessageNotFound { id: id.to_string() })
+}
+
 /// Get inbox (unread messages for an agent).
 ///
 /// # Errors

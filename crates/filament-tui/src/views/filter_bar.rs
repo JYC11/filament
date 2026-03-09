@@ -4,9 +4,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use filament_core::dto::EntitySortField;
-use filament_core::models::{EntityStatus, EntityType, Priority};
+use filament_core::models::{EntityStatus, EntityType, MessageStatus, MessageType, Priority};
 
-use crate::app::{FilterBar, FilterState, SortState};
+use crate::app::{FilterBar, FilterState, MessageFilterBar, MessageFilterState, SortState};
 
 pub fn render_filter_bar(
     filter: &FilterState,
@@ -137,6 +137,79 @@ fn sort_bar_line(sort: SortState) -> Line<'static> {
         let style = chip_style(selected);
         let arrow = if selected { sort.direction.arrow() } else { "" };
         spans.push(Span::styled(format!(" {label}{arrow} "), style));
+        spans.push(Span::raw(" "));
+    }
+
+    spans.push(Span::styled(
+        " Esc:Close ",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    Line::from(spans)
+}
+
+// ---------------------------------------------------------------------------
+// Message filter bars
+// ---------------------------------------------------------------------------
+
+pub fn render_msg_filter_bar(filter: &MessageFilterState, frame: &mut ratatui::Frame, area: Rect) {
+    let Some(bar) = &filter.active_bar else {
+        return;
+    };
+
+    let line = match bar {
+        MessageFilterBar::Type => msg_type_bar_line(filter),
+        MessageFilterBar::Status => msg_status_bar_line(filter),
+    };
+
+    let paragraph = Paragraph::new(line);
+    frame.render_widget(paragraph, area);
+}
+
+fn msg_type_bar_line(filter: &MessageFilterState) -> Line<'static> {
+    let types = [
+        (MessageType::Text, "1:Text"),
+        (MessageType::Question, "2:Question"),
+        (MessageType::Blocker, "3:Blocker"),
+        (MessageType::Artifact, "4:Artifact"),
+    ];
+
+    let mut spans = vec![Span::styled(
+        " MsgType: ",
+        Style::default().add_modifier(Modifier::BOLD),
+    )];
+
+    for (t, label) in &types {
+        let selected = filter.msg_types.contains(t);
+        let style = chip_style(selected);
+        spans.push(Span::styled(format!(" {label} "), style));
+        spans.push(Span::raw(" "));
+    }
+
+    spans.push(Span::styled(
+        " 0:Clear  Esc:Close ",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    Line::from(spans)
+}
+
+fn msg_status_bar_line(filter: &MessageFilterState) -> Line<'static> {
+    let choices: [(Option<MessageStatus>, &str); 3] = [
+        (None, "1:All"),
+        (Some(MessageStatus::Unread), "2:Unread"),
+        (Some(MessageStatus::Read), "3:Read"),
+    ];
+
+    let mut spans = vec![Span::styled(
+        " ReadStatus: ",
+        Style::default().add_modifier(Modifier::BOLD),
+    )];
+
+    for (status, label) in &choices {
+        let selected = filter.read_status == *status;
+        let style = chip_style(selected);
+        spans.push(Span::styled(format!(" {label} "), style));
         spans.push(Span::raw(" "));
     }
 

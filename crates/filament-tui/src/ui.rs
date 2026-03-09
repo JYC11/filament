@@ -10,7 +10,8 @@ use crate::views::{
 };
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
-    let has_filter_bar = app.active_tab == Tab::Entities && app.filter.active_bar.is_some();
+    let has_filter_bar = (app.active_tab == Tab::Entities && app.filter.active_bar.is_some())
+        || (app.active_tab == Tab::Messages && app.msg_filter.active_bar.is_some());
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -33,7 +34,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     draw_tab_bar(frame, app, chunks[0]);
 
     if has_filter_bar {
-        filter_bar::render_filter_bar(&app.filter, &app.sort, frame, chunks[1]);
+        if app.active_tab == Tab::Entities {
+            filter_bar::render_filter_bar(&app.filter, &app.sort, frame, chunks[1]);
+        } else {
+            filter_bar::render_msg_filter_bar(&app.msg_filter, frame, chunks[1]);
+        }
         draw_content(frame, app, chunks[2]);
         draw_status_bar(frame, app, chunks[3]);
     } else {
@@ -58,9 +63,10 @@ fn draw_tab_bar(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
-    let has_detail = app.active_tab == Tab::Entities && app.detail.is_some();
+    let has_entity_detail = app.active_tab == Tab::Entities && app.detail.is_some();
+    let has_message_detail = app.active_tab == Tab::Messages && app.message_detail.is_some();
 
-    let (table_area, detail_area) = if has_detail {
+    let (table_area, detail_area) = if has_entity_detail || has_message_detail {
         let split = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
@@ -110,9 +116,25 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
             app.reservation_table_state = state;
         }
         Tab::Messages => {
+            let filter_label = app.msg_filter.label();
             let mut state = app.message_table_state.clone();
-            messages::render_message_table_stateful(&app.messages, &mut state, frame, table_area);
+            messages::render_message_table_stateful(
+                &app.messages,
+                &filter_label,
+                &mut state,
+                frame,
+                table_area,
+            );
             app.message_table_state = state;
+
+            if let (Some(detail_data), Some(d_area)) = (&app.message_detail, detail_area) {
+                messages::render_message_detail(
+                    detail_data,
+                    app.message_detail_scroll,
+                    frame,
+                    d_area,
+                );
+            }
         }
         Tab::Config => {
             let mut state = app.config_table_state.clone();
@@ -159,6 +181,12 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             " | q:quit Tab:switch r:refresh j/k:nav t:type f:status P:pri s:sort F:ready n/p:page Enter:detail"
         }
         Tab::Agents => " | q:quit Tab:switch r:refresh j/k:nav h:history",
+        Tab::Messages if app.message_detail.is_some() => {
+            " | q:quit Esc:close j/k:scroll"
+        }
+        Tab::Messages => {
+            " | q:quit Tab:switch r:refresh j/k:nav t:type f:status a:participant Enter:detail"
+        }
         Tab::Analytics => " | q:quit Tab:switch r:refresh Enter:calculate",
         _ => " | q:quit Tab:switch r:refresh j/k:nav",
     };

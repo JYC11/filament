@@ -178,12 +178,12 @@ async fn message_view_empty() {
 
     let output = buffer_to_string(&terminal);
     assert!(
-        output.contains("Kind"),
-        "should show message table header Kind"
+        output.contains("Type"),
+        "should show message table header Type"
     );
     assert!(
-        output.contains("Agent"),
-        "should show message table header Agent"
+        output.contains("From"),
+        "should show message table header From"
     );
     assert!(
         output.contains("Body"),
