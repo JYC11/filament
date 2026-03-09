@@ -205,8 +205,9 @@ async fn dispatch_closed_task_fails() {
         .await
         .expect_err("dispatch to closed task should fail");
 
-    assert!(
-        err.to_string().contains("AGENT_DISPATCH_FAILED"),
+    assert_eq!(
+        err.error_code(),
+        "AGENT_DISPATCH_FAILED",
         "expected AGENT_DISPATCH_FAILED, got: {err}"
     );
 
@@ -314,8 +315,9 @@ async fn dispatch_agent_already_running() {
         .await
         .expect_err("second dispatch should fail");
 
-    assert!(
-        err.to_string().contains("AGENT_ALREADY_RUNNING"),
+    assert_eq!(
+        err.error_code(),
+        "AGENT_ALREADY_RUNNING",
         "expected AGENT_ALREADY_RUNNING, got: {err}"
     );
 

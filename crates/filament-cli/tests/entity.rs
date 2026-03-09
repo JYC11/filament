@@ -332,7 +332,9 @@ fn entity_update_no_args_error() {
         .args(["update", &slug])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("--summary or --status"));
+        .stderr(predicate::str::contains(
+            "--summary, --status, --priority, --facts, or --content",
+        ));
 }
 
 #[test]
@@ -374,4 +376,95 @@ fn invalid_entity_type_error() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("invalid EntityType"));
+}
+
+#[test]
+fn entity_update_priority() {
+    let dir = init_project();
+    let slug = add_entity(&dir, "prio-test", "task", &["--summary", "original"]);
+
+    filament(&dir)
+        .args(["update", &slug, "--priority", "0"])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["inspect", &slug, "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"priority\": 0"));
+}
+
+#[test]
+fn entity_update_priority_invalid() {
+    let dir = init_project();
+    let slug = add_entity(&dir, "prio-bad", "task", &["--summary", "original"]);
+
+    filament(&dir)
+        .args(["update", &slug, "--priority", "5"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("priority must be 0-4"));
+}
+
+#[test]
+fn entity_update_facts() {
+    let dir = init_project();
+    let slug = add_entity(&dir, "facts-test", "module", &["--summary", "original"]);
+
+    filament(&dir)
+        .args(["update", &slug, "--facts", r#"{"key":"value"}"#])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["inspect", &slug, "--json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""key": "value""#));
+}
+
+#[test]
+fn entity_update_facts_invalid_json() {
+    let dir = init_project();
+    let slug = add_entity(&dir, "facts-bad", "module", &["--summary", "original"]);
+
+    filament(&dir)
+        .args(["update", &slug, "--facts", "not json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid JSON for --facts"));
+}
+
+#[test]
+fn entity_update_content() {
+    let dir = init_project();
+    let slug = add_entity(&dir, "content-test", "module", &["--summary", "original"]);
+
+    let content_path = dir.path().join("test-content.md");
+    let mut f = std::fs::File::create(&content_path).unwrap();
+    writeln!(f, "# Updated Content").unwrap();
+
+    filament(&dir)
+        .args(["update", &slug, "--content", content_path.to_str().unwrap()])
+        .assert()
+        .success();
+
+    filament(&dir)
+        .args(["read", &slug])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# Updated Content"));
+}
+
+#[test]
+fn entity_update_content_missing_file() {
+    let dir = init_project();
+    let slug = add_entity(&dir, "content-bad", "module", &["--summary", "original"]);
+
+    filament(&dir)
+        .args(["update", &slug, "--content", "/nonexistent/file.md"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("content file not found"));
 }

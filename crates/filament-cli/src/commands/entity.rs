@@ -48,6 +48,15 @@ pub struct UpdateArgs {
     /// New status: open, closed, `in_progress`, blocked.
     #[arg(long)]
     status: Option<filament_core::models::EntityStatus>,
+    /// New priority (0=highest, 4=lowest).
+    #[arg(long)]
+    priority: Option<u8>,
+    /// New key facts as JSON object.
+    #[arg(long)]
+    facts: Option<String>,
+    /// New content file path.
+    #[arg(long)]
+    content: Option<String>,
     /// Expected version for conflict detection.
     ///
     /// If omitted, the current version is read automatically.
@@ -158,11 +167,40 @@ pub async fn remove(cli: &Cli, args: &RemoveArgs) -> Result<()> {
 }
 
 pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
-    if args.summary.is_none() && args.status.is_none() {
+    if args.summary.is_none()
+        && args.status.is_none()
+        && args.priority.is_none()
+        && args.facts.is_none()
+        && args.content.is_none()
+    {
         return Err(filament_core::error::FilamentError::Validation(
-            "specify at least one of --summary or --status to update".to_string(),
+            "specify at least one of --summary, --status, --priority, --facts, or --content to update".to_string(),
         ));
     }
+
+    if let Some(ref path) = args.content {
+        if !Path::new(path).exists() {
+            return Err(filament_core::error::FilamentError::Validation(format!(
+                "content file not found: {path}"
+            )));
+        }
+    }
+
+    let priority = args.priority.map(Priority::new).transpose()?;
+
+    let key_facts: Option<String> = args
+        .facts
+        .as_deref()
+        .map(|s| {
+            serde_json::from_str::<serde_json::Value>(s)
+                .map_err(|e| {
+                    filament_core::error::FilamentError::Validation(format!(
+                        "invalid JSON for --facts: {e}"
+                    ))
+                })
+                .map(|v| v.to_string())
+        })
+        .transpose()?;
 
     let mut conn = connect().await?;
     let entity = conn.resolve_entity(&args.slug).await?;
@@ -175,11 +213,11 @@ pub async fn update(cli: &Cli, args: &UpdateArgs) -> Result<()> {
             name: None,
             summary: args.summary.clone(),
             status: args.status,
-            priority: None,
-            key_facts: None,
+            priority,
+            key_facts,
             expected_version,
         },
-        None,
+        args.content.clone(),
     );
 
     match conn.update_entity(id.as_str(), &changeset).await {
