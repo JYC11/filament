@@ -55,6 +55,7 @@ pub enum Method {
     GetEntity,
     GetEntityBySlug,
     ListEntities,
+    ListEntitiesPaged,
     UpdateEntity,
     UpdateEntitySummary,
     UpdateEntityStatus,
@@ -69,6 +70,7 @@ pub enum Method {
     SendMessage,
     GetInbox,
     MarkMessageRead,
+    ListMessagesPaged,
 
     // Reservation operations
     AcquireReservation,

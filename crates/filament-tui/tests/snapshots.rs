@@ -356,9 +356,11 @@ async fn entity_view_multi_type_columns() {
 
 #[tokio::test]
 async fn paging_basics() {
+    use filament_core::pagination::PaginationState;
+
     let mut conn = test_conn().await;
 
-    // Create 3 tasks, set page_size to 2 so we get 2 pages
+    // Create 3 tasks, set limit to 2 so we get 2 pages
     for i in 1..=3 {
         conn.create_entity(
             CreateEntityRequest::from_parts(
@@ -376,28 +378,32 @@ async fn paging_basics() {
     }
 
     let mut app = App::new(conn);
-    app.page_size = 2;
+    app.entity_pagination = PaginationState::new(2);
     app.refresh_all().await;
 
-    assert_eq!(app.entities.len(), 3);
-    assert_eq!(app.total_pages(), 2);
+    // First page: 2 items, can go forward but not back
+    assert_eq!(app.entities.len(), 2);
     assert_eq!(app.visible_entities().len(), 2);
     assert!(!app.has_prev_page());
     assert!(app.has_next_page());
 
-    app.next_page();
-    assert_eq!(app.page, 1);
+    // Go to second page: 1 item, can go back but not forward
+    app.next_page().await;
     assert_eq!(app.visible_entities().len(), 1);
     assert!(app.has_prev_page());
     assert!(!app.has_next_page());
 
-    app.prev_page();
-    assert_eq!(app.page, 0);
+    // Go back to first page
+    app.prev_page().await;
     assert_eq!(app.visible_entities().len(), 2);
+    assert!(!app.has_prev_page());
+    assert!(app.has_next_page());
 }
 
 #[tokio::test]
 async fn paging_reset_on_filter_change() {
+    use filament_core::pagination::PaginationState;
+
     let mut conn = test_conn().await;
     for i in 1..=3 {
         conn.create_entity(
@@ -416,14 +422,15 @@ async fn paging_reset_on_filter_change() {
     }
 
     let mut app = App::new(conn);
-    app.page_size = 2;
+    app.entity_pagination = PaginationState::new(2);
     app.refresh_all().await;
-    app.next_page();
-    assert_eq!(app.page, 1);
+    app.next_page().await;
+    assert!(app.has_prev_page());
 
-    // Changing filter resets page
+    // Resetting page clears cursors
     app.reset_page();
-    assert_eq!(app.page, 0);
+    assert!(!app.has_prev_page());
+    assert!(!app.has_next_page());
 }
 
 #[tokio::test]
@@ -446,7 +453,8 @@ async fn paging_no_indicator_single_page() {
     let mut app = App::new(conn);
     app.refresh_all().await;
 
-    assert_eq!(app.total_pages(), 1);
+    assert!(!app.has_next_page());
+    assert!(!app.has_prev_page());
 
     let backend = TestBackend::new(100, 20);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -455,15 +463,17 @@ async fn paging_no_indicator_single_page() {
         .unwrap();
 
     let output = buffer_to_string(&terminal);
-    // Single page should NOT show page indicator
+    // Single page should NOT show page indicators
     assert!(
-        !output.contains("1/1"),
-        "single page should not show page indicator: {output}"
+        !output.contains('<') && !output.contains('>'),
+        "single page should not show page indicators: {output}"
     );
 }
 
 #[tokio::test]
 async fn page_indicator_in_title() {
+    use filament_core::pagination::PaginationState;
+
     let mut conn = test_conn().await;
     for i in 1..=3 {
         conn.create_entity(
@@ -482,7 +492,7 @@ async fn page_indicator_in_title() {
     }
 
     let mut app = App::new(conn);
-    app.page_size = 2;
+    app.entity_pagination = PaginationState::new(2);
     app.refresh_all().await;
 
     let backend = TestBackend::new(100, 20);
@@ -492,9 +502,10 @@ async fn page_indicator_in_title() {
         .unwrap();
 
     let output = buffer_to_string(&terminal);
+    // First page with more data should show ">" indicator
     assert!(
-        output.contains("1/2"),
-        "should show page 1/2 in title: {output}"
+        output.contains('>'),
+        "should show > page indicator in title: {output}"
     );
 }
 

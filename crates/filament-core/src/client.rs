@@ -3,12 +3,13 @@ use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::UnixStream;
 
-use crate::dto::{Escalation, ExportData, ImportResult};
+use crate::dto::{Escalation, ExportData, ImportResult, ListEntitiesRequest};
 use crate::error::{FilamentError, Result};
 use crate::models::{
     AgentRun, AgentRunId, Entity, EntityId, EntityStatus, EntityType, Event, Message, MessageId,
     Relation, RelationId, Reservation, ReservationId, Slug,
 };
+use crate::pagination::PagedResult;
 use crate::protocol::{Method, Notification, Request, Response, SubscribeParams};
 
 /// Client for communicating with the filament daemon over a Unix socket.
@@ -143,6 +144,18 @@ impl DaemonClient {
                 }),
             )
             .await?;
+        Self::parse_result(result)
+    }
+
+    /// # Panics
+    ///
+    /// Panics if `ListEntitiesRequest` serialization fails (should be infallible).
+    pub async fn list_entities_paged(
+        &mut self,
+        req: &ListEntitiesRequest,
+    ) -> Result<PagedResult<Entity>> {
+        let params = serde_json::to_value(req).expect("infallible");
+        let result = self.call(Method::ListEntitiesPaged, params).await?;
         Self::parse_result(result)
     }
 
@@ -577,6 +590,18 @@ impl DaemonClient {
         let result = self
             .call(Method::ListPendingEscalations, serde_json::json!({}))
             .await?;
+        Self::parse_result(result)
+    }
+
+    /// # Panics
+    ///
+    /// Panics if `ListMessagesRequest` serialization fails (should be infallible).
+    pub async fn list_messages_paged(
+        &mut self,
+        req: &crate::dto::ListMessagesRequest,
+    ) -> Result<PagedResult<Message>> {
+        let params = serde_json::to_value(req).expect("infallible");
+        let result = self.call(Method::ListMessagesPaged, params).await?;
         Self::parse_result(result)
     }
 

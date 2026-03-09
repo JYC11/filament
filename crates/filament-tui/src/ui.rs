@@ -78,8 +78,8 @@ fn draw_content(frame: &mut Frame, app: &mut App, area: Rect) {
                 visible,
                 &app.filter,
                 &app.sort,
-                app.page,
-                app.total_pages(),
+                app.has_prev_page(),
+                app.has_next_page(),
             );
             entities::render_entity_table_stateful(table, &mut state, frame, table_area);
             app.entity_table_state = state;

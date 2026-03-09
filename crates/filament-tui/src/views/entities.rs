@@ -11,15 +11,16 @@ pub fn render_entity_table<'a>(
     entities: &'a [EntityRow],
     filter: &FilterState,
     sort: &SortState,
-    page: usize,
-    total_pages: usize,
+    has_prev: bool,
+    has_next: bool,
 ) -> Table<'a> {
     let label = filter.label();
     let sort_label = sort.label();
-    let page_info = if total_pages > 1 {
-        format!(" | {}/{}", page + 1, total_pages)
-    } else {
-        String::new()
+    let page_info = match (has_prev, has_next) {
+        (false, false) => String::new(),
+        (true, false) => " | <".to_string(),
+        (false, true) => " | >".to_string(),
+        (true, true) => " | < >".to_string(),
     };
     let title = format!(" Entities [{label} | {sort_label}{page_info}] ");
 

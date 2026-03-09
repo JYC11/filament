@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
+use filament_core::dto::EntitySortField;
 use filament_core::models::{EntityStatus, EntityType, Priority};
 
-use crate::app::{App, FilterBar, SortField, Tab};
+use crate::app::{App, FilterBar, Tab};
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -103,10 +104,10 @@ async fn handle_key(app: &mut App, key: KeyEvent) {
             app.refresh_entities().await;
         }
         KeyCode::Char('n') if app.active_tab == Tab::Entities => {
-            app.next_page();
+            app.next_page().await;
         }
         KeyCode::Char('p') if app.active_tab == Tab::Entities => {
-            app.prev_page();
+            app.prev_page().await;
         }
         KeyCode::Enter if app.active_tab == Tab::Entities => {
             app.open_detail().await;
@@ -213,20 +214,19 @@ async fn handle_filter_bar_key(app: &mut App, key: KeyEvent) {
 }
 
 async fn handle_sort_bar_key(app: &mut App, key: KeyEvent) {
-    const SORT_FIELDS: [SortField; 6] = [
-        SortField::Name,
-        SortField::Priority,
-        SortField::Status,
-        SortField::Updated,
-        SortField::Created,
-        SortField::Impact,
+    const SORT_FIELDS: [EntitySortField; 5] = [
+        EntitySortField::Name,
+        EntitySortField::Priority,
+        EntitySortField::Status,
+        EntitySortField::Updated,
+        EntitySortField::Created,
     ];
 
     match key.code {
         KeyCode::Esc | KeyCode::Char('s') => {
             app.filter.active_bar = None;
         }
-        KeyCode::Char(c @ '1'..='6') => {
+        KeyCode::Char(c @ '1'..='5') => {
             let idx = (c as u8 - b'1') as usize;
             if let Some(&field) = SORT_FIELDS.get(idx) {
                 app.sort.set_field(field);

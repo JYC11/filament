@@ -34,6 +34,7 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::GetEntity => entity::get(params, state).await,
         Method::GetEntityBySlug => entity::get_by_slug(params, state).await,
         Method::ListEntities => entity::list(params, state).await,
+        Method::ListEntitiesPaged => entity::list_paged(params, state).await,
         Method::UpdateEntity => entity::update(params, state).await,
         Method::UpdateEntitySummary => entity::update_summary(params, state).await,
         Method::UpdateEntityStatus => entity::update_status(params, state).await,
@@ -49,6 +50,7 @@ async fn handle(request: Request, state: &Arc<SharedState>) -> Result<serde_json
         Method::SendMessage => message::send(params, state).await,
         Method::GetInbox => message::inbox(params, state).await,
         Method::MarkMessageRead => message::mark_read(params, state).await,
+        Method::ListMessagesPaged => message::list_paged(params, state).await,
         // Reservation
         Method::AcquireReservation => reservation::acquire(params, state).await,
         Method::FindReservation => reservation::find(params, state).await,

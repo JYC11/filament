@@ -2866,6 +2866,295 @@ async fn list_entities_both_type_and_status_filter() {
 }
 
 #[tokio::test]
+async fn list_entities_paged_returns_correct_pages() {
+    use filament_core::pagination::{PaginationDirection, PaginationParams};
+
+    let store = test_db().await;
+
+    // Create 5 tasks with different priorities
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                for (name, pri) in [
+                    ("A-Task", 0),
+                    ("B-Task", 1),
+                    ("C-Task", 2),
+                    ("D-Task", 3),
+                    ("E-Task", 4),
+                ] {
+                    create_entity(conn, &task_req(name, pri)).await?;
+                }
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // First page: limit 2, sort by priority ASC
+    let req = ListEntitiesRequest {
+        types: vec![EntityType::Task],
+        statuses: vec![],
+        priorities: vec![],
+        sort_field: EntitySortField::Priority,
+        sort_direction: SortDirection::Asc,
+        pagination: PaginationParams {
+            limit: 2,
+            cursor: None,
+            direction: PaginationDirection::Forward,
+        },
+    };
+
+    let page1 = list_entities_paged(store.pool(), &req).await.unwrap();
+    assert_eq!(page1.items.len(), 2);
+    assert_eq!(page1.items[0].name().as_str(), "A-Task");
+    assert_eq!(page1.items[1].name().as_str(), "B-Task");
+    assert!(page1.next_cursor.is_some(), "should have next cursor");
+    assert!(page1.prev_cursor.is_none(), "first page has no prev");
+
+    // Second page: use next_cursor
+    let req2 = ListEntitiesRequest {
+        pagination: PaginationParams {
+            limit: 2,
+            cursor: page1.next_cursor.clone(),
+            direction: PaginationDirection::Forward,
+        },
+        ..req.clone()
+    };
+
+    let page2 = list_entities_paged(store.pool(), &req2).await.unwrap();
+    assert_eq!(page2.items.len(), 2);
+    assert_eq!(page2.items[0].name().as_str(), "C-Task");
+    assert_eq!(page2.items[1].name().as_str(), "D-Task");
+    assert!(page2.next_cursor.is_some(), "should have next cursor");
+    assert!(page2.prev_cursor.is_some(), "should have prev cursor");
+
+    // Third page: last page
+    let req3 = ListEntitiesRequest {
+        pagination: PaginationParams {
+            limit: 2,
+            cursor: page2.next_cursor.clone(),
+            direction: PaginationDirection::Forward,
+        },
+        ..req.clone()
+    };
+
+    let page3 = list_entities_paged(store.pool(), &req3).await.unwrap();
+    assert_eq!(page3.items.len(), 1);
+    assert_eq!(page3.items[0].name().as_str(), "E-Task");
+    assert!(page3.next_cursor.is_none(), "last page has no next");
+    assert!(page3.prev_cursor.is_some(), "should have prev cursor");
+
+    // Go backward from page 3 cursor
+    let req_back = ListEntitiesRequest {
+        pagination: PaginationParams {
+            limit: 2,
+            cursor: page3.prev_cursor.clone(),
+            direction: PaginationDirection::Backward,
+        },
+        ..req.clone()
+    };
+
+    let page_back = list_entities_paged(store.pool(), &req_back).await.unwrap();
+    assert_eq!(page_back.items.len(), 2);
+    assert_eq!(page_back.items[0].name().as_str(), "C-Task");
+    assert_eq!(page_back.items[1].name().as_str(), "D-Task");
+}
+
+#[tokio::test]
+async fn list_entities_paged_filters_and_sort() {
+    use filament_core::pagination::{PaginationDirection, PaginationParams};
+
+    let store = test_db().await;
+
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                create_entity(conn, &task_req("P0-Task", 0)).await?;
+                create_entity(conn, &task_req("P2-Task", 2)).await?;
+                create_entity(conn, &task_req("P1-Task", 1)).await?;
+                // Module should be excluded by type filter
+                let mod_req = ValidCreateEntityRequest {
+                    name: NonEmptyString::new("MyModule").unwrap(),
+                    entity_type: EntityType::Module,
+                    summary: "a module".to_string(),
+                    key_facts: serde_json::json!({}),
+                    content_path: None,
+                    priority: Priority::DEFAULT,
+                };
+                create_entity(conn, &mod_req).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // Filter to tasks only, sort by priority DESC
+    let req = ListEntitiesRequest {
+        types: vec![EntityType::Task],
+        statuses: vec![],
+        priorities: vec![],
+        sort_field: EntitySortField::Priority,
+        sort_direction: SortDirection::Desc,
+        pagination: PaginationParams {
+            limit: 50,
+            cursor: None,
+            direction: PaginationDirection::Forward,
+        },
+    };
+
+    let result = list_entities_paged(store.pool(), &req).await.unwrap();
+    assert_eq!(result.items.len(), 3, "should exclude module");
+    // DESC order: P2 (highest value) first
+    assert_eq!(result.items[0].name().as_str(), "P2-Task");
+    assert_eq!(result.items[1].name().as_str(), "P1-Task");
+    assert_eq!(result.items[2].name().as_str(), "P0-Task");
+
+    // Filter by priority
+    let req2 = ListEntitiesRequest {
+        priorities: vec![Priority::new(0).unwrap(), Priority::new(1).unwrap()],
+        ..req.clone()
+    };
+    let result2 = list_entities_paged(store.pool(), &req2).await.unwrap();
+    assert_eq!(result2.items.len(), 2, "should only include P0 and P1");
+}
+
+#[tokio::test]
+async fn list_messages_paged_with_filters() {
+    use filament_core::pagination::{PaginationDirection, PaginationParams};
+
+    let store = test_db().await;
+
+    // Create agents so message validation passes
+    store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let agent_a = ValidCreateEntityRequest {
+                    name: NonEmptyString::new("agent-a").unwrap(),
+                    entity_type: EntityType::Agent,
+                    summary: String::new(),
+                    key_facts: serde_json::json!({}),
+                    content_path: None,
+                    priority: Priority::DEFAULT,
+                };
+                let agent_b = ValidCreateEntityRequest {
+                    name: NonEmptyString::new("agent-b").unwrap(),
+                    entity_type: EntityType::Agent,
+                    summary: String::new(),
+                    key_facts: serde_json::json!({}),
+                    content_path: None,
+                    priority: Priority::DEFAULT,
+                };
+                create_entity(conn, &agent_a).await?;
+                create_entity(conn, &agent_b).await?;
+
+                // Send 3 messages: 2 text, 1 blocker
+                let msg1 = ValidSendMessageRequest {
+                    from_agent: MessageParticipant::Entity(NonEmptyString::new("agent-a").unwrap()),
+                    to_agent: MessageParticipant::User,
+                    body: NonEmptyString::new("hello").unwrap(),
+                    msg_type: MessageType::Text,
+                    in_reply_to: None,
+                    task_id: None,
+                };
+                send_message(conn, &msg1).await?;
+
+                let msg2 = ValidSendMessageRequest {
+                    from_agent: MessageParticipant::Entity(NonEmptyString::new("agent-b").unwrap()),
+                    to_agent: MessageParticipant::User,
+                    body: NonEmptyString::new("question").unwrap(),
+                    msg_type: MessageType::Blocker,
+                    in_reply_to: None,
+                    task_id: None,
+                };
+                send_message(conn, &msg2).await?;
+
+                let msg3 = ValidSendMessageRequest {
+                    from_agent: MessageParticipant::User,
+                    to_agent: MessageParticipant::Entity(NonEmptyString::new("agent-a").unwrap()),
+                    body: NonEmptyString::new("reply").unwrap(),
+                    msg_type: MessageType::Text,
+                    in_reply_to: None,
+                    task_id: None,
+                };
+                send_message(conn, &msg3).await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+
+    // List all messages
+    let req = ListMessagesRequest {
+        msg_types: vec![],
+        read_status: None,
+        participant: None,
+        sort_field: MessageSortField::Time,
+        sort_direction: SortDirection::Asc,
+        pagination: PaginationParams {
+            limit: 50,
+            cursor: None,
+            direction: PaginationDirection::Forward,
+        },
+    };
+    let result = list_messages_paged(store.pool(), &req).await.unwrap();
+    assert_eq!(result.items.len(), 3, "should have all 3 messages");
+
+    // Filter by type: blocker only
+    let req2 = ListMessagesRequest {
+        msg_types: vec![MessageType::Blocker],
+        ..req.clone()
+    };
+    let result2 = list_messages_paged(store.pool(), &req2).await.unwrap();
+    assert_eq!(result2.items.len(), 1, "should have 1 blocker");
+    assert_eq!(result2.items[0].msg_type, MessageType::Blocker);
+
+    // Filter by participant: agent-a (from or to)
+    let req3 = ListMessagesRequest {
+        participant: Some("agent-a".to_string()),
+        ..req.clone()
+    };
+    let result3 = list_messages_paged(store.pool(), &req3).await.unwrap();
+    assert_eq!(
+        result3.items.len(),
+        2,
+        "agent-a sent 1 and received 1 = 2 messages"
+    );
+
+    // Filter by read_status: unread
+    let req4 = ListMessagesRequest {
+        read_status: Some(MessageStatus::Unread),
+        ..req.clone()
+    };
+    let result4 = list_messages_paged(store.pool(), &req4).await.unwrap();
+    assert_eq!(result4.items.len(), 3, "all messages are unread");
+
+    // Paging: limit 2
+    let req5 = ListMessagesRequest {
+        pagination: PaginationParams {
+            limit: 2,
+            cursor: None,
+            direction: PaginationDirection::Forward,
+        },
+        ..req.clone()
+    };
+    let page1 = list_messages_paged(store.pool(), &req5).await.unwrap();
+    assert_eq!(page1.items.len(), 2);
+    assert!(page1.next_cursor.is_some());
+
+    let req6 = ListMessagesRequest {
+        pagination: PaginationParams {
+            limit: 2,
+            cursor: page1.next_cursor,
+            direction: PaginationDirection::Forward,
+        },
+        ..req.clone()
+    };
+    let page2 = list_messages_paged(store.pool(), &req6).await.unwrap();
+    assert_eq!(page2.items.len(), 1);
+    assert!(page2.next_cursor.is_none());
+}
+
+#[tokio::test]
 async fn search_entities_empty_results() {
     let store = test_db().await;
     store

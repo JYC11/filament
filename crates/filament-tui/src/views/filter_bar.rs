@@ -3,9 +3,10 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
+use filament_core::dto::EntitySortField;
 use filament_core::models::{EntityStatus, EntityType, Priority};
 
-use crate::app::{FilterBar, FilterState, SortField, SortState};
+use crate::app::{FilterBar, FilterState, SortState};
 
 pub fn render_filter_bar(
     filter: &FilterState,
@@ -119,12 +120,11 @@ fn priority_bar_line(filter: &FilterState) -> Line<'static> {
 
 fn sort_bar_line(sort: SortState) -> Line<'static> {
     let fields = [
-        (SortField::Name, "1:Name"),
-        (SortField::Priority, "2:Priority"),
-        (SortField::Status, "3:Status"),
-        (SortField::Updated, "4:Updated"),
-        (SortField::Created, "5:Created"),
-        (SortField::Impact, "6:Impact"),
+        (EntitySortField::Name, "1:Name"),
+        (EntitySortField::Priority, "2:Priority"),
+        (EntitySortField::Status, "3:Status"),
+        (EntitySortField::Updated, "4:Updated"),
+        (EntitySortField::Created, "5:Created"),
     ];
 
     let mut spans = vec![Span::styled(

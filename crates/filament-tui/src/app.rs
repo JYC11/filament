@@ -6,14 +6,15 @@ use ratatui::widgets::TableState;
 
 use filament_core::config::{FilamentConfig, OutputFormat};
 use filament_core::connection::FilamentConnection;
-use filament_core::dto::Escalation;
+use filament_core::dto::{EntitySortField, Escalation, ListEntitiesRequest, SortDirection};
 use filament_core::models::{AgentRun, Entity, EntityStatus, EntityType, Priority, Reservation};
+use filament_core::pagination::PaginationState;
 
 use crate::views::analytics::AnalyticsData;
 use crate::views::detail::DetailData;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
-const DEFAULT_PAGE_SIZE: usize = 50;
+const DEFAULT_PAGE_SIZE: u32 = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -99,68 +100,23 @@ pub enum FilterBar {
     Sort,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SortField {
-    Name,
-    Priority,
-    Status,
-    Updated,
-    Created,
-    Impact,
-}
-
-impl SortField {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Name => "name",
-            Self::Priority => "priority",
-            Self::Status => "status",
-            Self::Updated => "updated",
-            Self::Created => "created",
-            Self::Impact => "impact",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SortDirection {
-    Asc,
-    Desc,
-}
-
-impl SortDirection {
-    pub const fn flip(self) -> Self {
-        match self {
-            Self::Asc => Self::Desc,
-            Self::Desc => Self::Asc,
-        }
-    }
-
-    pub const fn arrow(self) -> &'static str {
-        match self {
-            Self::Asc => "↑",
-            Self::Desc => "↓",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct SortState {
-    pub field: SortField,
+    pub field: EntitySortField,
     pub direction: SortDirection,
 }
 
 impl Default for SortState {
     fn default() -> Self {
         Self {
-            field: SortField::Priority,
+            field: EntitySortField::Priority,
             direction: SortDirection::Asc,
         }
     }
 }
 
 impl SortState {
-    pub fn set_field(&mut self, field: SortField) {
+    pub fn set_field(&mut self, field: EntitySortField) {
         if self.field == field {
             self.direction = self.direction.flip();
         } else {
@@ -307,8 +263,7 @@ pub struct App {
     pub message_table_state: TableState,
     pub filter: FilterState,
     pub sort: SortState,
-    pub page: usize,
-    pub page_size: usize,
+    pub entity_pagination: PaginationState,
     pub detail: Option<DetailData>,
     pub detail_scroll: u16,
     pub last_refresh: DateTime<Utc>,
@@ -339,8 +294,7 @@ impl App {
             message_table_state: TableState::default(),
             filter: FilterState::default(),
             sort: SortState::default(),
-            page: 0,
-            page_size: DEFAULT_PAGE_SIZE,
+            entity_pagination: PaginationState::new(DEFAULT_PAGE_SIZE),
             detail: None,
             detail_scroll: 0,
             last_refresh: Utc::now(),
@@ -375,34 +329,20 @@ impl App {
             return;
         }
 
-        let type_filter = if self.filter.types.len() == 1 {
-            self.filter.types.iter().next().copied()
-        } else {
-            None
+        let req = ListEntitiesRequest {
+            types: self.filter.types.iter().copied().collect(),
+            statuses: self.filter.statuses.iter().copied().collect(),
+            priorities: self.filter.priorities.iter().copied().collect(),
+            sort_field: self.sort.field,
+            sort_direction: self.sort.direction,
+            pagination: self.entity_pagination.to_params(),
         };
 
-        let status_filter = if self.filter.statuses.len() == 1 {
-            self.filter.statuses.iter().next().copied()
-        } else {
-            None
-        };
-
-        let result = self.conn.list_entities(type_filter, status_filter).await;
-
-        match result {
-            Ok(mut entities) => {
-                // Apply multi-value filters that list_entities can't handle
-                if self.filter.types.len() > 1 {
-                    entities.retain(|e| self.filter.types.contains(&e.entity_type()));
-                }
-                if self.filter.statuses.len() > 1 {
-                    entities.retain(|e| self.filter.statuses.contains(e.status()));
-                }
-                if !self.filter.priorities.is_empty() {
-                    entities.retain(|e| self.filter.priorities.contains(&e.priority()));
-                }
-
-                self.build_entity_rows(entities).await;
+        match self.conn.list_entities_paged(&req).await {
+            Ok(result) => {
+                self.entity_pagination
+                    .update_cursors(result.next_cursor, result.prev_cursor);
+                self.build_entity_rows(result.items).await;
                 self.status_message = None;
             }
             Err(e) => {
@@ -418,6 +358,7 @@ impl App {
                     entities.retain(|e| self.filter.priorities.contains(&e.priority()));
                 }
                 self.build_entity_rows(entities).await;
+                self.sort_entities_in_place();
                 self.status_message = None;
             }
             Err(e) => {
@@ -459,7 +400,6 @@ impl App {
             });
         }
 
-        self.sort_rows(&mut rows);
         self.entities = rows;
         self.clamp_entity_selection();
     }
@@ -646,30 +586,32 @@ impl App {
         }
     }
 
-    fn sort_rows(&self, rows: &mut [EntityRow]) {
-        let dir = self.sort.direction;
-        rows.sort_by(|a, b| {
-            let cmp = match self.sort.field {
-                SortField::Name => a.entity.name().as_str().cmp(b.entity.name().as_str()),
-                SortField::Priority => a
+    /// In-memory sort for the `ready_only` path (bypasses SQL paging).
+    fn sort_entities_in_place(&mut self) {
+        let sort = self.sort;
+        self.entities.sort_by(|a, b| {
+            let cmp = match sort.field {
+                EntitySortField::Name => a.entity.name().as_str().cmp(b.entity.name().as_str()),
+                EntitySortField::Priority => a
                     .entity
                     .priority()
                     .value()
                     .cmp(&b.entity.priority().value()),
-                SortField::Status => a.entity.status().as_str().cmp(b.entity.status().as_str()),
-                SortField::Updated => a
+                EntitySortField::Status => {
+                    a.entity.status().as_str().cmp(b.entity.status().as_str())
+                }
+                EntitySortField::Updated => a
                     .entity
                     .common()
                     .updated_at
                     .cmp(&b.entity.common().updated_at),
-                SortField::Created => a
+                EntitySortField::Created => a
                     .entity
                     .common()
                     .created_at
                     .cmp(&b.entity.common().created_at),
-                SortField::Impact => a.impact.cmp(&b.impact),
             };
-            match dir {
+            match sort.direction {
                 SortDirection::Asc => cmp,
                 SortDirection::Desc => cmp.reverse(),
             }
@@ -677,7 +619,7 @@ impl App {
     }
 
     fn clamp_entity_selection(&mut self) {
-        let len = self.visible_entities().len();
+        let len = self.entities.len();
         if let Some(idx) = self.entity_table_state.selected() {
             if len == 0 {
                 self.entity_table_state.select(None);
@@ -688,45 +630,35 @@ impl App {
     }
 
     pub fn visible_entities(&self) -> &[EntityRow] {
-        let start = self.page * self.page_size;
-        if start >= self.entities.len() {
-            return &[];
-        }
-        let end = (start + self.page_size).min(self.entities.len());
-        &self.entities[start..end]
-    }
-
-    pub const fn total_pages(&self) -> usize {
-        if self.entities.is_empty() || self.page_size == 0 {
-            return 1;
-        }
-        self.entities.len().div_ceil(self.page_size)
+        &self.entities
     }
 
     pub const fn has_next_page(&self) -> bool {
-        self.page + 1 < self.total_pages()
+        self.entity_pagination.has_next()
     }
 
     pub const fn has_prev_page(&self) -> bool {
-        self.page > 0
+        self.entity_pagination.has_previous()
     }
 
-    pub fn next_page(&mut self) {
-        if self.has_next_page() {
-            self.page += 1;
+    pub async fn next_page(&mut self) {
+        if self.entity_pagination.has_next() {
+            self.entity_pagination.go_forwards();
             self.entity_table_state.select(Some(0));
+            self.refresh_entities().await;
         }
     }
 
-    pub fn prev_page(&mut self) {
-        if self.has_prev_page() {
-            self.page -= 1;
+    pub async fn prev_page(&mut self) {
+        if self.entity_pagination.has_previous() {
+            self.entity_pagination.go_backwards();
             self.entity_table_state.select(Some(0));
+            self.refresh_entities().await;
         }
     }
 
     pub fn reset_page(&mut self) {
-        self.page = 0;
+        self.entity_pagination.reset();
         self.entity_table_state.select(None);
     }
 

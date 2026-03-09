@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use filament_core::dto::{
-    ChangesetCommon, CreateEntityRequest, EntityChangeset, ValidCreateEntityRequest,
+    ChangesetCommon, CreateEntityRequest, EntityChangeset, ListEntitiesRequest,
+    ValidCreateEntityRequest,
 };
 use filament_core::error::Result;
 use filament_core::models::{EntityStatus, EntityType, NonEmptyString, Priority};
@@ -66,6 +67,15 @@ pub async fn list(
     )
     .await?;
     Ok(serde_json::to_value(&entities).expect("infallible"))
+}
+
+pub async fn list_paged(
+    params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let req: ListEntitiesRequest = parse_params(params)?;
+    let result = store::list_entities_paged(state.store.pool(), &req).await?;
+    Ok(serde_json::to_value(&result).expect("infallible"))
 }
 
 pub async fn update(

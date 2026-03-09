@@ -6,7 +6,8 @@ use std::collections::HashSet;
 use crate::diff::fields_in_diff;
 use crate::dto::{
     Clearable, EntityChangeset, Escalation, EscalationKind, ExportData, ImportResult,
-    ValidCreateEntityRequest, ValidCreateRelationRequest, ValidSendMessageRequest,
+    ListEntitiesRequest, ListMessagesRequest, ValidCreateEntityRequest, ValidCreateRelationRequest,
+    ValidSendMessageRequest,
 };
 use crate::error::{FieldConflict, FilamentError, Result};
 use crate::models::{
@@ -14,6 +15,7 @@ use crate::models::{
     EntityType, Event, Message, MessageId, NonEmptyString, Priority, Relation, RelationId,
     RelationType, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
 };
+use crate::pagination::{get_cursors, keyset_paginate, PagedResult, Paginatable};
 
 // ---------------------------------------------------------------------------
 // Internal DB row struct (not part of public API)
@@ -43,6 +45,18 @@ pub(crate) struct SearchRow {
     #[sqlx(flatten)]
     pub entity: EntityRow,
     pub rank: f64,
+}
+
+impl Paginatable for EntityRow {
+    fn cursor_id(&self) -> &str {
+        self.id.as_str()
+    }
+}
+
+impl Paginatable for Message {
+    fn cursor_id(&self) -> &str {
+        self.id.as_str()
+    }
 }
 
 impl From<EntityRow> for Entity {
@@ -269,6 +283,68 @@ pub async fn list_entities(
         .into_iter()
         .map(Entity::from)
         .collect())
+}
+
+/// List entities with SQL-level filtering, sorting, and keyset pagination.
+///
+/// Returns a single page of results with cursors for forward/backward navigation.
+/// Used by the TUI for efficient paged entity listing.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_entities_paged(
+    pool: &Pool<Sqlite>,
+    req: &ListEntitiesRequest,
+) -> Result<PagedResult<Entity>> {
+    let mut qb = QueryBuilder::new("SELECT * FROM entities WHERE 1=1");
+
+    if !req.types.is_empty() {
+        qb.push(" AND entity_type IN (");
+        let mut sep = qb.separated(", ");
+        for t in &req.types {
+            sep.push_bind(t.as_str());
+        }
+        sep.push_unseparated(")");
+    }
+
+    if !req.statuses.is_empty() {
+        qb.push(" AND status IN (");
+        let mut sep = qb.separated(", ");
+        for s in &req.statuses {
+            sep.push_bind(s.as_str());
+        }
+        sep.push_unseparated(")");
+    }
+
+    if !req.priorities.is_empty() {
+        qb.push(" AND priority IN (");
+        let mut sep = qb.separated(", ");
+        for p in &req.priorities {
+            sep.push_bind(i32::from(p.value()));
+        }
+        sep.push_unseparated(")");
+    }
+
+    keyset_paginate(
+        &req.pagination,
+        &mut qb,
+        "entities",
+        req.sort_field.column(),
+        req.sort_direction,
+        "id",
+    );
+
+    let mut rows: Vec<EntityRow> = qb.build_query_as().fetch_all(pool).await?;
+
+    let (next, prev) = get_cursors(&req.pagination, &mut rows);
+    let entities = rows.into_iter().map(Entity::from).collect();
+
+    Ok(PagedResult {
+        items: entities,
+        next_cursor: next,
+        prev_cursor: prev,
+    })
 }
 
 /// List lessons, optionally filtered by pattern name (SQL `LIKE` on `key_facts.pattern`).
@@ -1483,6 +1559,63 @@ pub async fn list_all_messages(pool: &Pool<Sqlite>) -> Result<Vec<Message>> {
             .fetch_all(pool)
             .await?,
     )
+}
+
+/// List messages with SQL-level filtering, sorting, and keyset pagination.
+///
+/// Returns a single page of results with cursors for forward/backward navigation.
+///
+/// # Errors
+///
+/// Returns `FilamentError::Database` on SQL failure.
+pub async fn list_messages_paged(
+    pool: &Pool<Sqlite>,
+    req: &ListMessagesRequest,
+) -> Result<PagedResult<Message>> {
+    let mut qb = QueryBuilder::new("SELECT * FROM messages WHERE 1=1");
+
+    if !req.msg_types.is_empty() {
+        qb.push(" AND msg_type IN (");
+        let mut sep = qb.separated(", ");
+        for t in &req.msg_types {
+            sep.push_bind(t.as_str());
+        }
+        sep.push_unseparated(")");
+    }
+
+    if let Some(ref status) = req.read_status {
+        match status {
+            crate::models::MessageStatus::Unread => qb.push(" AND read_at IS NULL"),
+            crate::models::MessageStatus::Read => qb.push(" AND read_at IS NOT NULL"),
+        };
+    }
+
+    if let Some(ref p) = req.participant {
+        qb.push(" AND (from_agent = ");
+        qb.push_bind(p.clone());
+        qb.push(" OR to_agent = ");
+        qb.push_bind(p.clone());
+        qb.push(")");
+    }
+
+    keyset_paginate(
+        &req.pagination,
+        &mut qb,
+        "messages",
+        req.sort_field.column(),
+        req.sort_direction,
+        "id",
+    );
+
+    let mut rows: Vec<Message> = qb.build_query_as().fetch_all(pool).await?;
+
+    let (next, prev) = get_cursors(&req.pagination, &mut rows);
+
+    Ok(PagedResult {
+        items: rows,
+        next_cursor: next,
+        prev_cursor: prev,
+    })
 }
 
 /// List all events in the database.

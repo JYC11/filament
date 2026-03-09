@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::FilamentError;
 use crate::models::{
     AgentStatus, Entity, EntityId, EntityStatus, EntityType, Event, LessonFields, Message,
-    MessageId, MessageType, NonEmptyString, Priority, Relation, Weight,
+    MessageId, MessageStatus, MessageType, NonEmptyString, Priority, Relation, Weight,
 };
+use crate::pagination::PaginationParams;
 
 // ---------------------------------------------------------------------------
 // Agent protocol (parsed from subprocess JSON output)
@@ -662,4 +663,140 @@ impl TryFrom<SendMessageRequest> for ValidSendMessageRequest {
             task_id: req.task_id.map(EntityId::from),
         })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Sort direction (shared between store queries and TUI)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortDirection {
+    #[must_use]
+    pub const fn flip(self) -> Self {
+        match self {
+            Self::Asc => Self::Desc,
+            Self::Desc => Self::Asc,
+        }
+    }
+
+    #[must_use]
+    pub const fn arrow(self) -> &'static str {
+        match self {
+            Self::Asc => "↑",
+            Self::Desc => "↓",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Entity sort field (for SQL-level sorting)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EntitySortField {
+    Name,
+    Priority,
+    Status,
+    Updated,
+    Created,
+}
+
+impl EntitySortField {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::Priority => "priority",
+            Self::Status => "status",
+            Self::Updated => "updated",
+            Self::Created => "created",
+        }
+    }
+
+    /// Returns the SQL column name for this sort field.
+    #[must_use]
+    pub const fn column(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::Priority => "priority",
+            Self::Status => "status",
+            Self::Updated => "updated_at",
+            Self::Created => "created_at",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Paged entity listing request
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListEntitiesRequest {
+    #[serde(default)]
+    pub types: Vec<EntityType>,
+    #[serde(default)]
+    pub statuses: Vec<EntityStatus>,
+    #[serde(default)]
+    pub priorities: Vec<Priority>,
+    pub sort_field: EntitySortField,
+    pub sort_direction: SortDirection,
+    pub pagination: PaginationParams,
+}
+
+// ---------------------------------------------------------------------------
+// Message sort field (for SQL-level sorting)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageSortField {
+    Time,
+    Type,
+    From,
+    Status,
+}
+
+impl MessageSortField {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Time => "time",
+            Self::Type => "type",
+            Self::From => "from",
+            Self::Status => "status",
+        }
+    }
+
+    /// Returns the SQL column name for this sort field.
+    #[must_use]
+    pub const fn column(self) -> &'static str {
+        match self {
+            Self::Time => "created_at",
+            Self::Type => "msg_type",
+            Self::From => "from_agent",
+            Self::Status => "read_at",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Paged message listing request
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListMessagesRequest {
+    #[serde(default)]
+    pub msg_types: Vec<MessageType>,
+    pub read_status: Option<MessageStatus>,
+    pub participant: Option<String>,
+    pub sort_field: MessageSortField,
+    pub sort_direction: SortDirection,
+    pub pagination: PaginationParams,
 }

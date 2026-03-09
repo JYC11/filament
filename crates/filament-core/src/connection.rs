@@ -5,8 +5,8 @@ use tokio::net::UnixStream;
 use crate::client::DaemonClient;
 use crate::dto::{
     CreateEntityRequest, CreateRelationRequest, Escalation, ExportData, ImportResult,
-    MessageParticipant, SendMessageRequest, ValidCreateEntityRequest, ValidCreateRelationRequest,
-    ValidSendMessageRequest,
+    ListEntitiesRequest, MessageParticipant, SendMessageRequest, ValidCreateEntityRequest,
+    ValidCreateRelationRequest, ValidSendMessageRequest,
 };
 use crate::error::{FilamentError, Result};
 use crate::graph::KnowledgeGraph;
@@ -14,6 +14,7 @@ use crate::models::{
     Entity, EntityCommon, EntityId, EntityStatus, EntityType, Event, LessonFields, Message,
     MessageId, Relation, RelationId, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
 };
+use crate::pagination::PagedResult;
 use crate::schema::init_pool;
 use crate::store::{self, FilamentStore};
 
@@ -205,6 +206,16 @@ impl FilamentConnection {
                 .await
             }
             Self::Socket(c) => c.list_entities(entity_type, status).await,
+        }
+    }
+
+    pub async fn list_entities_paged(
+        &mut self,
+        req: &ListEntitiesRequest,
+    ) -> Result<PagedResult<Entity>> {
+        match self {
+            Self::Direct(s) => store::list_entities_paged(s.pool(), req).await,
+            Self::Socket(c) => c.list_entities_paged(req).await,
         }
     }
 
@@ -725,6 +736,16 @@ impl FilamentConnection {
         match self {
             Self::Direct(s) => store::list_pending_escalations(s.pool()).await,
             Self::Socket(c) => c.list_pending_escalations().await,
+        }
+    }
+
+    pub async fn list_messages_paged(
+        &mut self,
+        req: &crate::dto::ListMessagesRequest,
+    ) -> Result<PagedResult<Message>> {
+        match self {
+            Self::Direct(s) => store::list_messages_paged(s.pool(), req).await,
+            Self::Socket(c) => c.list_messages_paged(req).await,
         }
     }
 }

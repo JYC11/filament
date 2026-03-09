@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use filament_core::dto::{MessageParticipant, SendMessageRequest, ValidSendMessageRequest};
+use filament_core::dto::{
+    ListMessagesRequest, MessageParticipant, SendMessageRequest, ValidSendMessageRequest,
+};
 use filament_core::error::{FilamentError, Result};
 use filament_core::protocol::Notification;
 use filament_core::store;
@@ -40,6 +42,15 @@ pub async fn inbox(
     let p: AgentParam = parse_params(params)?;
     let messages = store::get_inbox(state.store.pool(), &p.agent).await?;
     Ok(serde_json::to_value(&messages).expect("infallible"))
+}
+
+pub async fn list_paged(
+    params: serde_json::Value,
+    state: &Arc<SharedState>,
+) -> Result<serde_json::Value> {
+    let req: ListMessagesRequest = parse_params(params)?;
+    let result = store::list_messages_paged(state.store.pool(), &req).await?;
+    Ok(serde_json::to_value(&result).expect("infallible"))
 }
 
 pub async fn mark_read(

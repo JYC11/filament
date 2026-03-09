@@ -7,6 +7,7 @@ pub mod enums;
 pub mod error;
 pub mod graph;
 pub mod models;
+pub mod pagination;
 pub mod protocol;
 pub mod schema;
 pub mod store;
