@@ -70,13 +70,23 @@ pub enum FilamentError {
     #[error("Protocol: {0}")]
     Protocol(String),
 
+    /// Error received from the daemon, preserving original exit code and metadata.
+    #[error("{message}")]
+    DaemonError {
+        code: String,
+        message: String,
+        hint: Option<String>,
+        retryable: bool,
+        exit_code: i32,
+    },
+
     #[error("IO: {0}")]
     Io(#[from] std::io::Error),
 }
 
 impl FilamentError {
     /// Machine-readable error code.
-    pub const fn error_code(&self) -> &'static str {
+    pub fn error_code(&self) -> &'static str {
         match self {
             Self::EntityNotFound { .. } => "ENTITY_NOT_FOUND",
             Self::TypeMismatch { .. } => "TYPE_MISMATCH",
@@ -94,19 +104,39 @@ impl FilamentError {
             Self::Validation(_) => "VALIDATION_ERROR",
             Self::Database(_) => "DATABASE_ERROR",
             Self::Protocol(_) => "PROTOCOL_ERROR",
+            Self::DaemonError { ref code, .. } => match code.as_str() {
+                "ENTITY_NOT_FOUND" => "ENTITY_NOT_FOUND",
+                "RELATION_NOT_FOUND" => "RELATION_NOT_FOUND",
+                "MESSAGE_NOT_FOUND" => "MESSAGE_NOT_FOUND",
+                "MESSAGE_ALREADY_READ" => "MESSAGE_ALREADY_READ",
+                "AGENT_RUN_NOT_FOUND" => "AGENT_RUN_NOT_FOUND",
+                "RESERVATION_NOT_FOUND" => "RESERVATION_NOT_FOUND",
+                "CYCLE_DETECTED" => "CYCLE_DETECTED",
+                "FILE_RESERVED" => "FILE_RESERVED",
+                "RESERVATION_EXPIRED" => "RESERVATION_EXPIRED",
+                "AGENT_DISPATCH_FAILED" => "AGENT_DISPATCH_FAILED",
+                "AGENT_ALREADY_RUNNING" => "AGENT_ALREADY_RUNNING",
+                "VERSION_CONFLICT" => "VERSION_CONFLICT",
+                "VALIDATION_ERROR" => "VALIDATION_ERROR",
+                "DATABASE_ERROR" => "DATABASE_ERROR",
+                "IO_ERROR" => "IO_ERROR",
+                "TYPE_MISMATCH" => "TYPE_MISMATCH",
+                _ => "PROTOCOL_ERROR",
+            },
             Self::Io(_) => "IO_ERROR",
         }
     }
 
     /// Whether this error is retryable.
     pub const fn is_retryable(&self) -> bool {
-        matches!(
-            self,
+        match self {
+            Self::DaemonError { retryable, .. } => *retryable,
             Self::Database(_)
-                | Self::Io(_)
-                | Self::AgentDispatchFailed { .. }
-                | Self::VersionConflict { .. }
-        )
+            | Self::Io(_)
+            | Self::AgentDispatchFailed { .. }
+            | Self::VersionConflict { .. } => true,
+            _ => false,
+        }
     }
 
     /// Agent-friendly hint for resolving the error.
@@ -154,6 +184,7 @@ impl FilamentError {
                 "Re-read the entity or resolve conflicts with `fl resolve {entity_id}`"
             )),
             Self::Validation(msg) => Some(format!("Fix input: {msg}")),
+            Self::DaemonError { ref hint, .. } => hint.clone(),
             _ => None,
         }
     }
@@ -176,6 +207,7 @@ impl FilamentError {
             Self::FileReserved { .. } | Self::ReservationExpired => 6,
             Self::Io(_) => 7,
             Self::AgentDispatchFailed { .. } | Self::AgentAlreadyRunning { .. } => 8,
+            Self::DaemonError { exit_code, .. } => *exit_code,
         }
     }
 }
@@ -187,6 +219,24 @@ pub struct StructuredError {
     pub message: String,
     pub hint: Option<String>,
     pub retryable: bool,
+    #[serde(default)]
+    pub exit_code: i32,
+}
+
+impl StructuredError {
+    /// Reconstruct a [`FilamentError`] from this wire-format error.
+    ///
+    /// Preserves exit code, error code, hint, and retryable status
+    /// so that errors round-trip correctly through the daemon protocol.
+    pub fn into_error(self) -> FilamentError {
+        FilamentError::DaemonError {
+            exit_code: self.exit_code,
+            code: self.code,
+            message: self.message,
+            hint: self.hint,
+            retryable: self.retryable,
+        }
+    }
 }
 
 impl From<&FilamentError> for StructuredError {
@@ -196,6 +246,7 @@ impl From<&FilamentError> for StructuredError {
             message: err.to_string(),
             hint: err.hint(),
             retryable: err.is_retryable(),
+            exit_code: err.exit_code(),
         }
     }
 }

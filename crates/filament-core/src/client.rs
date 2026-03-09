@@ -83,10 +83,7 @@ impl DaemonClient {
         }
 
         if let Some(err) = response.error {
-            return Err(FilamentError::Protocol(format!(
-                "{}: {}",
-                err.code, err.message
-            )));
+            return Err(err.into_error());
         }
 
         response

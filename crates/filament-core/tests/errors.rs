@@ -156,4 +156,86 @@ fn structured_error_json_format() {
     assert!(json["message"].as_str().unwrap().contains("test-id"));
     assert!(json["hint"].is_string());
     assert_eq!(json["retryable"], false);
+    assert_eq!(json["exit_code"], 3);
+}
+
+/// Regression: errors from the daemon protocol must preserve the original exit code,
+/// error code, hint, and retryable status after round-tripping through StructuredError.
+#[test]
+fn daemon_error_preserves_exit_code_through_round_trip() {
+    let test_cases: Vec<(FilamentError, i32, &str)> = vec![
+        (
+            FilamentError::EntityNotFound {
+                id: "zzzzzzzz".to_string(),
+            },
+            3,
+            "ENTITY_NOT_FOUND",
+        ),
+        (
+            FilamentError::RelationNotFound {
+                id: "rel-1".to_string(),
+            },
+            3,
+            "RELATION_NOT_FOUND",
+        ),
+        (
+            FilamentError::CycleDetected {
+                path: "a->b->a".to_string(),
+            },
+            5,
+            "CYCLE_DETECTED",
+        ),
+        (
+            FilamentError::FileReserved {
+                agent: "bot".to_string(),
+                glob: "*.rs".to_string(),
+            },
+            6,
+            "FILE_RESERVED",
+        ),
+        (FilamentError::ReservationExpired, 6, "RESERVATION_EXPIRED"),
+        (
+            FilamentError::AgentDispatchFailed {
+                reason: "no binary".to_string(),
+            },
+            8,
+            "AGENT_DISPATCH_FAILED",
+        ),
+        (
+            FilamentError::Validation("bad input".to_string()),
+            4,
+            "VALIDATION_ERROR",
+        ),
+    ];
+
+    for (original_err, expected_exit_code, expected_code) in &test_cases {
+        // Simulate daemon: FilamentError -> StructuredError -> JSON -> StructuredError -> FilamentError
+        let structured = StructuredError::from(original_err);
+        let json = serde_json::to_string(&structured).unwrap();
+        let deserialized: StructuredError = serde_json::from_str(&json).unwrap();
+        let reconstructed = deserialized.into_error();
+
+        assert_eq!(
+            reconstructed.exit_code(),
+            *expected_exit_code,
+            "exit code mismatch for {expected_code}: got {}, expected {expected_exit_code}",
+            reconstructed.exit_code()
+        );
+        assert_eq!(
+            reconstructed.error_code(),
+            *expected_code,
+            "error code mismatch: got {}, expected {expected_code}",
+            reconstructed.error_code()
+        );
+        assert_eq!(
+            reconstructed.hint().is_some(),
+            original_err.hint().is_some(),
+            "hint presence mismatch for {expected_code}"
+        );
+        assert_eq!(
+            reconstructed.is_retryable(),
+            original_err.is_retryable(),
+            "retryable mismatch for {expected_code}"
+        );
+    }
 }

@@ -31,6 +31,7 @@ fn error_response_roundtrip() {
         message: "Entity not found: x".to_string(),
         hint: Some("check the ID".to_string()),
         retryable: false,
+        exit_code: 3,
     };
     let resp = Response::error("req-2".to_string(), err);
     let json = serde_json::to_string(&resp).unwrap();

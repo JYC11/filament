@@ -179,7 +179,9 @@ impl FilamentConnection {
                 match c.get_entity_by_slug(slug_or_id).await {
                     Ok(entity) => Ok(entity),
                     Err(FilamentError::EntityNotFound { .. }) => c.get_entity(slug_or_id).await,
-                    Err(FilamentError::Protocol(ref msg)) if msg.contains("ENTITY_NOT_FOUND") => {
+                    Err(FilamentError::DaemonError { ref code, .. })
+                        if code == "ENTITY_NOT_FOUND" =>
+                    {
                         c.get_entity(slug_or_id).await
                     }
                     Err(e) => Err(e),

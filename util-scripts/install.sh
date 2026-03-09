@@ -17,6 +17,11 @@ mkdir -p "$INSTALL_DIR"
 cp "$SRC" "$INSTALL_DIR/$BINARY_NAME"
 chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
+# macOS: re-sign after copy to avoid SIGKILL from code signing enforcement
+if [ "$(uname -s)" = "Darwin" ]; then
+    codesign --sign - --force "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
+fi
+
 echo "Installed $BINARY_NAME to $INSTALL_DIR/$BINARY_NAME"
 
 # Check if install dir is on PATH
