@@ -1,10 +1,12 @@
 mod common;
 
 use common::{blocks_req, depends_on_req, task_req, test_db};
-use filament_core::dto::ValidCreateEntityRequest;
+use filament_core::dto::{ValidCreateEntityRequest, ValidCreateRelationRequest};
 use filament_core::error::FilamentError;
 use filament_core::graph::KnowledgeGraph;
-use filament_core::models::{EntityStatus, EntityType, NonEmptyString, Priority};
+use filament_core::models::{
+    EntityStatus, EntityType, NonEmptyString, Priority, RelationType, Weight,
+};
 use filament_core::store::*;
 
 // ---------------------------------------------------------------------------
@@ -1167,9 +1169,20 @@ async fn different_relation_types_between_same_entities() {
             Box::pin(async move {
                 let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
                 let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
-                // A blocks B AND A depends_on B — different relation types, should both work
+                // A blocks B AND A relates_to B — different types, non-conflicting
                 create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
-                create_relation(conn, &depends_on_req(a.as_str(), b.as_str())).await?;
+                create_relation(
+                    conn,
+                    &ValidCreateRelationRequest {
+                        source_id: a.clone(),
+                        target_id: b.clone(),
+                        relation_type: RelationType::RelatesTo,
+                        weight: Weight::DEFAULT,
+                        summary: String::new(),
+                        metadata: serde_json::json!({}),
+                    },
+                )
+                .await?;
                 Ok(())
             })
         })
@@ -1180,4 +1193,29 @@ async fn different_relation_types_between_same_entities() {
     graph.hydrate(store.pool()).await.unwrap();
 
     assert_eq!(graph.edge_count(), 2);
+}
+
+#[tokio::test]
+async fn contradictory_dependency_types_rejected_as_cycle() {
+    let store = test_db().await;
+
+    let result = store
+        .with_transaction(|conn| {
+            Box::pin(async move {
+                let (a, _) = create_entity(conn, &task_req("A", 1)).await?;
+                let (b, _) = create_entity(conn, &task_req("B", 1)).await?;
+                // A blocks B means A must finish before B
+                create_relation(conn, &blocks_req(a.as_str(), b.as_str())).await?;
+                // A depends_on B means B must finish before A — contradicts above
+                create_relation(conn, &depends_on_req(a.as_str(), b.as_str())).await?;
+                Ok(())
+            })
+        })
+        .await;
+
+    let err = result.unwrap_err();
+    assert!(
+        matches!(err, FilamentError::CycleDetected { .. }),
+        "expected CycleDetected, got: {err}"
+    );
 }

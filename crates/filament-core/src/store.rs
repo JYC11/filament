@@ -12,7 +12,7 @@ use crate::error::{FieldConflict, FilamentError, Result};
 use crate::models::{
     AgentRun, AgentRunId, AgentStatus, ContentRef, Entity, EntityCommon, EntityId, EntityStatus,
     EntityType, Event, Message, MessageId, NonEmptyString, Priority, Relation, RelationId,
-    Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
+    RelationType, Reservation, ReservationId, ReservationMode, Slug, TtlSeconds,
 };
 
 // ---------------------------------------------------------------------------
@@ -724,6 +724,59 @@ pub async fn create_relation(
     conn: &mut SqliteConnection,
     req: &ValidCreateRelationRequest,
 ) -> Result<RelationId> {
+    // Cycle detection for dependency-creating relation types.
+    //
+    // The normalized dependency DAG has edges from "must finish first" to
+    // "can start after":
+    //   blocks:     source → target  (same as stored edge direction)
+    //   depends_on: target → source  (reversed from stored edge direction)
+    //
+    // Adding a new edge creates a cycle iff the destination can already reach
+    // the origin by following normalized edges.
+    if matches!(
+        req.relation_type,
+        RelationType::Blocks | RelationType::DependsOn
+    ) {
+        let (start, check_for) = match req.relation_type {
+            // blocks S→T (normalized S→T): start from T, check if S reachable
+            RelationType::Blocks => (req.target_id.as_str(), req.source_id.as_str()),
+            // depends_on S→T (normalized T→S): start from S, check if T reachable
+            RelationType::DependsOn => (req.source_id.as_str(), req.target_id.as_str()),
+            _ => unreachable!(),
+        };
+
+        let would_cycle: bool = sqlx::query_scalar(
+            "WITH RECURSIVE reachable(entity_id) AS (
+                 VALUES(?)
+                 UNION
+                 SELECT CASE r.relation_type
+                     WHEN 'blocks' THEN r.target_id
+                     WHEN 'depends_on' THEN r.source_id
+                 END
+                 FROM relations r
+                 JOIN reachable ON (
+                     (r.relation_type = 'blocks' AND r.source_id = reachable.entity_id)
+                     OR
+                     (r.relation_type = 'depends_on' AND r.target_id = reachable.entity_id)
+                 )
+             )
+             SELECT EXISTS(SELECT 1 FROM reachable WHERE entity_id = ?)",
+        )
+        .bind(start)
+        .bind(check_for)
+        .fetch_one(&mut *conn)
+        .await?;
+
+        if would_cycle {
+            return Err(FilamentError::CycleDetected {
+                path: format!(
+                    "{} -{}-> {} would create a dependency cycle",
+                    req.source_id, req.relation_type, req.target_id
+                ),
+            });
+        }
+    }
+
     let id = RelationId::new();
     let now = Utc::now();
     let metadata = serde_json::to_string(&req.metadata).expect("Value serialization is infallible");
