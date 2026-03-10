@@ -619,7 +619,6 @@ async fn list_all_agent_runs_respects_limit() {
             .finish_agent_run(run_id.as_str(), "completed", None)
             .await
             .unwrap_or_else(|_| panic!("finish run {i}"));
-
     }
 
     // Limit = 2 should return only 2

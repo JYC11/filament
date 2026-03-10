@@ -383,7 +383,10 @@ mod tests {
 
     #[test]
     fn filter_ready_only_clears_bar() {
-        let mut f = FilterState { active_bar: Some(FilterBar::Type), ..Default::default() };
+        let mut f = FilterState {
+            active_bar: Some(FilterBar::Type),
+            ..Default::default()
+        };
         f.toggle_ready_only();
         assert!(f.ready_only);
         assert!(f.active_bar.is_none());
