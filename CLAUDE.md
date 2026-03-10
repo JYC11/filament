@@ -8,7 +8,6 @@ Local-only Rust tool for multi-agent orchestration, knowledge graph, task manage
 - **Route through docs first.** Before grepping or reading source, check if the answer is already in CLAUDE.md, MEMORY.md, `fl inspect <slug>`, or `fl lesson list`. These are the index — source code is the last resort.
 - **Filament is the second brain.** `.md` files are the committed summary; filament's knowledge graph holds the full context (entities, relations, lessons, task deps). Use `fl context --around <slug>` for neighborhood context, `fl search <query>` for free-text lookup.
 - **Target <50% context window per task.** If a task will consume more than half the context window (including exploration + implementation + testing), split it into smaller tasks first. Every task should complete with room to spare.
-- **No speculative reads.** Do not read files "just in case". Each tool call should have a clear purpose tied to the current task. Minimize exploration — pattern-match from docs and existing modules.
 
 ## Project Layout
 
@@ -81,8 +80,7 @@ Full ADRs with rationale: `.plan/adr/` (001–023). Key choices:
 ## Development Rules
 
 - **Every bug fix must include a test** — if a bug is found, write a regression test that would have caught it before fixing the implementation.
-- Tests gate completion — always run `make test CRATE=all` after changes.
-- Never weaken or modify a test to make it pass — the bug is in the implementation, not the test.
+- Run `make test CRATE=all` after changes (uses Makefile, not raw cargo).
 - **Code Smells**
   - god functions are bad
   - overly fragmented functions are bad
@@ -139,26 +137,9 @@ New gotchas and solutions should be recorded as **Lesson entities** (`fl lesson 
 - petgraph 0.7 requires `use petgraph::visit::EdgeRef` for edge methods
 - SQLite cannot ALTER CHECK constraints — must recreate table in migrations
 
-## Task Tracking
-
-This project uses **filament itself** for task management, with `.md` files as the committed source of truth.
-
-- **What's next**: `fl task ready`
-- **Start work**: `fl update <slug> --status in_progress`
-- **Finish work**: `fl task close <slug>`
-- **New tasks**: `fl task add <name> --summary "..." --priority N`
-- **Dependencies**: `fl relate <blocker> blocks <blocked>`
-- **Full backlog**: `fl task list`
-- **Lessons/gotchas**: `fl lesson list`, `fl lesson show <slug>`
-
-**Rules:**
-- When creating/closing tasks, do it in filament AND update MEMORY.md
-- When adding ADRs or plans, create both the `.md` file and a filament entity with `--content` pointing to it
-- `.fl/` is gitignored (local per-user DB) — `.md` files remain the committed source of truth
-
 ## Current Status
 
-**All 7 phases complete + agent hardening** (2026-03-07). 529 tests, zero clippy warnings.
+**All 7 phases complete + agent hardening.** 642 tests, zero clippy warnings.
 
 | Phase | What | Key details |
 |-------|------|-------------|

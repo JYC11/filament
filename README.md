@@ -24,28 +24,32 @@ Filament gives AI coding agents (and humans) a shared project brain — a knowle
 
 ## Installation
 
-### Prerequisites
+**macOS or Linux** required (uses Unix sockets for daemon mode). SQLite is bundled — no system install needed.
 
-- **Rust toolchain** — stable channel (edition 2021). Install via [rustup](https://rustup.rs/):
-  ```
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-  ```
-- **SQLite** — bundled via sqlx (no system install required)
-- **macOS or Linux** — uses Unix sockets for daemon mode
+### Quick Install (prebuilt binary)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JYC11/filament/main/install.sh | sh
+```
+
+Options:
+
+```bash
+# Custom install directory
+curl -fsSL https://raw.githubusercontent.com/JYC11/filament/main/install.sh | sh -s -- --to /usr/local/bin
+
+# Specific version
+curl -fsSL https://raw.githubusercontent.com/JYC11/filament/main/install.sh | sh -s -- --version v1.0.0
+```
 
 ### Build from Source
 
-Clone the repository and build the release binary:
+Requires the [Rust toolchain](https://rustup.rs/) (stable channel).
 
 ```bash
-git clone https://github.com/ndrewpj/filament.git
+git clone https://github.com/JYC11/filament.git
 cd filament
 make build CRATE=all RELEASE=1
-```
-
-The binary is at `target/release/fl`. Install it:
-
-```bash
 make install                        # installs to ~/.local/bin (default)
 make install DEST=/usr/local/bin    # custom destination
 ```
@@ -57,7 +61,7 @@ make uninstall                      # removes from ~/.local/bin (default)
 make uninstall DEST=/usr/local/bin  # custom destination
 ```
 
-### Development Build
+### Development
 
 ```bash
 make build CRATE=all        # debug build
@@ -71,10 +75,12 @@ Filament works best when your coding agent (Claude Code, Cursor, etc.) knows its
 
 ```
 Create a skill for the filament CLI based on the README at:
-https://github.com/ndrewpj/filament/blob/main/README.md
+https://github.com/JYC11/filament/blob/main/README.md
 ```
 
 This gives your agent the complete command reference, entity types, relation types, and workflow patterns — no manual lookup needed.
+
+For **real multi-agent orchestration** — multiple Claude instances working concurrently on the same project — use **tmux** to launch parallel `claude -p` sessions. Start the daemon (`fl serve`), then give each agent its own tmux window. Filament coordinates them through file reservations, task dependencies, and inter-agent messaging. See [Agent Dispatching](#agent-dispatching) for dispatch commands.
 
 ---
 

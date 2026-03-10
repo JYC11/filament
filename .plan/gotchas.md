@@ -87,7 +87,7 @@ Pitfalls discovered during implementation. Check here before debugging mysteriou
 - **`pub(crate)` in private modules** — triggers `clippy::redundant_pub_crate`; use plain `pub` (module privacy is the real access control).
 - **`assert_cmd::Command::cargo_bin` is deprecated** — needs `#[allow(deprecated)]`; no non-deprecated alternative.
 - **`Cow<'static, str>.as_str()`** — requires unstable `str_as_str`; use `.as_ref()` instead.
-- **`.filament/` is gitignored** — per-user local database, not committed.
+- **`.fl/` is gitignored** — per-user local database, not committed.
 
 ## Agent dispatch
 
