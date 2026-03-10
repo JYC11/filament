@@ -423,12 +423,24 @@ Print a summary of what was demonstrated:
 5. Continue from `next_cycle`
 6. The cwd must be `/tmp/fl-sim/`
 
+## CLI Reference
+
+**IMPORTANT:** Always invoke `/filament` before running simulation commands. The filament skill
+contains the complete CLI reference with correct syntax. Key pitfalls:
+- `fl task assign SLUG --to AGENT` (--to required)
+- `fl message send --from A --to B --body "..." --type text` (all flags required)
+- `fl reserve "glob/**" --agent SLUG` (quote the glob)
+- `fl search "query" --type lesson` (query is first positional arg)
+
+For multi-agent dispatch via tmux + `claude -p`, see the filament skill's "Multi-Agent Dispatch" section.
+
 ## Important Notes
 
 - **All slugs are dynamic** — capture them from `fl add` output and use them throughout
 - **Don't fabricate CLI output** — run the actual commands and narrate based on real results
 - **The simulation runs in `/tmp/fl-sim/`** — completely isolated, won't affect the main project
-- **No daemon needed** — all cycles use direct CLI commands
+- **No daemon needed for single-session mode** — all cycles use direct CLI commands
+- **Daemon required for multi-agent mode** — `fl serve` before launching concurrent agents
 - **Exit code 6** on reservation conflict is expected, not an error — narrate it as the system working correctly
 - **State file enables session restart** — always save state on `pause rp` so a new session can resume
 - **On resume, trust the state file** — don't re-run setup or re-seed entities, just continue from the saved cycle
