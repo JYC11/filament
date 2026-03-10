@@ -71,15 +71,19 @@ make ci                      # full CI: fmt check + clippy + tests
 
 ## AI Agent Integration
 
-### Claude Code Skill (recommended)
+### Claude Code Skills (recommended)
 
-A ready-to-use [Claude Code skill](https://docs.anthropic.com/en/docs/claude-code/skills) is included in [`skills/claude-code/`](skills/claude-code/). Copy it to your skills directory:
+Ready-to-use [Claude Code skills](https://docs.anthropic.com/en/docs/claude-code/skills) are included in [`skills/`](skills/). Copy them to your skills directory:
 
 ```bash
-cp -r skills/claude-code ~/.claude/skills/filament
+cp -r skills/filament ~/.claude/skills/filament
+cp -r skills/filament-bug-report-format ~/.claude/skills/filament-bug-report-format
 ```
 
-This gives Claude Code the complete command reference, entity types, relation types, workflow patterns, and an agent preamble for multi-agent dispatch — loaded automatically when relevant.
+| Skill | Purpose |
+|-------|---------|
+| [`filament`](skills/filament/) | Complete CLI reference, entity types, relation types, workflow patterns, and agent preamble for multi-agent dispatch. Loaded automatically when relevant. |
+| [`filament-bug-report-format`](skills/filament-bug-report-format/) | Creates an anonymized snapshot of your `.fl/fl.db` database with structured reproduction steps for filing bug reports. Strips user-identifiable content while preserving schema, entity structure, and relations. Say "report a bug" to activate. |
 
 ### Other agents
 
@@ -92,7 +96,7 @@ https://github.com/JYC11/filament/blob/main/README.md
 
 ### Multi-agent orchestration with tmux
 
-For multiple Claude instances working concurrently on the same project, use **tmux** to launch parallel `claude -p` sessions. Start the daemon (`fl serve`), then give each agent its own tmux window. Filament coordinates them through file reservations, task dependencies, and inter-agent messaging. See [Agent Dispatching](#agent-dispatching) and the skill's [`references/agent-preamble.md`](skills/claude-code/references/agent-preamble.md) for the full workflow.
+For multiple Claude instances working concurrently on the same project, use **tmux** to launch parallel `claude -p` sessions. Start the daemon (`fl serve`), then give each agent its own tmux window. Filament coordinates them through file reservations, task dependencies, and inter-agent messaging. See [Agent Dispatching](#agent-dispatching) and the skill's [`references/agent-preamble.md`](skills/filament/references/agent-preamble.md) for the full workflow.
 
 ---
 
