@@ -71,16 +71,28 @@ make ci                      # full CI: fmt check + clippy + tests
 
 ## AI Agent Integration
 
-Filament works best when your coding agent (Claude Code, Cursor, etc.) knows its full command set. Rather than memorizing the CLI, create a **skill** or **rule** from this README so your agent can use `fl` commands natively:
+### Claude Code Skill (recommended)
+
+A ready-to-use [Claude Code skill](https://docs.anthropic.com/en/docs/claude-code/skills) is included in [`skills/claude-code/`](skills/claude-code/). Copy it to your skills directory:
+
+```bash
+cp -r skills/claude-code ~/.claude/skills/filament
+```
+
+This gives Claude Code the complete command reference, entity types, relation types, workflow patterns, and an agent preamble for multi-agent dispatch — loaded automatically when relevant.
+
+### Other agents
+
+For non-Claude-Code agents, create a skill or rule from this README so your agent can use `fl` commands natively:
 
 ```
 Create a skill for the filament CLI based on the README at:
 https://github.com/JYC11/filament/blob/main/README.md
 ```
 
-This gives your agent the complete command reference, entity types, relation types, and workflow patterns — no manual lookup needed.
+### Multi-agent orchestration with tmux
 
-For **real multi-agent orchestration** — multiple Claude instances working concurrently on the same project — use **tmux** to launch parallel `claude -p` sessions. Start the daemon (`fl serve`), then give each agent its own tmux window. Filament coordinates them through file reservations, task dependencies, and inter-agent messaging. See [Agent Dispatching](#agent-dispatching) for dispatch commands.
+For multiple Claude instances working concurrently on the same project, use **tmux** to launch parallel `claude -p` sessions. Start the daemon (`fl serve`), then give each agent its own tmux window. Filament coordinates them through file reservations, task dependencies, and inter-agent messaging. See [Agent Dispatching](#agent-dispatching) and the skill's [`references/agent-preamble.md`](skills/claude-code/references/agent-preamble.md) for the full workflow.
 
 ---
 
