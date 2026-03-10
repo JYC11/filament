@@ -518,23 +518,20 @@ mod tests {
 
     #[test]
     fn msg_filter_label_all() {
-        let mut f = MessageFilterState::default();
-        f.participant = MessageParticipantFilter::All;
+        let f = MessageFilterState { participant: MessageParticipantFilter::All, ..Default::default() };
         assert_eq!(f.label(), "all");
     }
 
     #[test]
     fn msg_filter_label_agent() {
-        let mut f = MessageFilterState::default();
-        f.participant = MessageParticipantFilter::Agent("abc123".to_string());
+        let f = MessageFilterState { participant: MessageParticipantFilter::Agent("abc123".to_string()), ..Default::default() };
         assert_eq!(f.label(), "agent:abc123");
     }
 
     #[test]
     fn msg_filter_label_with_types_and_status() {
-        let mut f = MessageFilterState::default();
+        let mut f = MessageFilterState { read_status: Some(MessageStatus::Unread), ..Default::default() };
         f.toggle_type(MessageType::Text);
-        f.read_status = Some(MessageStatus::Unread);
         let label = f.label();
         assert!(label.contains("mine"));
         assert!(label.contains("text"));
@@ -597,8 +594,7 @@ mod tests {
 
     #[test]
     fn build_request_all_participant() {
-        let mut filter = MessageFilterState::default();
-        filter.participant = MessageParticipantFilter::All;
+        let filter = MessageFilterState { participant: MessageParticipantFilter::All, ..Default::default() };
         let sort = MessageSortState::default();
         let pagination = PaginationState::new(20);
 
@@ -608,8 +604,7 @@ mod tests {
 
     #[test]
     fn build_request_agent_participant() {
-        let mut filter = MessageFilterState::default();
-        filter.participant = MessageParticipantFilter::Agent("xyz".to_string());
+        let filter = MessageFilterState { participant: MessageParticipantFilter::Agent("xyz".to_string()), ..Default::default() };
         let sort = MessageSortState::default();
         let pagination = PaginationState::new(20);
 
@@ -630,8 +625,7 @@ mod tests {
 
     #[test]
     fn build_request_with_read_status() {
-        let mut filter = MessageFilterState::default();
-        filter.read_status = Some(MessageStatus::Read);
+        let filter = MessageFilterState { read_status: Some(MessageStatus::Read), ..Default::default() };
         let sort = MessageSortState::default();
         let pagination = PaginationState::new(20);
 

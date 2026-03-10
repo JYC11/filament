@@ -555,7 +555,7 @@ fn slug_try_from_trims_tabs_and_newlines() {
 
 #[test]
 fn slug_try_from_rejects_empty() {
-    assert!(Slug::try_from("".to_string()).is_err());
+    assert!(Slug::try_from(String::new()).is_err());
 }
 
 #[test]
@@ -567,7 +567,7 @@ fn priority_display() {
 #[test]
 fn weight_zero_is_valid() {
     let w = Weight::new(0.0).unwrap();
-    assert_eq!(w.value(), 0.0);
+    assert!((w.value() - 0.0).abs() < f64::EPSILON);
 }
 
 #[test]

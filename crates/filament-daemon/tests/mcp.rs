@@ -48,7 +48,7 @@ async fn start_mcp_client_filtered(
 }
 
 /// Build a `CallToolRequestParams` from name and JSON args.
-fn call(name: &str, args: serde_json::Value) -> CallToolRequestParams {
+fn call(name: &str, args: &serde_json::Value) -> CallToolRequestParams {
     CallToolRequestParams {
         meta: None,
         name: name.to_string().into(),
@@ -86,7 +86,7 @@ async fn tools_list_returns_all_tools() {
 
     let result = client
         .peer()
-        .list_tools(Default::default())
+        .list_tools(Option::default())
         .await
         .expect("list_tools");
 
@@ -135,7 +135,7 @@ async fn tool_add_and_list() {
     let result = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({
+            &serde_json::json!({
                 "name": "mcp-test-task",
                 "entity_type": "task",
                 "summary": "Test task via MCP",
@@ -155,7 +155,7 @@ async fn tool_add_and_list() {
     let result = peer
         .call_tool(call(
             "fl_list",
-            serde_json::json!({ "entity_type": "task" }),
+            &serde_json::json!({ "entity_type": "task" }),
         ))
         .await
         .expect("call filament_list");
@@ -179,7 +179,7 @@ async fn tool_inspect_entity() {
     let add_result = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({
+            &serde_json::json!({
                 "name": "inspect-me",
                 "entity_type": "doc",
                 "summary": "A doc to inspect",
@@ -192,7 +192,7 @@ async fn tool_inspect_entity() {
     let slug = extract_slug(&extract_text(&add_result));
 
     let result = peer
-        .call_tool(call("fl_inspect", serde_json::json!({ "slug": slug })))
+        .call_tool(call("fl_inspect", &serde_json::json!({ "slug": slug })))
         .await
         .expect("inspect");
 
@@ -214,7 +214,7 @@ async fn tool_task_close() {
     let add_result = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({
+            &serde_json::json!({
                 "name": "closeable-task",
                 "entity_type": "task",
                 "summary": "Will be closed",
@@ -226,7 +226,7 @@ async fn tool_task_close() {
     let slug = extract_slug(&extract_text(&add_result));
 
     let result = peer
-        .call_tool(call("fl_task_close", serde_json::json!({ "slug": slug })))
+        .call_tool(call("fl_task_close", &serde_json::json!({ "slug": slug })))
         .await
         .expect("close");
 
@@ -236,7 +236,7 @@ async fn tool_task_close() {
 
     // Verify it's closed via inspect
     let result = peer
-        .call_tool(call("fl_inspect", serde_json::json!({ "slug": slug })))
+        .call_tool(call("fl_inspect", &serde_json::json!({ "slug": slug })))
         .await
         .expect("inspect");
 
@@ -256,7 +256,7 @@ async fn tool_update_entity() {
     let add_result = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({
+            &serde_json::json!({
                 "name": "updatable",
                 "entity_type": "task",
                 "summary": "Before update",
@@ -270,7 +270,7 @@ async fn tool_update_entity() {
     let result = peer
         .call_tool(call(
             "fl_update",
-            serde_json::json!({
+            &serde_json::json!({
                 "slug": slug,
                 "summary": "After update",
                 "status": "in_progress",
@@ -296,7 +296,7 @@ async fn tool_messaging() {
     let add_a = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({"name": "agent-a", "entity_type": "agent", "summary": "Agent A"}),
+            &serde_json::json!({"name": "agent-a", "entity_type": "agent", "summary": "Agent A"}),
         ))
         .await
         .expect("add agent-a");
@@ -306,7 +306,7 @@ async fn tool_messaging() {
     let add_b = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({"name": "agent-b", "entity_type": "agent", "summary": "Agent B"}),
+            &serde_json::json!({"name": "agent-b", "entity_type": "agent", "summary": "Agent B"}),
         ))
         .await
         .expect("add agent-b");
@@ -316,7 +316,7 @@ async fn tool_messaging() {
     let result = peer
         .call_tool(call(
             "fl_message_send",
-            serde_json::json!({
+            &serde_json::json!({
                 "from_agent": slug_a,
                 "to_agent": slug_b,
                 "body": "Hello from MCP",
@@ -332,7 +332,7 @@ async fn tool_messaging() {
     let result = peer
         .call_tool(call(
             "fl_message_inbox",
-            serde_json::json!({ "agent": slug_b }),
+            &serde_json::json!({ "agent": slug_b }),
         ))
         .await
         .expect("inbox");
@@ -356,7 +356,7 @@ async fn tool_reservations() {
     let result = peer
         .call_tool(call(
             "fl_reserve",
-            serde_json::json!({
+            &serde_json::json!({
                 "file_glob": "src/**/*.rs",
                 "agent": "test-agent",
                 "ttl_secs": 60,
@@ -375,7 +375,7 @@ async fn tool_reservations() {
     let result = peer
         .call_tool(call(
             "fl_reservations",
-            serde_json::json!({ "agent": "test-agent" }),
+            &serde_json::json!({ "agent": "test-agent" }),
         ))
         .await
         .expect("list reservations");
@@ -388,7 +388,7 @@ async fn tool_reservations() {
     let result = peer
         .call_tool(call(
             "fl_release",
-            serde_json::json!({ "reservation_id": res_id }),
+            &serde_json::json!({ "reservation_id": res_id }),
         ))
         .await
         .expect("release");
@@ -408,7 +408,7 @@ async fn tool_task_ready() {
     for name in &["ready-a", "ready-b"] {
         peer.call_tool(call(
             "fl_add",
-            serde_json::json!({
+            &serde_json::json!({
                 "name": name,
                 "entity_type": "task",
                 "summary": format!("Task {name}"),
@@ -419,7 +419,7 @@ async fn tool_task_ready() {
     }
 
     let result = peer
-        .call_tool(call("fl_task_ready", serde_json::json!({ "limit": 10 })))
+        .call_tool(call("fl_task_ready", &serde_json::json!({ "limit": 10 })))
         .await
         .expect("ready tasks");
 
@@ -444,7 +444,7 @@ async fn tool_error_nonexistent_entity() {
     let result = peer
         .call_tool(call(
             "fl_inspect",
-            serde_json::json!({ "slug": "does-not-exist" }),
+            &serde_json::json!({ "slug": "does-not-exist" }),
         ))
         .await
         .expect("inspect");
@@ -471,7 +471,7 @@ async fn tool_update_validation_error() {
     let add_result = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({
+            &serde_json::json!({
                 "name": "needs-update",
                 "entity_type": "task",
                 "summary": "Test",
@@ -484,7 +484,7 @@ async fn tool_update_validation_error() {
 
     // Update with neither summary nor status — should error
     let result = peer
-        .call_tool(call("fl_update", serde_json::json!({ "slug": slug })))
+        .call_tool(call("fl_update", &serde_json::json!({ "slug": slug })))
         .await
         .expect("update");
 
@@ -508,7 +508,7 @@ async fn tool_filtering_blocks_disallowed() {
     let result = peer
         .call_tool(call(
             "fl_list",
-            serde_json::json!({ "entity_type": "task" }),
+            &serde_json::json!({ "entity_type": "task" }),
         ))
         .await
         .expect("list");
@@ -521,7 +521,7 @@ async fn tool_filtering_blocks_disallowed() {
     let result = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({
+            &serde_json::json!({
                 "name": "blocked-task",
                 "entity_type": "task",
                 "summary": "Should fail",
@@ -543,7 +543,7 @@ async fn tool_filtering_blocks_disallowed() {
     let result = peer
         .call_tool(call(
             "fl_reserve",
-            serde_json::json!({
+            &serde_json::json!({
                 "file_glob": "*.rs",
                 "agent": "test",
                 "ttl_secs": 60,
@@ -570,7 +570,7 @@ async fn tool_filtering_none_allows_all() {
     let result = peer
         .call_tool(call(
             "fl_add",
-            serde_json::json!({
+            &serde_json::json!({
                 "name": "unfiltered-task",
                 "entity_type": "task",
                 "summary": "No filter",

@@ -160,7 +160,7 @@ fn structured_error_json_format() {
 }
 
 /// Regression: errors from the daemon protocol must preserve the original exit code,
-/// error code, hint, and retryable status after round-tripping through StructuredError.
+/// error code, hint, and retryable status after round-tripping through `StructuredError`.
 #[test]
 fn daemon_error_preserves_exit_code_through_round_trip() {
     let test_cases: Vec<(FilamentError, i32, &str)> = vec![

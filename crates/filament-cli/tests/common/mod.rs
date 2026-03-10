@@ -12,6 +12,7 @@ pub fn filament(dir: &TempDir) -> Command {
 }
 
 /// Initialize a fl project and return the temp dir.
+#[allow(dead_code)]
 pub fn init_project() -> TempDir {
     use predicates::prelude::*;
     let dir = TempDir::new().unwrap();
@@ -25,6 +26,7 @@ pub fn init_project() -> TempDir {
 
 /// Run `fl add` and return the generated slug.
 /// Parses the slug from output format: "Created entity: {slug} ({id})"
+#[allow(dead_code)]
 pub fn add_entity(dir: &TempDir, name: &str, entity_type: &str, extra_args: &[&str]) -> String {
     let mut cmd = filament(dir);
     cmd.args(["add", name, "--type", entity_type]);
@@ -43,6 +45,7 @@ pub fn add_entity(dir: &TempDir, name: &str, entity_type: &str, extra_args: &[&s
 
 /// Run `fl task add` and return the generated slug.
 /// Parses the slug from output format: "Created task: {slug} ({id})"
+#[allow(dead_code)]
 pub fn add_task(dir: &TempDir, title: &str, extra_args: &[&str]) -> String {
     let mut cmd = filament(dir);
     cmd.args(["task", "add", title]);
@@ -61,6 +64,7 @@ pub fn add_task(dir: &TempDir, title: &str, extra_args: &[&str]) -> String {
 
 /// Extract slug from CLI output.
 /// Matches "Created entity: {slug} ({id})" or "Created task: {slug} ({id})"
+#[allow(dead_code)]
 fn extract_slug_from_output(output: &str) -> String {
     // Find the line with "Created" and extract the slug (first word after ": ")
     for line in output.lines() {

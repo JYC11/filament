@@ -135,7 +135,7 @@ async fn start_test_daemon_with_timeout(
     (client, cancel, tmp)
 }
 
-/// Create a task via the daemon client, return (entity_id, slug).
+/// Create a task via the daemon client, return (`entity_id`, slug).
 async fn create_test_task(client: &mut DaemonClient, name: &str) -> (String, String) {
     let (id, slug) = client
         .create_entity(serde_json::json!({
@@ -161,9 +161,10 @@ async fn wait_for_run_completion(
         if run.status.as_str() != "running" {
             return run.status.as_str().to_string();
         }
-        if start.elapsed() > Duration::from_secs(timeout_secs) {
-            panic!("timed out waiting for run {run_id} to complete");
-        }
+        assert!(
+            start.elapsed() <= Duration::from_secs(timeout_secs),
+            "timed out waiting for run {run_id} to complete"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
@@ -427,6 +428,7 @@ async fn dispatch_agent_timeout_kills_long_running() {
     cancel.cancel();
 }
 
+#[allow(clippy::too_many_lines)]
 #[tokio::test(flavor = "multi_thread")]
 async fn reconcile_dead_agent_process() {
     use filament_core::store;

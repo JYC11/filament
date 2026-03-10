@@ -54,7 +54,7 @@ for crate in "${crates_to_check[@]}"; do
 
     if [ "$RUN_CLIPPY" == true ]; then
         echo "Running clippy for $crate..."
-        if ! cargo clippy -p "$crate" -- -D warnings; then
+        if ! cargo clippy -p "$crate" --all-targets -- -D warnings; then
             echo "$crate: CLIPPY FAILED"
             failed+=("$crate")
             continue

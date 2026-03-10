@@ -673,6 +673,7 @@ async fn degree_centrality_empty_graph() {
 }
 
 #[tokio::test]
+#[allow(clippy::similar_names)]
 async fn degree_centrality_counts_edges() {
     let store = test_db().await;
 
@@ -718,6 +719,7 @@ async fn degree_centrality_counts_edges() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+#[allow(clippy::similar_names)]
 async fn pagerank_single_node_no_edges() {
     let store = test_db().await;
 
@@ -813,6 +815,7 @@ async fn degree_centrality_single_node() {
 }
 
 #[tokio::test]
+#[allow(clippy::similar_names)]
 async fn degree_centrality_disconnected_components() {
     let store = test_db().await;
 

@@ -600,7 +600,6 @@ async fn list_all_agent_runs_respects_limit() {
     let (mut client, cancel, _tmp) = start_test_daemon().await;
 
     // Create 3 tasks with agent runs
-    let mut run_ids = Vec::new();
     for i in 0..3 {
         let (task_id, _) = client
             .create_entity(serde_json::json!({
@@ -621,7 +620,6 @@ async fn list_all_agent_runs_respects_limit() {
             .await
             .unwrap_or_else(|_| panic!("finish run {i}"));
 
-        run_ids.push(run_id);
     }
 
     // Limit = 2 should return only 2
@@ -871,6 +869,7 @@ async fn list_reservations_via_socket() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)]
 async fn multi_agent_task_scheduling() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
@@ -1049,7 +1048,7 @@ async fn multi_agent_reservation_conflicts() {
 
     // Agent C (concurrent): acquires non-overlapping glob — succeeds
     let sp_c = socket_path.clone();
-    let agent_c_handle = tokio::spawn(async move {
+    let agent_nonoverlap = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp_c).await.expect("agent-c connect");
         let res_id = c
             .acquire_reservation("agent-c", "docs/**/*.md", true, 300)
@@ -1059,7 +1058,7 @@ async fn multi_agent_reservation_conflicts() {
     });
 
     agent_b_conflict.await.expect("agent-b join");
-    let _res_id_c = agent_c_handle.await.expect("agent-c join");
+    let _res_id_c = agent_nonoverlap.await.expect("agent-c join");
 
     // Agent A: releases reservation
     let mut release_client = DaemonClient::connect(&socket_path)
@@ -1101,6 +1100,7 @@ async fn multi_agent_reservation_conflicts() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)]
 async fn multi_agent_messaging_workflow() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
@@ -1235,6 +1235,7 @@ async fn multi_agent_messaging_workflow() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)]
 async fn multi_agent_full_workflow() {
     let (client, cancel, tmp) = start_test_daemon().await;
     drop(client);
@@ -1460,7 +1461,7 @@ async fn multi_agent_full_workflow() {
 
     // Phase 3: Agent C picks up test, then review (sequential)
     let sp3 = socket_path.clone();
-    let tst_id = test.clone();
+    let testing_id = test.clone();
     let rev_id = review.clone();
     let phase3 = tokio::spawn(async move {
         let mut c = DaemonClient::connect(&sp3).await.expect("agent-c connect");
@@ -1471,16 +1472,16 @@ async fn multi_agent_full_workflow() {
         assert_eq!(ready[0].name(), "test");
 
         let run_id = c
-            .create_agent_run(tst_id.as_str(), "tester", Some(1003))
+            .create_agent_run(testing_id.as_str(), "tester", Some(1003))
             .await
             .expect("create test run");
-        c.update_entity_status(tst_id.as_str(), EntityStatus::InProgress)
+        c.update_entity_status(testing_id.as_str(), EntityStatus::InProgress)
             .await
             .expect("test in_progress");
         c.finish_agent_run(run_id.as_str(), "completed", Some(r#"{"tests":"pass"}"#))
             .await
             .expect("finish test run");
-        c.update_entity_status(tst_id.as_str(), EntityStatus::Closed)
+        c.update_entity_status(testing_id.as_str(), EntityStatus::Closed)
             .await
             .expect("test closed");
 
@@ -1586,10 +1587,10 @@ async fn invalid_request_returns_error() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn subscribe_receives_entity_notifications() {
-    let (mut client, cancel, _tmp) = start_test_daemon().await;
+    let (mut client, cancel, tmp) = start_test_daemon().await;
 
     // Create a second client for subscribing
-    let socket_path = _tmp.path().join(".fl").join("fl.sock");
+    let socket_path = tmp.path().join(".fl").join("fl.sock");
     let mut sub_client = DaemonClient::connect(&socket_path).await.unwrap();
 
     let mut stream = sub_client
@@ -1624,9 +1625,9 @@ async fn subscribe_receives_entity_notifications() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn subscribe_with_filter_only_receives_matching() {
-    let (mut client, cancel, _tmp) = start_test_daemon().await;
+    let (mut client, cancel, tmp) = start_test_daemon().await;
 
-    let socket_path = _tmp.path().join(".fl").join("fl.sock");
+    let socket_path = tmp.path().join(".fl").join("fl.sock");
     let mut sub_client = DaemonClient::connect(&socket_path).await.unwrap();
 
     // Subscribe only to status_change events

@@ -841,7 +841,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("mcp-guard-test-disarm-{}.json", child.id()));
         std::fs::write(&tmp, "{}").unwrap();
 
-        let guard = ChildGuard::new(child, tmp.clone());
+        let guard = ChildGuard::new(child, tmp);
         let (mut child, path) = guard.disarm();
 
         // Process should still be alive after disarm

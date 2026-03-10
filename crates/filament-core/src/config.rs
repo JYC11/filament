@@ -194,9 +194,9 @@ agent_timeout_secs = 7200
     #[test]
     #[serial]
     fn parse_partial_config() {
-        let toml_str = r#"
+        let toml_str = r"
 default_priority = 4
-"#;
+";
         let cfg: FilamentConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(cfg.resolve_default_priority(), 4);
         assert_eq!(cfg.resolve_agent_command(), "claude");

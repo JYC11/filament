@@ -1788,7 +1788,7 @@ fn make_test_event(i: usize) -> Event {
     }
 }
 
-/// Count `?` bind parameters in the SQL string produced by `QueryBuilder` (SQLite).
+/// Count `?` bind parameters in the SQL string produced by `QueryBuilder` (`SQLite`).
 fn count_bind_params(sql: &str) -> usize {
     sql.matches('?').count()
 }
@@ -1870,26 +1870,26 @@ fn event_insert_sql_uses_multi_row_values() {
 #[test]
 fn entity_chunk_size_respects_param_limit() {
     // Verify the chunk constant stays under 999 params
-    assert!(ENTITY_CHUNK * 12 <= 999);
-    assert!((ENTITY_CHUNK + 1) * 12 > 999);
+    const { assert!(ENTITY_CHUNK * 12 <= 999) };
+    const { assert!((ENTITY_CHUNK + 1) * 12 > 999) };
 }
 
 #[test]
 fn relation_chunk_size_respects_param_limit() {
-    assert!(RELATION_CHUNK * 8 <= 999);
-    assert!((RELATION_CHUNK + 1) * 8 > 999);
+    const { assert!(RELATION_CHUNK * 8 <= 999) };
+    const { assert!((RELATION_CHUNK + 1) * 8 > 999) };
 }
 
 #[test]
 fn message_chunk_size_respects_param_limit() {
-    assert!(MESSAGE_CHUNK * 10 <= 999);
-    assert!((MESSAGE_CHUNK + 1) * 10 > 999);
+    const { assert!(MESSAGE_CHUNK * 10 <= 999) };
+    const { assert!((MESSAGE_CHUNK + 1) * 10 > 999) };
 }
 
 #[test]
 fn event_chunk_size_respects_param_limit() {
-    assert!(EVENT_CHUNK * 6 <= 999);
-    assert!((EVENT_CHUNK + 1) * 6 > 999);
+    const { assert!(EVENT_CHUNK * 6 <= 999) };
+    const { assert!((EVENT_CHUNK + 1) * 6 > 999) };
 }
 
 #[tokio::test]
@@ -2328,7 +2328,7 @@ async fn search_respects_limit() {
 
     for i in 0..5 {
         let req = ValidCreateEntityRequest {
-            name: NonEmptyString::new(&format!("Rust feature {i}")).unwrap(),
+            name: NonEmptyString::new(format!("Rust feature {i}")).unwrap(),
             entity_type: EntityType::Doc,
             summary: format!("A Rust language feature number {i}"),
             key_facts: serde_json::json!({}),
@@ -3019,6 +3019,7 @@ async fn list_entities_paged_filters_and_sort() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn list_messages_paged_with_filters() {
     use filament_core::pagination::{PaginationDirection, PaginationParams};
 

@@ -85,6 +85,7 @@ fn task_ready() {
 }
 
 #[test]
+#[allow(clippy::similar_names)]
 fn task_with_blocks() {
     let dir = init_project();
 
