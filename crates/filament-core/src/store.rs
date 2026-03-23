@@ -606,6 +606,7 @@ async fn try_auto_merge(
     let limit = i64::try_from(events_since).unwrap_or(i64::MAX);
     let events: Vec<Event> = sqlx::query_as::<_, Event>(
         "SELECT * FROM events WHERE entity_id = ? AND diff IS NOT NULL \
+         AND event_type IN ('entity_updated', 'status_change') \
          ORDER BY created_at DESC LIMIT ?",
     )
     .bind(entity_id)
