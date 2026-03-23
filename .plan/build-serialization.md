@@ -1,5 +1,9 @@
 # Build Serialization for Multi-Agent Coordination
 
+> **SUPERSEDED (2026-03-23):** Claude Code's built-in `isolation: "worktree"` on the Agent tool
+> gives each subagent its own repo copy, eliminating shared `target/` contention entirely.
+> Worktree guidance added to the filament skill instead. This plan is kept for reference only.
+
 ## Problem
 
 When running multiple Claude agents in tmux, concurrent `make fmt/build/check/test` causes:

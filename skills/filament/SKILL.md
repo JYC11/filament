@@ -169,6 +169,21 @@ fl task list && fl reservations
 Agent prompts MUST include `references/agent-preamble.md` for correct CLI syntax.
 `claude -p` is one-shot: agents escalate, proceed on assumptions, and exit.
 
+### Worktrees for Parallel Agents
+
+When launching subagents via the Agent tool (not tmux), use `isolation: "worktree"` so each agent
+gets its own copy of the repo. This avoids build artifact contention (`target/` directory locks),
+merge conflicts from simultaneous edits, and eliminates the need for file reservations between
+subagents. The worktree is auto-cleaned if the agent makes no changes; if it does, results are
+returned with the worktree branch for you to merge.
+
+```
+Agent(prompt="...", isolation="worktree")  # each agent gets isolated repo copy
+```
+
+Use worktrees for code-writing agents. Use the shared repo (no isolation) for read-only agents
+(research, exploration, code review).
+
 ## Tips
 
 - Priority: 0 = highest, 4 = lowest (default 2)
