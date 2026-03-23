@@ -135,9 +135,79 @@ Global flags: `--json` | `-v` (debug) | `-vv` (trace) | `-q` (quiet)
 0=success, 2=arg error, 3=not found, 4=validation, 5=db error, 6=conflict, 7=I/O.
 With `--json`: `code`, `message`, `hint`, `retryable` fields.
 
-## Multi-Agent Dispatch (tmux + claude -p)
+## Multi-Agent with Worktrees (default)
 
-Real concurrent Claude agents coordinating through filament. Each is an isolated `claude -p` process.
+Filament provides the **context layer** (tasks, lessons, knowledge graph, messaging) while Claude
+Code provides the **execution layer** (subagents, worktree isolation, merge). The parent session
+orchestrates — subagents do focused work and report back through filament.
+
+### Workflow
+
+```
+Parent session:
+  1. fl task ready                              # pick unblocked tasks
+  2. fl search "topic" --type lesson            # gather context for agents
+  3. fl context --around <SLUG>                 # understand dependencies
+  4. Register agents:
+     fl add coder --type agent --summary "implements features"
+     fl add reviewer --type agent --summary "reviews code"
+  5. Dispatch subagents with worktree isolation (see below)
+  6. Merge worktree branches from returned results
+  7. fl task close <SLUG>
+  8. fl escalations                             # handle questions from agents
+  9. fl lesson add "..." if something surprising happened
+```
+
+### Dispatching Subagents
+
+Use `isolation: "worktree"` for code-writing agents. Each gets its own repo copy — no build
+contention, no merge conflicts, no file reservations needed.
+
+```
+Agent(
+  prompt="You are agent <AGENT_SLUG> working on task <TASK_SLUG>.
+    <context from fl inspect, fl search, fl lesson show>
+
+    FILAMENT PROTOCOL:
+    - Update task status: fl update <TASK_SLUG> --status in_progress
+    - Search lessons before solving: fl search 'topic' --type lesson
+    - If blocked, escalate: fl message send --from <AGENT_SLUG> --to user --body 'describe blocker' --type blocker
+    - If unsure, ask: fl message send --from <AGENT_SLUG> --to user --body 'question' --type question
+    - Report artifacts: fl message send --from <AGENT_SLUG> --to user --body 'summary of work done' --type artifact
+    - Capture lessons: fl lesson add 'title' --problem '...' --solution '...' --learned '...' --pattern 'name'
+    - When done: fl task close <TASK_SLUG>
+
+    TASK: <description of work>",
+  isolation="worktree"
+)
+```
+
+Use the shared repo (no worktree) for read-only agents (research, exploration, code review).
+
+### After Subagents Return
+
+```
+Parent session:
+  fl escalations                                # check for blockers/questions
+  fl message inbox <AGENT_SLUG>                 # read agent's artifact messages
+  # merge worktree branches if agents made code changes
+  # answer questions via: fl message send --from user --to <AGENT_SLUG> --body "..." --type text
+```
+
+### When to Use Worktrees vs Tmux
+
+| | Worktrees (default) | Tmux (advanced) |
+|---|---|---|
+| **Orchestration** | Parent Claude session | Human via terminal |
+| **Agent lifecycle** | Tied to parent session | Independent OS processes |
+| **Isolation** | Git worktree per agent | Separate `claude -p` processes |
+| **Coordination** | Filament messages + parent merges | Filament daemon + reservations |
+| **Best for** | Parallelizable subtasks in one session | Long-running autonomous agents, overnight batch work, multi-human teams |
+
+### Tmux Dispatch (advanced)
+
+For fully autonomous agents that outlive the parent session. Requires the filament daemon for
+concurrent DB access and file reservations for shared-repo coordination.
 
 ```bash
 # 1. Daemon + scenario setup
@@ -168,25 +238,12 @@ fl task list && fl reservations
 
 Agent prompts MUST include `references/agent-preamble.md` for correct CLI syntax.
 `claude -p` is one-shot: agents escalate, proceed on assumptions, and exit.
-
-### Worktrees for Parallel Agents
-
-When launching subagents via the Agent tool (not tmux), use `isolation: "worktree"` so each agent
-gets its own copy of the repo. This avoids build artifact contention (`target/` directory locks),
-merge conflicts from simultaneous edits, and eliminates the need for file reservations between
-subagents. The worktree is auto-cleaned if the agent makes no changes; if it does, results are
-returned with the worktree branch for you to merge.
-
-```
-Agent(prompt="...", isolation="worktree")  # each agent gets isolated repo copy
-```
-
-Use worktrees for code-writing agents. Use the shared repo (no isolation) for read-only agents
-(research, exploration, code review).
+`FILAMENT_AUTO_DISPATCH=1` chains agent runs on newly-unblocked tasks.
 
 ## Tips
 
 - Priority: 0 = highest, 4 = lowest (default 2)
 - `blocks` direction: `A blocks B` means B waits for A
 - Daemon routes CLI through Unix socket for concurrent access
-- `FILAMENT_AUTO_DISPATCH=1` chains agent runs on newly-unblocked tasks
+- Subagents should always search lessons before solving (`fl search 'topic' --type lesson`)
+- Subagents should escalate blockers/questions via messaging, not by failing silently
